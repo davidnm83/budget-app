@@ -58,7 +58,7 @@ CI runs all of the above on every push.
 
 ## Security notes
 
-- **Never commit `.env` files.** Only `.env.example` is in the repo.
+- **Never commit `.env` files.** Only the `.env.example` files are in the repo: `apps/app/.env.example` (app, public values) and `supabase/.env.example` (server secrets).
 - **Plaid keys and the cron secret** live in Supabase Edge Function secrets.
 - **The publishable key in the app is public by design**; row-level security is what protects the data. Turn off new sign-ups once your own account exists (see the self-hosting guide).
 

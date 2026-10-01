@@ -30,6 +30,7 @@ The Supabase website is only used for:
 PowerShell differs from the Mac/Linux examples below in two ways:
 
 - **Line continuation:** a command split over several lines uses a backtick `` ` `` at the end of each line instead of `\`. Or just put it on one line.
+- **Copying files:** use `copy` instead of `cp`, with backslashes in paths.
 - **No `openssl` command:** generate the random secret in step 3 with:
   ```powershell
   $b = New-Object byte[] 32; [Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes($b); -join ($b | ForEach-Object { $_.ToString('x2') })
@@ -67,17 +68,17 @@ Make a long random string for the daily job:
 openssl rand -hex 32   # copy the output; it's your CRON_SECRET
 ```
 
-Then store your Plaid keys and settings as Edge Function secrets. They stay on the server; the app never sees them. On Windows, put it all on one line, with spaces between the pairs and no `\`:
+Then store your Plaid keys and settings as Edge Function secrets. They stay on the server; the app never sees them.
+
+1. Copy `supabase/.env.example` to `supabase/.env` (Windows: `copy supabase\.env.example supabase\.env`).
+2. Fill in your Plaid client ID, Production secret and the random `CRON_SECRET`.
+3. Upload them:
 
 ```bash
-npx supabase secrets set \
-  PLAID_CLIENT_ID=<from Plaid Dashboard > Developers > Keys> \
-  PLAID_SECRET=<your Production secret> \
-  PLAID_ENV=production \
-  PLAID_COUNTRY_CODES=CA,US \
-  APP_TIMEZONE=America/Toronto \
-  CRON_SECRET=<the random string>
+npx supabase secrets set --env-file supabase/.env
 ```
+
+`supabase/.env` is git-ignored. Keep these values out of `apps/app/.env`.
 
 To try everything with fake banks first, use `PLAID_ENV=sandbox` with your Sandbox secret. In Link, sign in as `user_good` with password `pass_good`.
 
@@ -105,7 +106,7 @@ The app's publishable key is public by design. After you create **your** account
 ## 7. Run the app
 
 ```bash
-cp .env.example apps/app/.env
+cp apps/app/.env.example apps/app/.env      # Windows: copy apps\app\.env.example apps\app\.env
 ```
 
 Edit `apps/app/.env` and fill in two values from Supabase → **Project Settings → API Keys**:
@@ -149,6 +150,14 @@ npx supabase functions deploy
 ```
 
 ## Troubleshooting
+
+- **`Cannot find module 'expo-router/…'` or other odd errors when starting the app.** The installed packages don't match `package-lock.json`, which can happen if something ran `npm install <package>` or edited `apps/app/package.json`. Reset to the committed versions and reinstall:
+  ```bash
+  git restore apps/app/package.json package-lock.json
+  # delete node_modules and apps/app/node_modules, then:
+  npm ci
+  ```
+  Add app packages with `npx expo install <package>` from `apps/app`, which picks versions that match the Expo SDK.
 
 - **"Sign in first."** from a function: your session expired. Sign out and back in.
 - **A bank shows "Needs you to sign in again".** Tap **Fix** in Settings and sign in to the bank.
