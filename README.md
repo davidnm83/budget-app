@@ -9,7 +9,7 @@ Runs on iPhone, Android and the web from one codebase. Everything fits in free t
 ## What works today
 
 - **Bank sync via Plaid.** Link banks, a daily sync at 5 AM (your time zone), **Sync now**, and **Fix** for connections that need a new sign-in.
-- **Review inbox.** New transactions arrive categorised and unchecked. Tick them off one at a time, or all at once.
+- **Transactions tab.** Everything grouped by day, with search, filters (dates, accounts, categories incl. split parts, money in/out, amount) and sorting by date, amount or merchant. "To review" shows new arrivals to tick off, one at a time or all at once.
 - **Auto-categorisation.** Your rules first, then the category you used last time for that merchant, then Plaid's category. The inbox shows where each category came from.
 - **Rules from edits.** When you change a category, "Always use this category for …" makes it a rule.
 - **Merchant cleanup.** Rules turn `RETAIL PURCHASE 0010… RCSS 1077` into `Superstore`.
