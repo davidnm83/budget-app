@@ -1,12 +1,13 @@
 // Spending watch (VIEW-5, Fina's "Expense improvement tracker"): pick the categories you're trying
 // to bring down and see each one's last 6 months, its 3-month average and where this month is heading.
-import { categoryIcon } from '@budget-app/core';
+import { categoryIcon, monthEnd, monthName } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ScrollView, StyleSheet, Text } from 'react-native';
 import { MultiPicker } from '@/components/Picker';
 import { Button, Card } from '@/components/ui';
 import { WatchCard } from '@/components/WatchCard';
+import { useTxnSheet } from '@/components/TxnSheet';
 import { today } from '@/lib/plan';
 import { savePrefs } from '@/lib/prefs';
 import type { Category } from '@/lib/reports';
@@ -19,6 +20,7 @@ export default function Watch() {
   const [data, setData] = useState<{ list: Watched[]; chosen: boolean; cats: Category[] } | null>(null);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState('');
+  const [showTxns, txnSheet] = useTxnSheet();
   const load = useCallback(async () => {
     try { setData(await loadWatch(today())); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
@@ -30,11 +32,13 @@ export default function Watch() {
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <Text style={{ color: t.muted, fontSize: 13 }}>
-        The categories you're keeping an eye on. Green: this month is heading below your 3-month average; orange: above it.
+        The categories you're keeping an eye on. Tap a month for its transactions. Green: this month is heading below your 3-month average; orange: above it.
         {data && !data.chosen ? ' These are suggestions until you pick your own.' : ''}
       </Text>
       <Button title="Choose categories" kind="plain" onPress={() => setPicking(true)} />
-      {data?.list.map((w) => <WatchCard key={w.category.id} t={t} w={w} />)}
+      {data?.list.map((w) => <WatchCard key={w.category.id} t={t} w={w}
+        onMonth={(m) => showTxns({ title: `${w.category.name} · ${monthName(m)}`, from: m, to: monthEnd(m), categoryIds: [w.category.id], noTransfers: true })} />)}
+      {txnSheet}
       {data && !data.list.length && <Card><Text style={{ color: t.muted }}>Nothing on the list yet.</Text></Card>}
       {data && (
         <MultiPicker visible={picking} title="Watch list" onClose={() => setPicking(false)} selected={selected} onChange={change}

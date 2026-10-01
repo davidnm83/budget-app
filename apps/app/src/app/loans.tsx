@@ -5,6 +5,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AccountSheet, BalanceChart, LoanBlock } from '@/components/AccountSheet';
+import { useTxnSheet } from '@/components/TxnSheet';
 import { Button, Card, Segmented } from '@/components/ui';
 import { loadTxnsFor, type Row } from '@/lib/accountTxns';
 import { loadAccounts, today } from '@/lib/plan';
@@ -18,6 +19,7 @@ export default function Loans() {
   const [pick, setPick] = useState<string | null>(null);
   const [open, setOpen] = useState<Account | null>(null);
   const [error, setError] = useState('');
+  const [showTxns, txnSheet] = useTxnSheet();
 
   const load = useCallback(async () => {
     try {
@@ -50,12 +52,14 @@ export default function Loans() {
           </Pressable>
           <LoanBlock t={t} a={loan} txns={mine} />
           {mine.length > 0 && (
-            <Card><BalanceChart t={t} points={balanceHistory(signedBalance(loan), mine.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)} /></Card>
+            <Card><BalanceChart t={t} points={balanceHistory(signedBalance(loan), mine.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)}
+              onPick={(from, to) => showTxns({ title: `${loan.name} · week of ${shortDate(from)}`, from, to, accountIds: [loan.id] })} /></Card>
           )}
           <List t={t} title="Payments" rows={mine.filter((x) => x.amount > 0)} />
           <List t={t} title="Interest" rows={mine.filter((x) => x.amount < 0 && isInterestRow(x.name))} />
         </>
       )}
+      {txnSheet}
       <AccountSheet account={open} accounts={accounts} onClose={() => setOpen(null)} onChanged={load} />
     </ScrollView>
   );

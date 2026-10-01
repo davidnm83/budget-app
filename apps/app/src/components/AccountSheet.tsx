@@ -7,7 +7,7 @@
 // The overview is built from small blocks so they can be reused on custom pages later.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
-  accountIcon, addDays, balanceHistory, cardCycle, cardStatus, expandPlan, formatMoney, loanSummary, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatus, expandPlan, formatMoney, loanSummary, monthEnd, monthName,
   monthlyFlow, shortDate, todayIn, utilization,
 } from '@budget-app/core';
 import { router } from 'expo-router';
@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
 import { afterClose, useBackToClose } from '@/lib/useBackToClose';
+import { useTxnSheet } from '@/components/TxnSheet';
 
 const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
@@ -47,6 +48,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
   const [history, setHistory] = useState<Txn[] | null>(null);
   const [list, setList] = useState<{ id: string; date: string; amount: number; display_name: string; category_name: string | null }[]>([]);
   useBackToClose(!!account, onClose);
+  const [showTxns, txnSheet] = useTxnSheet();
 
   useEffect(() => {
     if (!account) return;
@@ -95,14 +97,17 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
               <>
                 {account.type === 'loan' && <LoanBlock t={t} a={account} txns={history} />}
                 {account.type === 'credit' && <CardBlock t={t} a={account} txns={history} onSetUp={() => setTab('details')} />}
-                {account.type === 'depository' && <CashBlock t={t} a={account} txns={history} onClose={onClose} />}
+                {account.type === 'depository' && <CashBlock t={t} a={account} txns={history} onClose={onClose}
+                  onMonth={(m) => showTxns({ title: `${account.name} · ${monthName(m)}`, from: m, to: monthEnd(m), accountIds: [account.id] })} />}
                 {account.current_balance != null && history.length > 0 && (
-                  <BalanceChart t={t} points={balanceHistory(signedBalance(account), history.filter((x) => x.date >= addDays(today(), -371)), today(), 53, 7)} />
+                  <BalanceChart t={t} points={balanceHistory(signedBalance(account), history.filter((x) => x.date >= addDays(today(), -371)), today(), 53, 7)}
+                    onPick={(from, to) => showTxns({ title: `${account.name} · week of ${shortDate(from)}`, from, to, accountIds: [account.id] })} />
                 )}
               </>
             )}
           </ScrollView>
         )}
+        {txnSheet}
         {tab === 'details' && <DetailsTab t={t} account={account} accounts={accounts} onChanged={onChanged} onClose={onClose} />}
         {tab === 'txns' && (
           <FlatList
@@ -230,7 +235,7 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
 }
 
 /** Cash accounts: cash flow and what the planner has coming up. */
-function CashBlock({ t, a, txns, onClose }: { t: Theme; a: Account; txns: Txn[]; onClose: () => void }) {
+function CashBlock({ t, a, txns, onClose, onMonth }: { t: Theme; a: Account; txns: Txn[]; onClose: () => void; onMonth: (month: string) => void }) {
   const now = today();
   const flow = monthlyFlow(txns, now, 6);
   const thisMonth = flow[flow.length - 1];
@@ -258,7 +263,7 @@ function CashBlock({ t, a, txns, onClose }: { t: Theme; a: Account; txns: Txn[];
           <Legend t={t} color={t.series1} label="In" /><Legend t={t} color={t.series2} label="Out" />
         </View>
         {flow.map((f) => (
-          <View key={f.month} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Pressable key={f.month} onPress={() => onMonth(f.month)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Text style={{ color: t.muted, width: 32, fontSize: 12 }}>{monthName(f.month, false).slice(0, 3)}</Text>
             <View style={{ flex: 1, gap: 2 }}>
               <Bar value={f.in} max={max} color={t.series1} height={5} />
@@ -267,7 +272,7 @@ function CashBlock({ t, a, txns, onClose }: { t: Theme; a: Account; txns: Txn[];
             <Text style={{ color: f.in - f.out < 0 ? t.danger : t.muted, width: 64, textAlign: 'right', fontSize: 12, fontVariant: ['tabular-nums'] }}>
               {f.in - f.out < 0 ? '−' : '+'}{money0(Math.abs(f.in - f.out))}
             </Text>
-          </View>
+          </Pressable>
         ))}
       </Section>
       <Section t={t} title="Coming up (next 30 days)">
@@ -467,7 +472,8 @@ const Small = ({ t, label, value, onChange }: { t: Theme; label: string; value: 
 );
 
 /** Weekly balance for the past year as a thin-column area, low to high, with the range labelled. */
-export function BalanceChart({ t, points, title = 'BALANCE, PAST YEAR' }: { t: Theme; points: { date: string; balance: number }[]; title?: string }) {
+/** Weekly balance bars. Hover or press shows the value; with `onPick`, a tap opens that week's transactions. */
+export function BalanceChart({ t, points, title = 'BALANCE, PAST YEAR', onPick }: { t: Theme; points: { date: string; balance: number }[]; title?: string; onPick?: (from: string, to: string) => void }) {
   const { lo, hi } = useMemo(() => {
     const vs = points.map((p) => p.balance);
     const min = Math.min(...vs), max = Math.max(...vs);
@@ -486,6 +492,7 @@ export function BalanceChart({ t, points, title = 'BALANCE, PAST YEAR' }: { t: T
         <View style={[styles.chart, { borderColor: t.line }]}>
           {points.map((p, i) => (
             <Pressable key={p.date} onHoverIn={() => setHover(i)} onHoverOut={() => setHover(null)} onPressIn={() => setHover(i)}
+              onPress={onPick ? () => onPick(i > 0 ? addDays(points[i - 1].date, 1) : addDays(p.date, -6), p.date) : undefined}
               style={{ flex: 1, height: '100%', justifyContent: 'flex-end' }}>
               <View style={{ height: `${Math.max(2, ((p.balance - lo) / (hi - lo)) * 100)}%`, backgroundColor: hover === i ? t.accent : t.series1, opacity: hover === i ? 1 : 0.8, marginHorizontal: 0.5, borderTopLeftRadius: 2, borderTopRightRadius: 2 }} />
             </Pressable>
@@ -496,6 +503,7 @@ export function BalanceChart({ t, points, title = 'BALANCE, PAST YEAR' }: { t: T
           <Text style={{ color: t.muted, fontSize: 11 }}>{money0(lo)}</Text>
         </View>
       </View>
+      {onPick && <Text style={{ color: t.muted, fontSize: 11 }}>Tap a bar for that week’s transactions.</Text>}
     </View>
   );
 }

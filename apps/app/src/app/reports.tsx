@@ -1,18 +1,24 @@
-// Reports tab (RPT-1, 2, 3): spending by category with drill-down, cash flow by month with income
-// by source, and spending by merchant. All for a chosen date range.
+// Reports (RPT-1, 2, 3): spending by category, cash flow by month with income by source, and
+// spending by merchant, for a chosen date range; tap anything for its transactions. Plus your own
+// tabs, each a set of widgets you pick (kept in user_prefs.report_tabs).
 import { addMonths, formatMoney, monthEnd, monthName, todayIn } from '@budget-app/core';
 // Month totals cover whole months; ranges here always start on the 1st and end today or at a month end.
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Bar, Card, Chip, Empty, Segmented } from '@/components/ui';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useTxnSheet } from '@/components/TxnSheet';
+import { Widget, WidgetPicker } from '@/components/Widgets';
+import { loadPrefs, savePrefs, type ReportTab } from '@/lib/prefs';
+import { Bar, Card, Chip, Empty } from '@/components/ui';
 import {
   loadCategories, loadCategoryMonths, loadMerchants, loadMonthSummaries, thisMonth,
   type Category, type CategoryMonth, type MerchantTotal, type MonthSummary,
 } from '@/lib/reports';
 import { useTheme, type Theme } from '@/lib/theme';
 
-type Tab = 'categories' | 'cashflow' | 'merchants';
+type Tab = string; // 'categories' | 'cashflow' | 'merchants' | a custom tab's id
+const BUILT_IN = [{ id: 'categories', name: 'Categories' }, { id: 'cashflow', name: 'Cash flow' }, { id: 'merchants', name: 'Merchants' }];
 type RangeKey = 'month' | 'last' | '3m' | 'year' | '12m' | 'all';
 const RANGES: { key: RangeKey; label: string }[] = [
   { key: 'month', label: 'This month' }, { key: 'last', label: 'Last month' }, { key: '3m', label: '3 months' },
@@ -45,9 +51,16 @@ export default function Reports() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const range = rangeOf(rk);
+  const [showTxns, txnSheet] = useTxnSheet();
+  const [tabs, setTabs] = useState<ReportTab[]>([]);
+  const [editTab, setEditTab] = useState<ReportTab | null>(null);
+  const [tabName, setTabName] = useState('');
+  const [refresh, setRefresh] = useState(0);
+  const custom = tabs.find((x) => x.id === tab) ?? null;
 
   const load = useCallback(async () => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setRefresh((r) => r + 1);
+    loadPrefs().then((p) => setTabs(p.report_tabs ?? [])).catch(() => {});
     try {
       const r = rangeOf(rk);
       const [c, s, m, inc] = await Promise.all([
@@ -64,22 +77,59 @@ export default function Reports() {
   }, [rk]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const open = (q: Record<string, string>) =>
-    router.push(`/report?${new URLSearchParams({ from: range.from, to: range.to, ...q }).toString()}` as any);
+  // Drill-down: the transactions behind a number, in a slide-over.
+  const open = (q: Record<string, string>) => {
+    const from = q.month ?? range.from, to = q.month ? monthEnd(q.month) : range.to;
+    showTxns({
+      title: q.title ?? '', from, to, category: q.category, group: q.group, merchant: q.merchant,
+      kind: (q.kind as any) ?? (q.merchant || q.group ? 'expense' : undefined), noTransfers: true,
+    });
+  };
+  const saveTabs = async (next: ReportTab[]) => { await savePrefs({ report_tabs: next }); setTabs(next); };
+  const newTab = () => { const x = { id: `t${Date.now().toString(36)}`, name: '', widgets: [] }; setTabName(''); setEditTab(x); };
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-    <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
-      <Segmented<Tab> value={tab} onChange={setTab}
-        options={[{ value: 'categories', label: 'Categories' }, { value: 'cashflow', label: 'Cash flow' }, { value: 'merchants', label: 'Merchants' }]} />
-    </View>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={styles.tabBar}>
+      {[...BUILT_IN, ...tabs].map((x) => (
+        <Pressable key={x.id} onPress={() => setTab(x.id)} onLongPress={() => { const c = tabs.find((y) => y.id === x.id); if (c) { setTabName(c.name); setEditTab(c); } }}
+          style={[styles.tab, { borderColor: tab === x.id ? t.accent : t.line, backgroundColor: tab === x.id ? t.accent : t.card }]}>
+          <Text style={{ color: tab === x.id ? '#fff' : t.text, fontWeight: '600' }}>{x.name || 'Untitled'}</Text>
+        </Pressable>
+      ))}
+      <Pressable onPress={newTab} style={[styles.tab, { borderColor: t.line, borderStyle: 'dashed' }]} accessibilityLabel="Add a tab">
+        <Ionicons name="add" size={16} color={t.accent} /><Text style={{ color: t.accent, fontWeight: '600' }}>Tab</Text>
+      </Pressable>
+    </ScrollView>
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-      <View style={styles.chips}>{RANGES.map((r) => <Chip key={r.key} label={r.label} on={rk === r.key} onPress={() => setRk(r.key)} />)}</View>
+      {!custom && <View style={styles.chips}>{RANGES.map((r) => <Chip key={r.key} label={r.label} on={rk === r.key} onPress={() => setRk(r.key)} />)}</View>}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+      {custom && (
+        <>
+          {custom.widgets.map((k) => <Widget key={k} k={k} refresh={refresh} />)}
+          {!custom.widgets.length && <Empty text="No widgets on this tab yet." />}
+          <Pressable onPress={() => { setTabName(custom.name); setEditTab(custom); }} style={styles.editTab}>
+            <Ionicons name="options-outline" size={16} color={t.accent} /><Text style={{ color: t.accent }}>Edit this tab</Text>
+          </Pressable>
+        </>
+      )}
       {tab === 'categories' && <ByCategory t={t} cats={cats} rows={rows} open={open} />}
       {tab === 'cashflow' && <CashFlow t={t} months={months} sources={sources} open={open} />}
       {tab === 'merchants' && <ByMerchant t={t} list={merchants} open={open} />}
     </ScrollView>
+    {txnSheet}
+    {editTab && (
+      <WidgetPicker place="report" current={editTab.widgets} title={tabs.some((x) => x.id === editTab.id) ? 'Edit tab' : 'New tab'}
+        header={<TextInput value={tabName} onChangeText={setTabName} placeholder="Tab name, e.g. Car or Monthly check-in" placeholderTextColor={t.muted}
+          style={[styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }]} />}
+        save={async (keys) => {
+          const x = { ...editTab, name: tabName.trim() || 'My tab', widgets: keys };
+          await saveTabs(tabs.some((y) => y.id === x.id) ? tabs.map((y) => (y.id === x.id ? x : y)) : [...tabs, x]);
+          setTab(x.id);
+        }}
+        onDelete={tabs.some((x) => x.id === editTab.id) ? async () => { await saveTabs(tabs.filter((x) => x.id !== editTab.id)); setTab('categories'); setEditTab(null); } : undefined}
+        onClose={() => setEditTab(null)} onSaved={() => {}} />
+    )}
     </View>
   );
 }
@@ -147,14 +197,14 @@ function CashFlow({ t, months, sources, open }: { t: Theme; months: MonthSummary
       </View>
       <Card style={{ gap: 12 }}>
         {months.map((m) => (
-          <View key={m.month} style={{ gap: 3 }}>
+          <Pressable key={m.month} onPress={() => open({ month: m.month, title: monthName(m.month) })} style={{ gap: 3 }}>
             <View style={styles.between}>
               <Text style={{ color: t.text, fontWeight: '600' }}>{monthName(m.month)}</Text>
               <Text style={{ color: m.income + m.spending < 0 ? t.danger : t.muted }}>net {m.income + m.spending < 0 ? '−' : '+'}{money0(Math.abs(m.income + m.spending))}</Text>
             </View>
             <View style={styles.flowRow}><View style={{ flex: 1 }}><Bar value={m.income} max={max} color={t.series1} /></View><Text style={[styles.flowNum, { color: t.text }]}>{money0(m.income)}</Text></View>
             <View style={styles.flowRow}><View style={{ flex: 1 }}><Bar value={-m.spending} max={max} color={t.series2} /></View><Text style={[styles.flowNum, { color: t.text }]}>{money0(-m.spending)}</Text></View>
-          </View>
+          </Pressable>
         ))}
       </Card>
       {sources.length > 0 && (
@@ -197,6 +247,10 @@ function ByMerchant({ t, list, open }: { t: Theme; list: MerchantTotal[]; open: 
 }
 
 const styles = StyleSheet.create({
+  tabBar: { gap: 6, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
+  tab: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 7 },
+  editTab: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12 },
+  input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15 },
   page: { paddingHorizontal: 12, paddingTop: 4, gap: 10, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' },
   h: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },

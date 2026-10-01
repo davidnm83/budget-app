@@ -4,7 +4,7 @@
 // Settings: gas (L/100 km × $/L), and when each app pays out, which feeds the planner.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
-  addDays, costPerKmFrom, formatDuration, formatMoney, fuelCostFor, GIG_PLATFORMS, partsOf, platformByKey, shiftStats, shortDate,
+  addDays, costPerKmFrom, formatDuration, monthEnd, formatMoney, fuelCostFor, GIG_PLATFORMS, partsOf, platformByKey, shiftStats, shortDate,
   summarizePayouts, todayIn, totalsByPlatform, totalShifts, weekStart, type Payout, type PayoutRule, type ShiftPart,
 } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
@@ -16,6 +16,7 @@ import { Button, Card, Chip, Segmented } from '@/components/ui';
 import { costPerKm, loadGigSettings, loadPayoutRules, loadShifts, saveShift, type GigSettings, type ShiftRow } from '@/lib/gig';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
+import { useTxnSheet } from '@/components/TxnSheet';
 
 interface AccountLite { id: string; name: string; mask: string | null; type: string; plan_include: boolean }
 
@@ -35,6 +36,8 @@ export default function Gig() {
   const [accounts, setAccounts] = useState<AccountLite[]>([]);
   const [gas90, setGas90] = useState(0);
   const [hasCategory, setHasCategory] = useState(true);
+  const [gigIds, setGigIds] = useState<string[]>([]);
+  const [showTxns, txnSheet] = useTxnSheet();
   const [editing, setEditing] = useState<Partial<ShiftRow> | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState('');
@@ -45,7 +48,7 @@ export default function Gig() {
     try {
       const { data: cats } = await supabase.from('categories').select('id, name').or('name.ilike.gig work,name.ilike.gig income');
       const gigIds = (cats ?? []).map((c: any) => c.id);
-      setHasCategory(gigIds.length > 0);
+      setHasCategory(gigIds.length > 0); setGigIds(gigIds);
       const [p, s, st, r, gas, acc] = await Promise.all([
         gigIds.length
           ? supabase.from('transaction_lines').select('date, amount, merchant').in('category_id', gigIds).gte('date', from).gt('amount', 0).limit(5000)
@@ -82,7 +85,8 @@ export default function Gig() {
         </View>
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
         {view === 'earnings'
-          ? <Earnings t={t} sum={sum} target={settings.weekly_target} hasCategory={hasCategory} onSettings={() => setShowSettings(true)} />
+          ? <Earnings t={t} sum={sum} target={settings.weekly_target} hasCategory={hasCategory} onSettings={() => setShowSettings(true)}
+              onRange={(title, from, to) => showTxns({ title, from, to, categoryIds: gigIds, kind: 'income' })} />
           : <Shifts t={t} shifts={shifts} cpk={cpk} onEdit={setEditing} onSettings={() => setShowSettings(true)} />}
       </ScrollView>
       {view === 'shifts' && (
@@ -90,6 +94,7 @@ export default function Gig() {
           <Ionicons name="add" size={28} color="#fff" />
         </Pressable>
       )}
+      {txnSheet}
       {editing && <ShiftForm initial={editing} settings={settings} onClose={() => setEditing(null)} onSaved={load} />}
       {showSettings && (
         <SettingsForm initial={settings} rules={rules} accounts={accounts} suggestedCpk={costPerKmFrom(gas90, km90)} gas90={gas90} km90={km90}
@@ -101,8 +106,9 @@ export default function Gig() {
 }
 
 // ───────────────────────── earnings ─────────────────────────
-function Earnings({ t, sum, target, hasCategory, onSettings }: {
+function Earnings({ t, sum, target, hasCategory, onSettings, onRange }: {
   t: Theme; sum: ReturnType<typeof summarizePayouts>; target: number | null; hasCategory: boolean; onSettings: () => void;
+  onRange: (title: string, from: string, to: string) => void;
 }) {
   const maxWeek = Math.max(1, target ?? 0, ...sum.weeks.map((w) => w.total));
   const colorOf = (key: string) => PLATFORM_COLORS[key] ?? t.muted;
@@ -135,7 +141,7 @@ function Earnings({ t, sum, target, hasCategory, onSettings }: {
         </View>
         <View style={styles.chart}>
           {sum.weeks.map((w) => (
-            <View key={w.week} style={styles.barCol}>
+            <Pressable key={w.week} style={styles.barCol} onPress={() => onRange(`Gig pay · week of ${shortDate(w.week)}`, w.week, addDays(w.week, 6))}>
               <Text style={{ color: t.muted, fontSize: 9 }} numberOfLines={1}>{w.total ? money0(w.total).replace('$', '') : ''}</Text>
               <View style={{ flex: 1, width: '100%', justifyContent: 'flex-end' }}>
                 {Object.entries(w.byPlatform).sort().map(([k, v]) => (
@@ -143,7 +149,7 @@ function Earnings({ t, sum, target, hasCategory, onSettings }: {
                 ))}
               </View>
               <Text style={{ color: t.muted, fontSize: 9 }} numberOfLines={1}>{shortDate(w.week).replace(/^\w+ /, '')}</Text>
-            </View>
+            </Pressable>
           ))}
           {target ? <View style={{ position: 'absolute', left: 0, right: 0, bottom: 14 + (target / maxWeek) * (CHART_H - 28), borderTopWidth: 1, borderStyle: 'dashed', borderColor: t.text, opacity: 0.4 }} /> : null}
         </View>
@@ -155,7 +161,7 @@ function Earnings({ t, sum, target, hasCategory, onSettings }: {
             </View>
           ))}
         </View>
-        <Text style={{ color: t.muted, fontSize: 12 }}>Average of the last 8 full weeks: {formatMoney(sum.avgWeek)}</Text>
+        <Text style={{ color: t.muted, fontSize: 12 }}>Average of the last 8 full weeks: {formatMoney(sum.avgWeek)} · tap a week for its payouts</Text>
       </Card>
 
       <Card style={{ padding: 0 }}>
@@ -166,11 +172,11 @@ function Earnings({ t, sum, target, hasCategory, onSettings }: {
           <Text style={[styles.mCell, { color: t.muted, fontWeight: '700' }]}>Total</Text>
         </View>
         {[...sum.months].reverse().map((m) => (
-          <View key={m.month} style={[styles.mRow, { borderColor: t.line }]}>
+          <Pressable key={m.month} style={[styles.mRow, { borderColor: t.line }]} onPress={() => onRange(`Gig pay · ${monthLabel(m.month)}`, `${m.month}-01`, monthEnd(`${m.month}-01`))}>
             <Text style={[styles.mCell, { color: t.text, flex: 1.2, textAlign: 'left' }]}>{monthLabel(m.month)}</Text>
             {used.map((k) => <Text key={k} style={[styles.mCell, { color: t.text }]}>{m.byPlatform[k] ? money0(m.byPlatform[k]) : '–'}</Text>)}
             <Text style={[styles.mCell, { color: t.text, fontWeight: '700' }]}>{money0(m.total)}</Text>
-          </View>
+          </Pressable>
         ))}
       </Card>
 

@@ -1,11 +1,12 @@
 // Credit cards (VIEW-1): every card's balance, limit and utilisation, what's left on each
 // statement and the interest it would cost if unpaid, plus total card debt and utilisation over
 // the past year. Tap a card for its full page.
-import { addDays, balanceHistory, cardCycle, cardStatus, formatMoney, shortDate, utilization } from '@budget-app/core';
+import { addDays, balanceHistory, cardCycle, cardStatus, formatMoney, monthEnd, monthName, shortDate, utilization } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AccountSheet, BalanceChart } from '@/components/AccountSheet';
+import { useTxnSheet } from '@/components/TxnSheet';
 import { Bar, Card } from '@/components/ui';
 import { loadAccounts, today } from '@/lib/plan';
 import { loadTxnsFor, type Row } from '@/lib/accountTxns';
@@ -21,6 +22,7 @@ export default function Credit() {
   const [txns, setTxns] = useState<Row[]>([]);
   const [open, setOpen] = useState<Account | null>(null);
   const [error, setError] = useState('');
+  const [showTxns, txnSheet] = useTxnSheet();
 
   const load = useCallback(async () => {
     try {
@@ -100,25 +102,28 @@ export default function Credit() {
         {!cards.length && <Text style={{ color: t.muted, padding: 12 }}>No credit cards yet.</Text>}
       </Card>
 
-      {debtTrend.length > 1 && <Card><BalanceChart t={t} points={debtTrend} title="TOTAL CARD DEBT, PAST YEAR" /></Card>}
+      {debtTrend.length > 1 && <Card><BalanceChart t={t} points={debtTrend} title="TOTAL CARD DEBT, PAST YEAR"
+        onPick={(from, to) => showTxns({ title: `Cards · week of ${shortDate(from)}`, from, to, accountIds: cards.map((c) => c.id) })} /></Card>}
 
       {utilTrend.length > 1 && (
         <Card style={{ gap: 6 }}>
           <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', letterSpacing: 0.5 }}>UTILISATION AT MONTH END</Text>
           <View style={styles.utilChart}>
             {utilTrend.map((p) => (
-              <View key={p.date} style={{ flex: 1, alignItems: 'center', gap: 2 }}>
+              <Pressable key={p.date} style={{ flex: 1, alignItems: 'center', gap: 2 }}
+                onPress={() => showTxns({ title: `Cards · ${monthName(p.date.slice(0, 7) + '-01')}`, from: p.date.slice(0, 7) + '-01', to: monthEnd(p.date.slice(0, 7) + '-01'), accountIds: cards.map((c) => c.id) })}>
                 <Text style={{ color: t.muted, fontSize: 9 }}>{Math.round(p.u * 100)}%</Text>
                 <View style={{ flex: 1, width: '70%', justifyContent: 'flex-end' }}>
                   <View style={{ height: `${Math.min(100, p.u * 100)}%`, backgroundColor: p.u > 0.7 ? t.danger : p.u > 0.3 ? t.series2 : t.accent, borderRadius: 2 }} />
                 </View>
                 <Text style={{ color: t.muted, fontSize: 9 }}>{new Date(p.date + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' })}</Text>
-              </View>
+              </Pressable>
             ))}
           </View>
-          <Text style={{ color: t.muted, fontSize: 11 }}>Under 30% is generally better for your credit score. Uses today’s limits.</Text>
+          <Text style={{ color: t.muted, fontSize: 11 }}>Under 30% is generally better for your credit score. Uses today’s limits. Tap a month for its card transactions.</Text>
         </Card>
       )}
+      {txnSheet}
       <AccountSheet account={open} accounts={accounts} onClose={() => setOpen(null)} onChanged={load} />
     </ScrollView>
   );

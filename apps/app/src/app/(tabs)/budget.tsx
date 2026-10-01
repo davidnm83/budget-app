@@ -17,6 +17,7 @@ import {
 } from '@/lib/reports';
 import { loadGroupIcons } from '@/lib/categories';
 import { DEFAULT_BUDGET, Widget, WidgetPicker } from '@/components/Widgets';
+import { useTxnSheet, type TxnQuery } from '@/components/TxnSheet';
 import { costPerKm, loadGigSettings, loadShifts } from '@/lib/gig';
 import { loadPrefs } from '@/lib/prefs';
 import { TransactionEditor } from '@/components/TransactionEditor';
@@ -69,7 +70,8 @@ export default function BudgetTab() {
   }, [month]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const data = { t, cats, groupIcons, widgets, setWidgets, gigGas, refresh, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
+  const [showTxns, txnSheet] = useTxnSheet();
+  const data = { t, cats, groupIcons, widgets, setWidgets, gigGas, refresh, showTxns, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
     <TopBar>
@@ -85,12 +87,13 @@ export default function BudgetTab() {
       {view === 'compare' && <CompareView {...data} />}
       {view === 'year' && <YearView {...data} />}
     </ScrollView>
+    {txnSheet}
     </View>
   );
 }
 
 interface Data {
-  t: Theme; cats: Category[]; groupIcons: Record<string, string>; widgets: string[]; setWidgets: (w: string[]) => void; gigGas: Record<string, number>; refresh: number; budgets: Budget[]; rows: CategoryMonth[]; summaries: MonthSummary[];
+  t: Theme; cats: Category[]; groupIcons: Record<string, string>; widgets: string[]; setWidgets: (w: string[]) => void; gigGas: Record<string, number>; refresh: number; showTxns: (q: TxnQuery) => void; budgets: Budget[]; rows: CategoryMonth[]; summaries: MonthSummary[];
   month: Month; setMonth: (m: Month) => void; reload: () => void; setError: (e: string) => void; setView: (v: View_) => void;
 }
 
@@ -108,11 +111,10 @@ function actualOfKey(d: Data, key: string, m: Month): number {
 }
 
 function drill(d: Data, line: { categoryId: string | null; groupName: string | null; label: string }, from: string, to: string) {
-  const q = new URLSearchParams({ from, to, title: line.label });
-  if (line.categoryId) q.set('category', line.categoryId);
-  else if (line.groupName) q.set('group', line.groupName);
-  else q.set('category', 'none');
-  afterClose(() => router.push(`/report?${q.toString()}` as any));
+  d.showTxns({
+    title: `${line.label} · ${monthName(from.slice(0, 7) + '-01')}`, from, to, noTransfers: true,
+    ...(line.categoryId ? { category: line.categoryId } : line.groupName ? { group: line.groupName } : { category: 'none' }),
+  });
 }
 
 // ───────────────────────── Month ─────────────────────────
@@ -641,7 +643,7 @@ function YearView(d: Data) {
   return (
     <>
       <Stepper label={String(year)} onPrev={() => setYear(year - 1)} onNext={() => setYear(year + 1)} nextDisabled={year >= Number(thisMonth().slice(0, 4))} />
-      <Text style={{ color: t.muted, fontSize: 13 }}>Spending per month. Where a budget was set, it shows underneath; red means over. Scroll sideways for all 12 months.</Text>
+      <Text style={{ color: t.muted, fontSize: 13 }}>Spending per month. Where a budget was set, it shows underneath; red means over. Scroll sideways for all 12 months; tap an amount for its transactions.</Text>
       {!lines.length ? <Empty text={`No spending in ${year}.`} /> : (
         <Card style={{ padding: 0 }}>
           <ScrollView horizontal>
@@ -658,10 +660,11 @@ function YearView(d: Data) {
                     const b = budgetFor(l.key, months[i]);
                     const over = b !== undefined && v > b;
                     return (
-                      <View key={i} style={styles.yCellBox}>
+                      <Pressable key={i} style={styles.yCellBox} disabled={!v}
+                        onPress={() => drill(d, l.key.startsWith('g:') ? { categoryId: null, groupName: l.label, label: l.label } : { categoryId: l.key.slice(2), groupName: null, label: l.label }, months[i], monthEnd(months[i]))}>
                         <Text style={{ color: over ? t.danger : v ? t.text : t.muted, textAlign: 'right', fontSize: 13 }}>{v ? money0(v) : '–'}</Text>
                         {b !== undefined && <Text style={{ color: t.muted, textAlign: 'right', fontSize: 11 }}>{over ? '! ' : ''}of {money0(b)}</Text>}
-                      </View>
+                      </Pressable>
                     );
                   })}
                   <Text style={[styles.yCell, { color: t.text, fontWeight: '600' }]}>{money0(l.values.reduce((s, v) => s + v, 0))}</Text>

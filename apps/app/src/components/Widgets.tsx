@@ -9,11 +9,12 @@ import { router } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
+import { useTxnSheet } from '@/components/TxnSheet';
 import { Bar, Button, Segmented } from '@/components/ui';
 import { costPerKm, loadGigSettings, loadShifts } from '@/lib/gig';
 import { loadAccounts, loadEntries, loadRecurring, today } from '@/lib/plan';
 import { savePrefs } from '@/lib/prefs';
-import { loadMonthSummaries, thisMonth } from '@/lib/reports';
+import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth } from '@/lib/reports';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
 import { loadWatch, type Watched } from '@/lib/watch';
@@ -34,12 +35,15 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'gig', title: 'Gig work this week', about: 'Earnings, hours and $/hour so far this week', home: true, budget: true },
   { key: 'calendar', title: 'Bills calendar', about: 'This month’s bills and income on a calendar', home: true, budget: true },
   { key: 'nwtypes', title: 'Net worth by type', about: 'Cash, cards, loans and investments', home: true, budget: false },
+  { key: 'groups', title: 'Spending by group', about: 'This month by category group, with last month beside it', home: true, budget: true },
 ];
 export const DEFAULT_HOME = ['review', 'week', 'budget', 'networth'];
 export const DEFAULT_BUDGET: string[] = [];
 
-export function CardShell({ t, title, link, onPress, children }: { t: Theme; title: string; link?: string; onPress?: () => void; children: ReactNode }) {
+/** `after` renders outside the pressable card (pop-ups opened from inside it, so their taps don't reach the card). */
+export function CardShell({ t, title, link, onPress, children, after }: { t: Theme; title: string; link?: string; onPress?: () => void; children: ReactNode; after?: ReactNode }) {
   return (
+    <>
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { backgroundColor: t.card, borderColor: t.line, opacity: pressed && onPress ? 0.85 : 1 }]}>
       <View style={styles.between}>
         <Text style={{ color: t.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>{title.toUpperCase()}</Text>
@@ -47,6 +51,8 @@ export function CardShell({ t, title, link, onPress, children }: { t: Theme; tit
       </View>
       {children}
     </Pressable>
+    {after}
+    </>
   );
 }
 
@@ -80,6 +86,7 @@ export function Widget({ k, refresh = 0 }: { k: string; refresh?: number }) {
     case 'gig': return <GigWeek t={t} refresh={refresh} />;
     case 'calendar': return <BillsCalendar t={t} refresh={refresh} />;
     case 'nwtypes': return <NetWorthByType t={t} refresh={refresh} />;
+    case 'groups': return <SpendingByGroup t={t} refresh={refresh} />;
     default: return null;
   }
 }
@@ -128,6 +135,7 @@ function Runway({ t, refresh }: { t: Theme; refresh: number }) {
 function AvgSpending({ t, refresh }: { t: Theme; refresh: number }) {
   const [span, setSpan] = useState<'3' | '6' | '12'>('3');
   const { data } = useLoad(() => loadMonthSummaries(addMonths(thisMonth(), -12), monthEnd(thisMonth())), [refresh]);
+  const [showTxns, txnSheet] = useTxnSheet();
   if (!data) return <CardShell t={t} title="Average spending"><Text style={{ color: t.muted }}>Loading…</Text></CardShell>;
   const cur = thisMonth();
   const full = data.filter((m) => m.month < cur).sort((a, b) => b.month.localeCompare(a.month)).slice(0, Number(span));
@@ -138,11 +146,13 @@ function AvgSpending({ t, refresh }: { t: Theme; refresh: number }) {
   const projected = spent + (avg / daysIn) * (daysIn - day); // so far + the usual for the days left
   const color = projected > avg * 1.05 ? t.series2 : t.accent;
   return (
-    <CardShell t={t} title="Average spending" link="Reports" onPress={() => router.push('/reports')}>
+    <CardShell t={t} after={txnSheet} title="Average spending" link="Reports" onPress={() => router.push('/reports')}>
       <Segmented value={span} onChange={setSpan} options={[{ value: '3', label: '3 months' }, { value: '6', label: '6 months' }, { value: '12', label: '12 months' }]} />
       <View style={styles.tiles}>
         <Mini t={t} label={`Average · ${full.length} mo`} value={money0(avg)} sub="per month" />
-        <Mini t={t} label="This month" value={money0(spent)} sub={`heading for ${money0(projected)}`} color={color} />
+        <Pressable style={{ flex: 1 }} onPress={() => showTxns({ title: 'Spending this month', from: cur, to: monthEnd(cur), kind: 'expense' })}>
+          <Mini t={t} label="This month" value={money0(spent)} sub={`heading for ${money0(projected)}`} color={color} />
+        </Pressable>
       </View>
       <Bar value={projected} max={Math.max(avg, projected)} color={color} />
     </CardShell>
@@ -151,17 +161,19 @@ function AvgSpending({ t, refresh }: { t: Theme; refresh: number }) {
 
 function WatchMini({ t, refresh }: { t: Theme; refresh: number }) {
   const { data } = useLoad(() => loadWatch(today()), [refresh]);
+  const [showTxns, txnSheet] = useTxnSheet();
+  const m = thisMonth();
   const list: Watched[] = data ? [...data.list].sort((a, b) => (b.projected - b.avg3) - (a.projected - a.avg3)).slice(0, 4) : [];
   return (
-    <CardShell t={t} title="Spending watch" link="Watch list" onPress={() => router.push('/watch' as any)}>
+    <CardShell t={t} after={txnSheet} title="Spending watch" link="Watch list" onPress={() => router.push('/watch' as any)}>
       {!data ? <Text style={{ color: t.muted }}>Loading…</Text> : !list.length ? <Text style={{ color: t.muted }}>Pick categories on the watch list.</Text> : list.map((w) => {
         const up = w.projected > w.avg3;
         return (
-          <View key={w.category.id} style={styles.row}>
+          <Pressable key={w.category.id} style={styles.row} onPress={() => showTxns({ title: `${w.category.name} · this month`, from: m, to: monthEnd(m), categoryIds: [w.category.id], noTransfers: true })}>
             <Text style={{ color: t.text, flex: 1, fontSize: 13 }} numberOfLines={1}>{w.category.name}</Text>
             <Text style={{ color: t.muted, fontSize: 12, fontVariant: ['tabular-nums'] }}>{money0(w.thisMonth)} → {money0(w.projected)}</Text>
             <Text style={{ color: up ? t.series2 : t.accent, fontSize: 12, fontWeight: '700', width: 64, textAlign: 'right' }}>{up ? '▲' : '▼'} {money0(Math.abs(w.projected - w.avg3))}</Text>
-          </View>
+          </Pressable>
         );
       })}
       <Text style={{ color: t.muted, fontSize: 11 }}>This month so far → where it’s heading, vs the 3-month average.</Text>
@@ -220,6 +232,7 @@ function GigWeek({ t, refresh }: { t: Theme; refresh: number }) {
 function BillsCalendar({ t, refresh }: { t: Theme; refresh: number }) {
   const month: Month = thisMonth();
   const end = monthEnd(month);
+  const [showTxns, txnSheet] = useTxnSheet();
   const { data } = useLoad(async () => {
     const [rec, ent] = await Promise.all([loadRecurring(), loadEntries(addDays(month, -31), addDays(end, 31))]);
     return expandPlan(rec, ent, month, end).filter((p) => !p.transfer);
@@ -234,7 +247,7 @@ function BillsCalendar({ t, refresh }: { t: Theme; refresh: number }) {
   const out = (data ?? []).filter((p) => p.amount < 0).reduce((s, p) => s + p.amount, 0);
   const inn = (data ?? []).filter((p) => p.amount > 0).reduce((s, p) => s + p.amount, 0);
   return (
-    <CardShell t={t} title={`Bills · ${new Date(month + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'long', timeZone: 'UTC' })}`} link="Bills" onPress={() => router.push('/bills')}>
+    <CardShell t={t} after={txnSheet} title={`Bills · ${new Date(month + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'long', timeZone: 'UTC' })}`} link="Bills" onPress={() => router.push('/bills')}>
       <View style={styles.calHead}>{['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <Text key={i} style={[styles.calCell, { color: t.muted, fontSize: 10 }]}>{d}</Text>)}</View>
       <View style={styles.calGrid}>
         {cells.map((d, i) => {
@@ -243,15 +256,16 @@ function BillsCalendar({ t, refresh }: { t: Theme; refresh: number }) {
           const n = amounts.filter((a) => a > 0).reduce((s, a) => s + a, 0);
           const isToday = d && `${month.slice(0, 8)}${String(d).padStart(2, '0')}` === now;
           return (
-            <View key={i} style={[styles.calCell, styles.calBox, { borderColor: isToday ? t.accent : 'transparent' }]}>
+            <Pressable key={i} disabled={!d} onPress={() => { const day = `${month.slice(0, 8)}${String(d).padStart(2, '0')}`; showTxns({ title: `${shortDate(day)}`, from: day, to: day, noTransfers: true }); }}
+              style={[styles.calCell, styles.calBox, { borderColor: isToday ? t.accent : 'transparent' }]}>
               {d ? <Text style={{ color: t.muted, fontSize: 10 }}>{d}</Text> : null}
               {o ? <Text style={{ color: t.danger, fontSize: 9, fontVariant: ['tabular-nums'] }} numberOfLines={1}>{money0(-o).replace('$', '')}</Text> : null}
               {n ? <Text style={{ color: t.positive, fontSize: 9, fontVariant: ['tabular-nums'] }} numberOfLines={1}>+{money0(n).replace('$', '')}</Text> : null}
-            </View>
+            </Pressable>
           );
         })}
       </View>
-      <Text style={{ color: t.muted, fontSize: 12 }}>Bills {money0(-out)} · income {money0(inn)} this month</Text>
+      <Text style={{ color: t.muted, fontSize: 12 }}>Bills {money0(-out)} · income {money0(inn)} this month · tap a day for what posted</Text>
     </CardShell>
   );
 }
@@ -282,10 +296,48 @@ function NetWorthByType({ t, refresh }: { t: Theme; refresh: number }) {
   );
 }
 
-/** Choose which widgets a screen shows and their order. */
-export function WidgetPicker({ place, current, onClose, onSaved }: { place: 'home' | 'budget'; current: string[]; onClose: () => void; onSaved: (keys: string[]) => void }) {
+function SpendingByGroup({ t, refresh }: { t: Theme; refresh: number }) {
+  const [showTxns, txnSheet] = useTxnSheet();
+  const cur = thisMonth(), last = addMonths(cur, -1);
+  const { data } = useLoad(async () => {
+    const [cats, rows] = await Promise.all([loadCategories(), loadCategoryMonths(last, cur)]);
+    const m = new Map<string, { now: number; prev: number }>();
+    for (const r of rows) {
+      if (r.kind !== 'expense') continue;
+      const g = cats.find((c) => c.id === r.category_id)?.group ?? 'Uncategorised';
+      const e = m.get(g) ?? m.set(g, { now: 0, prev: 0 }).get(g)!;
+      if (r.month === cur) e.now -= r.total; else e.prev -= r.total;
+    }
+    return [...m.entries()].map(([group, v]) => ({ group, ...v })).filter((x) => x.now > 0.5 || x.prev > 0.5).sort((a, b) => b.now - a.now);
+  }, [refresh]);
+  const max = Math.max(1, ...(data ?? []).flatMap((g) => [g.now, g.prev]));
+  return (
+    <CardShell t={t} after={txnSheet} title="Spending by group" link="Reports" onPress={() => router.push('/reports')}>
+      {!data ? <Text style={{ color: t.muted }}>Loading…</Text> : data.slice(0, 10).map((g) => (
+        <Pressable key={g.group} style={{ gap: 3 }} onPress={() => showTxns({ title: `${g.group} · this month`, from: cur, to: monthEnd(cur), group: g.group, kind: 'expense' })}>
+          <View style={styles.between}>
+            <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{g.group}</Text>
+            <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{money0(g.now)} <Text style={{ color: t.muted }}>· last {money0(g.prev)}</Text></Text>
+          </View>
+          <Bar value={g.now} max={max} color={t.series1} height={5} />
+        </Pressable>
+      ))}
+    </CardShell>
+  );
+}
+
+const HOME_ONLY = ['review', 'week', 'budget', 'networth'];
+
+/**
+ * Choose which widgets a screen shows and their order. Home and Budget save to your prefs; a
+ * Reports tab passes `save` (and a name field as `header`, plus `onDelete`).
+ */
+export function WidgetPicker({ place, current, onClose, onSaved, save: saveFn, title, header, onDelete }: {
+  place: 'home' | 'budget' | 'report'; current: string[]; onClose: () => void; onSaved: (keys: string[]) => void;
+  save?: (keys: string[]) => Promise<void>; title?: string; header?: ReactNode; onDelete?: () => void;
+}) {
   const t = useTheme();
-  const avail = WIDGETS.filter((w) => w[place]);
+  const avail = place === 'report' ? WIDGETS.filter((w) => !HOME_ONLY.includes(w.key)) : WIDGETS.filter((w) => w[place]);
   const [on, setOn] = useState<string[]>(current.filter((k) => avail.some((w) => w.key === k)));
   const [error, setError] = useState('');
   const order = [...on, ...avail.map((w) => w.key).filter((k) => !on.includes(k))];
@@ -295,11 +347,20 @@ export function WidgetPicker({ place, current, onClose, onSaved }: { place: 'hom
     const next = [...list]; [next[i], next[j]] = [next[j], next[i]]; return next;
   });
   const save = async () => {
-    try { await savePrefs(place === 'home' ? { home_widgets: on } : { budget_widgets: on }); onSaved(on); onClose(); }
+    try {
+      if (saveFn) await saveFn(on);
+      else await savePrefs(place === 'home' ? { home_widgets: on } : { budget_widgets: on });
+      onSaved(on); onClose();
+    }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   return (
-    <Sheet title={place === 'home' ? 'Home widgets' : 'Budget widgets'} onClose={onClose} footer={<Button title="Save" onPress={save} />}>
+    <Sheet title={title ?? (place === 'home' ? 'Home widgets' : 'Budget widgets')} onClose={onClose}
+      footer={<View style={{ flexDirection: 'row', gap: 8 }}>
+        {onDelete ? <Button title="Delete tab" kind="danger" onPress={onDelete} /> : null}
+        <Button title="Save" onPress={save} style={{ flex: 1 }} />
+      </View>}>
+      {header}
       <Text style={{ color: t.muted, fontSize: 13 }}>Turn widgets on or off; arrows change the order.{place === 'budget' ? ' They show above your budget.' : ''}</Text>
       {order.map((k) => {
         const w = avail.find((x) => x.key === k)!; const active = on.includes(k);
