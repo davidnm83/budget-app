@@ -124,6 +124,24 @@ function MonthView(d: Data) {
     add(groups.map((g) => ({ group_name: g, amount: suggestion(`g:${g}`) })).filter((r) => r.amount > 0));
   };
 
+  // Category budgets sit under their group with a subtotal, as in Fina.
+  const groupedExpenses = useMemo(() => {
+    const groupOf = (l: BudgetLine) => l.groupName ?? d.cats.find((c) => c.id === l.categoryId)?.group ?? 'Other';
+    const sortOf = (l: BudgetLine) => (l.groupName ? -1 : d.cats.find((c) => c.id === l.categoryId)?.sort ?? 0);
+    const order: string[] = [];
+    const m = new Map<string, BudgetLine[]>();
+    for (const l of [...view.expenses].sort((a, b) => sortOf(a) - sortOf(b))) {
+      const g = groupOf(l);
+      if (!m.has(g)) { m.set(g, []); order.push(g); }
+      m.get(g)!.push(l);
+    }
+    const firstSort = (g: string) => Math.min(...m.get(g)!.map((l) => (l.groupName ? Math.min(...d.cats.filter((c) => c.group === g && !c.hidden).map((c) => c.sort), 1e9) : sortOf(l))));
+    return order.sort((a, b) => firstSort(a) - firstSort(b)).map((group) => {
+      const lines = m.get(group)!;
+      return { group, lines, available: lines.reduce((x, l) => x + l.available, 0), actual: lines.reduce((x, l) => x + l.actual, 0) };
+    });
+  }, [view, d.cats]);
+
   const pastMonths = d.summaries.filter((s) => s.month < current && s.month !== month);
   const tot = view.totals;
   const spentPct = tot.budgetedExpenses ? tot.actualExpenses / tot.budgetedExpenses : 0;
@@ -145,6 +163,12 @@ function MonthView(d: Data) {
           <Text style={{ color: t.muted }}>Money in</Text>
           <Text style={{ color: t.text }}>{formatMoney(tot.actualIncome)}{tot.budgetedIncome ? <Text style={{ color: t.muted }}> of {formatMoney(tot.budgetedIncome)} expected</Text> : null}</Text>
         </View>
+        {tot.budgetedIncome > 0 && tot.budgetedExpenses > 0 && (
+          <Text style={{ color: t.muted }}>
+            Plan: {formatMoney(tot.budgetedIncome)} in − {formatMoney(tot.budgetedExpenses)} budgeted = {' '}
+            <Text style={{ color: tot.budgetedIncome < tot.budgetedExpenses ? t.danger : t.text, fontWeight: '600' }}>{formatMoney(tot.budgetedIncome - tot.budgetedExpenses)} unbudgeted</Text>
+          </Text>
+        )}
         {tot.budgetedExpenses > 0 && (
           <Text style={{ color: spentPct > 1 ? t.danger : t.muted }}>
             {spentPct > 1 ? `Over budget by ${formatMoney(tot.actualExpenses - tot.budgetedExpenses)}` : `${formatMoney(tot.budgetedExpenses - tot.actualExpenses)} left to spend`}
@@ -162,9 +186,16 @@ function MonthView(d: Data) {
         </Card>
       )}
 
-      {view.expenses.length > 0 && <Text style={[styles.h, { color: t.muted }]}>Spending</Text>}
-      {view.expenses.map((l) => (
-        <BudgetLineRow key={l.key} d={d} line={l} editing={editing === l.key} onEdit={() => setEditing(editing === l.key ? null : l.key)} />
+      {groupedExpenses.map((g) => (
+        <View key={g.group} style={{ gap: 8 }}>
+          <View style={[styles.between, { marginTop: 8 }]}>
+            <Text style={[styles.h, { color: t.muted, marginTop: 0 }]}>{g.group}</Text>
+            <Text style={{ color: g.actual > g.available ? t.danger : t.muted, fontSize: 13 }}>{money0(g.actual)} of {money0(g.available)}</Text>
+          </View>
+          {g.lines.map((l) => (
+            <BudgetLineRow key={l.key} d={d} line={l} editing={editing === l.key} onEdit={() => setEditing(editing === l.key ? null : l.key)} />
+          ))}
+        </View>
       ))}
 
       {view.income.length > 0 && <Text style={[styles.h, { color: t.muted }]}>Money in</Text>}

@@ -153,12 +153,13 @@ describe('loans', () => {
   });
 });
 
-import { isTransferCategory, plaidCategoryToName } from '../src/index.ts';
+import { isTransferCategory, plaidCategoryNames, plaidCategoryToName } from '../src/index.ts';
 describe('plaid category mapping', () => {
   it('maps detailed codes, then shorter prefixes', () => {
     expect(plaidCategoryToName('FOOD_AND_DRINK_GROCERIES', 'FOOD_AND_DRINK')).toBe('Groceries');
-    expect(plaidCategoryToName('FOOD_AND_DRINK_FAST_FOOD', 'FOOD_AND_DRINK')).toBe('Restaurants');
-    expect(plaidCategoryToName('GENERAL_MERCHANDISE_ELECTRONICS', 'GENERAL_MERCHANDISE')).toBe('Shopping');
+    expect(plaidCategoryNames('FOOD_AND_DRINK_FAST_FOOD', 'FOOD_AND_DRINK')).toEqual(['Fast food', 'Restaurants']);
+    expect(plaidCategoryNames('GENERAL_MERCHANDISE_ELECTRONICS', 'GENERAL_MERCHANDISE')).toEqual(['Accessories', 'Shopping', 'General goods']);
+    expect(plaidCategoryToName('INCOME_WAGES', 'INCOME')).toBe('Paycheck');
     expect(plaidCategoryToName(null, 'TRAVEL')).toBeNull();
     expect(isTransferCategory('LOAN_PAYMENTS', 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT')).toBe(true);
   });

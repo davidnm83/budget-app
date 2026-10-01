@@ -121,7 +121,7 @@ export default function FinaImport() {
       {fina && (
         <Card style={{ gap: 8 }}>
           <Text style={[styles.h, { color: t.text }]}>3. Categories</Text>
-          <Text style={{ color: t.muted }}>Your {fina.categories.length} Fina categories, in starting groups. You can regroup them later.</Text>
+          <Text style={{ color: t.muted }}>Your {fina.categories.length} Fina categories, grouped and ordered as in Fina.</Text>
           {groups.map(([g, names]) => (
             <Text key={g} style={{ color: t.text }}><Text style={{ fontWeight: '600' }}>{g}: </Text>{names.join(', ')}</Text>
           ))}

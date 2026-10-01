@@ -21,13 +21,14 @@ export default function Accounts() {
   const [editing, setEditing] = useState<string | null>(null);
   const [balance, setBalance] = useState('');
 
-  // Manual accounts (CSV or Fina) have no bank feed: tap one to type its balance.
+  // Manual accounts (CSV or Fina) have no bank feed: type today's balance once and the app works
+  // out a start balance; from then on balance = start + transactions, like Fina's auto balance.
   const saveBalance = async (a: Account) => {
     const v = Number(balance.replace(/[$,\s]/g, ''));
     if (balance.trim() && !isNaN(v)) {
-      // Cards and loans are stored as the amount owing (positive), like Plaid does.
-      const stored = a.type === 'credit' || a.type === 'loan' ? Math.abs(v) : v;
-      const { error } = await supabase.from('accounts').update({ current_balance: stored, balance_updated_at: new Date().toISOString() }).eq('id', a.id);
+      // What you owe on a card or loan is negative in the app's sign, whichever way you type it.
+      const today = a.type === 'credit' || a.type === 'loan' ? -Math.abs(v) : v;
+      const { error } = await supabase.rpc('set_balance_today', { p_account: a.id, p_balance: today });
       if (error) setMsg(error.message);
     }
     setEditing(null);
@@ -36,10 +37,11 @@ export default function Accounts() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('accounts').select('*').eq('is_hidden', false).order('name');
+    // account_balances = accounts with manual balances worked out (start balance + transactions).
+    const { data, error } = await supabase.from('account_balances').select('*').eq('is_hidden', false).order('name');
     setLoading(false);
     if (error) setMsg(error.message);
-    else setAccounts((data ?? []) as Account[]);
+    else setAccounts((data ?? []).map((a: any) => ({ ...a, current_balance: a.balance, balance_updated_at: a.balance_as_of })) as Account[]);
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -95,12 +97,12 @@ export default function Accounts() {
             <Button title="Save" onPress={() => saveBalance(item)} />
           </View>
         ) : (
-          <Pressable disabled={item.kind !== 'manual'} onPress={() => { setEditing(item.id); setBalance(item.current_balance == null ? '' : String(item.current_balance)); }}
+          <Pressable disabled={item.kind !== 'manual'} onPress={() => { setEditing(item.id); setBalance(item.current_balance == null ? '' : String(Math.abs(Number(item.current_balance)))); }}
             style={[styles.row, { backgroundColor: t.card, borderColor: t.line }]}>
             <View style={{ flex: 1 }}>
               <Text style={{ color: t.text, fontSize: 16 }} numberOfLines={1}>{item.name}{item.mask ? ` ••${item.mask}` : ''}</Text>
               <Text style={{ color: t.muted, fontSize: 12 }}>
-                {item.kind === 'manual' ? 'Manual' : item.balance_updated_at ? `Updated ${new Date(item.balance_updated_at).toLocaleString()}` : ''}
+                {item.kind === 'manual' ? (item.current_balance == null ? 'Manual · tap to set the balance' : 'Manual · auto balance · tap to correct') : item.balance_updated_at ? `Updated ${new Date(item.balance_updated_at).toLocaleString()}` : ''}
               </Text>
             </View>
             <Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>

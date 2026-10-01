@@ -89,7 +89,8 @@ export default function ImportScreen() {
       const added = await importRows(target, preview.add);
       const b = balance.trim() ? Number(balance.replace(/[$,\s]/g, '')) : NaN;
       if (!isNaN(b)) {
-        await supabase.from('accounts').update({ current_balance: b, balance_updated_at: new Date().toISOString() }).eq('id', target.id);
+        const owed = target.type === 'credit' || target.type === 'loan';
+        await supabase.rpc('set_balance_today', { p_account: target.id, p_balance: owed ? -Math.abs(b) : b });
       }
       setDone(`Imported ${added} transaction(s) into ${target.name}.` + (preview.duplicates.length ? ` Skipped ${preview.duplicates.length} already there.` : ''));
       setFile(null);

@@ -44,7 +44,7 @@ export interface FinaAccount {
   subtype: string;
 }
 
-export interface FinaCategory { name: string; kind: CategoryKind; group: string; rows: number }
+export interface FinaCategory { name: string; kind: CategoryKind; group: string; sort: number; rows: number }
 
 export interface FinaExport {
   rows: FinaRow[];
@@ -67,32 +67,53 @@ export function finaAccountName(name: string): string {
 }
 
 /**
- * Starting groups for Fina's categories (the export has no groups). Rename or move them in the
- * app afterwards. Unknown names fall back to Other / Income / Transfers.
+ * Fina's default category tree (expenses), in Fina's order. Categories not listed here keep
+ * their own name as a one-category group, like Fina's top-level ones ("Gifts & donations").
+ * Rename or move them in the app afterwards.
  */
-const GROUPS: Record<string, string> = {
-  'fast food': 'Food', restaurants: 'Food', 'food delivery': 'Food', groceries: 'Food', snacks: 'Food',
-  creami: 'Food', 'movie snacks': 'Food',
-  gas: 'Car & transport', 'car payments': 'Car & transport', 'car wash': 'Car & transport', parking: 'Car & transport',
-  'parking tickets': 'Car & transport', 'public transportation': 'Car & transport', 'other transportation': 'Car & transport',
-  'vehicle insurance': 'Car & transport', 'vehicle repairs & maintenance': 'Car & transport', 'license & vehicle fees': 'Car & transport',
-  'phone bill': 'Bills & subscriptions', phone: 'Bills & subscriptions', tv: 'Bills & subscriptions', music: 'Bills & subscriptions',
-  news: 'Bills & subscriptions', software: 'Bills & subscriptions', rent: 'Bills & subscriptions', 'installment plan': 'Bills & subscriptions',
-  clothing: 'Shopping', shoes: 'Shopping', accessories: 'Shopping', 'general goods': 'Shopping', shopping: 'Shopping', shipping: 'Shopping',
-  'household items': 'Home', 'household supplies': 'Home', furniture: 'Home',
-  keyboard: 'Tech', laptop: 'Tech', pc: 'Tech', tablet: 'Tech',
-  movies: 'Entertainment', gaming: 'Entertainment', gambling: 'Entertainment',
-  gym: 'Health & fitness', sports: 'Health & fitness', medical: 'Health & fitness', medication: 'Health & fitness', eyecare: 'Health & fitness',
-  hair: 'Personal care', toiletries: 'Personal care', tailor: 'Personal care',
-  tuition: 'Education', 'books & supplies': 'Education', printing: 'Education', 'student loan': 'Education',
-  'bank charges & fees': 'Fees & interest', 'credit card interest': 'Fees & interest', 'credit card debt': 'Fees & interest',
-  'gifts & donations': 'Gifts', 'air travel': 'Travel', 'work expenses': 'Work', 'professional services': 'Work',
-};
+const FINA_TREE: [string, string[]][] = [
+  ['Home', ['rent', 'furniture', 'household items']],
+  ['Bills & utilities', ['phone bill']],
+  ['Fees & charges', ['bank charges & fees', 'credit card interest', 'installment plan', 'credit card debt']],
+  ['Food & dining', ['groceries', 'fast food', 'snacks', 'food delivery', 'restaurants', 'coffee shops', 'movie snacks', 'creami']],
+  ['Transportation', ['car payments', 'vehicle repairs & maintenance', 'public transportation', 'gas', 'other transportation', 'taxis',
+    'parking', 'parking tickets', 'license & vehicle fees', 'vehicle insurance', 'car wash']],
+  ['Subscription services', ['shopping', 'tv', 'sports', 'music', 'news', 'other', 'gaming subscription']],
+  ['Shopping', ['clothing', 'general goods', 'shoes', 'household supplies', 'software', 'gaming']],
+  ['Electronics', ['accessories', 'keyboard', 'pc', 'phone', 'tablet', 'laptop']],
+  ['Health & wellness', ['medical', 'gym', 'other health & wellness', 'dentist', 'eyecare', 'health insurance', 'medication']],
+  ['Travel & vacation', ['air travel', 'hotel']],
+  ['Entertainment', ['gambling', 'alcohol & bars', 'movies']],
+  ['Personal care', ['hair', 'laundry', 'toiletries']],
+  ['Services', ['printing', 'professional services', 'shipping', 'tailor']],
+  ['Education', ['student loan', 'tuition', 'books & supplies']],
+  ['Gifts & donations', ['gifts & donations']],
+  ['Investments', ['investments']],
+  ['Taxes', ['taxes']],
+  ['Insurance', ['insurance']],
+  ['Other expenses', ['other expenses']],
+  ['Moving expenses', ['moving expenses']],
+  ['Work expenses', ['work expenses']],
+  ['Savings', ['savings']],
+];
+const FINA_INCOME = ['paycheck', 'repayment from others', 'other income', 'money from family', 'tax returns & benefits', 'cashback', 'interest income', 'sales', 'student loans'];
+const FINA_TRANSFERS = ['transfer', 'credit card payment', 'buy & trade', 'sell & trade'];
+
+const GROUP_OF = new Map<string, { group: string; order: number }>();
+FINA_TREE.forEach(([group, names], gi) => names.forEach((n, i) => GROUP_OF.set(n, { group, order: gi * 100 + i })));
 
 export function finaCategoryGroup(type: string, kind: CategoryKind): string {
   if (kind === 'income') return 'Income';
   if (kind === 'transfer') return 'Transfers';
-  return GROUPS[type.trim().toLowerCase()] ?? 'Other';
+  return GROUP_OF.get(type.trim().toLowerCase())?.group ?? finaCategoryName(type);
+}
+
+/** Sort position that keeps Fina's order: income first, then expense groups as Fina lists them, transfers last. */
+export function finaCategorySort(type: string, kind: CategoryKind): number {
+  const n = type.trim().toLowerCase();
+  if (kind === 'income') return 100 + Math.max(0, FINA_INCOME.indexOf(n)) ;
+  if (kind === 'transfer') return 9000 + Math.max(0, FINA_TRANSFERS.indexOf(n));
+  return 1000 + (GROUP_OF.get(n)?.order ?? 7000);
 }
 
 /** "CIBC Chequing - 8691" → "8691"; "Ford Escape- 32481975" → "1975"; no number → null. */
@@ -170,12 +191,12 @@ export function parseFinaExport(text: string): FinaExport {
     const key = r.category.toLowerCase();
     const c = categories.get(key);
     if (c) c.rows++;
-    else categories.set(key, { name: r.category, kind: r.kind, group: finaCategoryGroup(r.category, r.kind), rows: 1 });
+    else categories.set(key, { name: r.category, kind: r.kind, group: finaCategoryGroup(r.category, r.kind), sort: finaCategorySort(r.category, r.kind), rows: 1 });
   }
   return {
     rows,
     accounts: [...accounts.values()].sort((x, y) => y.rows - x.rows),
-    categories: [...categories.values()].sort((x, y) => x.group.localeCompare(y.group) || x.name.localeCompare(y.name)),
+    categories: [...categories.values()].sort((x, y) => x.sort - y.sort || x.name.localeCompare(y.name)),
   };
 }
 

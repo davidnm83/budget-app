@@ -23,7 +23,9 @@ describe('fina import', () => {
     expect(f.rows[4].tags).toEqual(['work', 'gig']);
     expect(f.rows[2].importId).not.toBe(f.rows[3].importId); // two identical purchases stay two
     expect(parseFinaExport(FINA).rows.map((r) => r.importId)).toEqual(f.rows.map((r) => r.importId)); // stable
-    expect(f.categories.find((c) => c.name === 'Snacks')).toMatchObject({ group: 'Food', rows: 2 });
+    expect(f.categories.find((c) => c.name === 'Snacks')).toMatchObject({ group: 'Food & dining', rows: 2 });
+    expect(f.categories.find((c) => c.name === 'Bank Charges & Fees')?.group).toBe('Fees & charges');
+    expect(f.categories.map((c) => c.name)).toEqual(['Paycheck', 'Bank Charges & Fees', 'Snacks', 'Vehicle repairs & maintenance', 'Credit card payment']);
     expect(f.categories.find((c) => c.name === 'Paycheck')?.group).toBe('Income');
     expect(f.accounts[0]).toMatchObject({ name: 'Bank Chequing - 1111', rows: 5, mask: '1111', type: 'depository', first: '2026-09-01', last: '2026-09-03' });
   });

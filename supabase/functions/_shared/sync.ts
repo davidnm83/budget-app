@@ -12,7 +12,7 @@
 import type { Admin } from './supabase.ts';
 import { plaid, PlaidError, RELINK_CODES } from './plaid.ts';
 import {
-  addDays, fromPlaidAmount, isTransferCategory, matchHistory, merchantFor, plaidCategoryToName, suggestCategory,
+  addDays, fromPlaidAmount, isTransferCategory, matchHistory, merchantFor, plaidCategoryNames, suggestCategory,
   type CategoryRule, type MerchantRule,
 } from './core/index.ts';
 
@@ -117,7 +117,7 @@ async function loadUserRules(admin: Admin, userId: string) {
     matchText: r.match_text, categoryId: r.category_id, accountId: r.account_id, minAmount: r.min_amount, maxAmount: r.max_amount,
   }));
   // Plaid's category only maps onto categories you still use (not hidden ones).
-  const byName = new Map<string, { id: string; kind: string }>((cats.data ?? []).filter((r: any) => !r.is_hidden).map((r: any) => [r.name, { id: r.id, kind: r.kind }]));
+  const byName = new Map<string, { id: string; kind: string }>((cats.data ?? []).filter((r: any) => !r.is_hidden).map((r: any) => [String(r.name).toLowerCase(), { id: r.id, kind: r.kind }]));
   const kindById = new Map<string, string>((cats.data ?? []).map((r: any) => [r.id, r.kind]));
   return { merchantRules, categoryRules, byName, kindById };
 }
@@ -191,9 +191,10 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
       const pfc = t.personal_finance_category ?? {};
       const amount = fromPlaidAmount(t.amount);
       const accountId = accounts.get(t.account_id)!;
-      const plaidName = plaidCategoryToName(pfc.detailed, pfc.primary);
+      // First of Plaid's candidate names that you have (starter names or your own, any case).
+      const plaidName = plaidCategoryNames(pfc.detailed, pfc.primary).map((n) => n.toLowerCase()).find((n) => rules.byName.has(n));
       const plaidMap: Record<string, string> = {};
-      if (pfc.detailed && plaidName && rules.byName.has(plaidName)) plaidMap[pfc.detailed] = rules.byName.get(plaidName)!.id;
+      if (pfc.detailed && plaidName) plaidMap[pfc.detailed] = rules.byName.get(plaidName)!.id;
       const s = suggestCategory(
         { name, merchant, amount, accountId, plaidCategory: pfc.detailed ?? null },
         rules.categoryRules, learned, plaidMap,

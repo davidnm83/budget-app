@@ -73,9 +73,8 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
   if (catErr) throw new Error(catErr.message);
   const byName = new Map((cats ?? []).map((c) => [c.name.toLowerCase(), c]));
   const categoryId = new Map<string, string>(); // lowercased Fina name → id
-  const groups = [...new Set(fina.categories.map((c) => c.group))].sort();
   for (const c of fina.categories) {
-    const sort = 1000 + groups.indexOf(c.group) * 100 + fina.categories.filter((x) => x.group === c.group).indexOf(c);
+    const sort = c.sort;
     const found = byName.get(c.name.toLowerCase());
     if (found) {
       check(await supabase.from('categories').update({ name: c.name, group_name: c.group, kind: c.kind, is_hidden: false, sort }).eq('id', found.id));
