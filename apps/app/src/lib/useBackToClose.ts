@@ -2,28 +2,62 @@
 // would leave the page underneath. While a pop-up is open this adds a history entry for it:
 // back then closes the pop-up instead. Closing it with its own button removes that entry again.
 // On Android/iOS the Modal's onRequestClose already handles the back gesture.
+//
+// Open pop-ups are kept in a stack (a category picker on top of the bill form, say), and a back
+// closes only the top one. The router rewrites history entries' state as it likes, so we don't
+// rely on tags stored there.
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
+
+interface Entry { close: () => void; closedByBack: boolean }
+const stack: Entry[] = [];
+let ownBacks = 0; // history.back() calls we made ourselves, whose popstate must be ignored
+let listening = false;
+
+let waiting: (() => void)[] = [];
+function flush() { const w = waiting; waiting = []; w.forEach((f) => f()); }
+
+function onPop() {
+  if (ownBacks > 0) { ownBacks--; if (ownBacks === 0) flush(); return; }
+  const top = stack.pop();
+  if (!top) return;
+  top.closedByBack = true;
+  top.close();
+}
 
 export function useBackToClose(visible: boolean, onClose: () => void) {
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
     if (Platform.OS !== 'web' || !visible || typeof window === 'undefined') return;
-    const tag = Math.random().toString(36).slice(2);
+    if (!listening) { window.addEventListener('popstate', onPop); listening = true; }
     // Keep the router's own state in the entry so it sees "the same page" when we go back to it.
-    window.history.pushState({ ...(window.history.state ?? {}), __sheet: tag }, '');
-    let closedByBack = false;
-    const onPop = () => {
-      if ((window.history.state as any)?.__sheet === tag) return; // moved forward onto ours again
-      closedByBack = true;
-      window.removeEventListener('popstate', onPop);
-      close.current();
-    };
-    window.addEventListener('popstate', onPop);
+    window.history.pushState({ ...(window.history.state ?? {}) }, '');
+    const entry: Entry = { close: () => close.current(), closedByBack: false };
+    stack.push(entry);
     return () => {
-      window.removeEventListener('popstate', onPop);
-      if (!closedByBack && (window.history.state as any)?.__sheet === tag) window.history.back();
+      if (entry.closedByBack) return;
+      const i = stack.indexOf(entry);
+      if (i >= 0) stack.splice(i, 1);
+      ownBacks++;
+      window.history.back();
     };
   }, [visible]);
+}
+
+/**
+ * Navigate after closing a pop-up: `onClose(); afterClose(() => router.push(...))`.
+ * Closing a pop-up steps history back, which finishes a moment later; navigating before it does
+ * gets undone by that step back. On native this just runs `fn`.
+ */
+export function afterClose(fn: () => void) {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') { fn(); return; }
+  // Let React close the pop-up first (its effect cleanup is what starts the step back).
+  setTimeout(() => {
+    if (ownBacks === 0) { fn(); return; }
+    let done = false;
+    const run = () => { if (!done) { done = true; fn(); } };
+    waiting.push(run);
+    setTimeout(() => { if (!done) { ownBacks = 0; waiting = []; run(); } }, 600); // in case the step back is never reported
+  }, 80);
 }

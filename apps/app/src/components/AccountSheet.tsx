@@ -20,7 +20,7 @@ import { loadEntries, loadRecurring } from '@/lib/plan';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
-import { useBackToClose } from '@/lib/useBackToClose';
+import { afterClose, useBackToClose } from '@/lib/useBackToClose';
 
 const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
@@ -108,9 +108,9 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
           <FlatList
             data={list}
             keyExtractor={(r) => r.id}
-            ListFooterComponent={list.length >= 100 ? <Button title="See all in Transactions" kind="plain" style={{ margin: 16 }} onPress={() => { onClose(); router.navigate('/transactions' as any); }} /> : null}
+            ListFooterComponent={list.length >= 100 ? <Button title="See all in Transactions" kind="plain" style={{ margin: 16 }} onPress={() => { onClose(); afterClose(() => router.navigate('/transactions' as any)); }} /> : null}
             renderItem={({ item }) => (
-              <Pressable onPress={() => { onClose(); router.push({ pathname: '/transaction/[id]', params: { id: item.id } }); }}
+              <Pressable onPress={() => { onClose(); afterClose(() => router.push({ pathname: '/transaction/[id]', params: { id: item.id } })); }}
                 style={[styles.txn, { borderColor: t.line, backgroundColor: t.card }]}>
                 <Text style={{ color: t.muted, width: 52, fontSize: 13 }}>{shortDate(item.date)}</Text>
                 <View style={{ flex: 1 }}>
@@ -288,7 +288,7 @@ function CashBlock({ t, a, txns, onClose }: { t: Theme; a: Account; txns: Txn[];
                 <Text style={{ color: c.balance < 0 ? t.danger : t.muted, width: 80, textAlign: 'right', fontSize: 12, fontVariant: ['tabular-nums'] }}>{formatMoney(c.balance)}</Text>
               </View>
             ))}
-            <Pressable onPress={() => { onClose(); router.navigate('/planner'); }}><Text style={{ color: t.accent, fontSize: 13 }}>Open the Planner</Text></Pressable>
+            <Pressable onPress={() => { onClose(); afterClose(() => router.navigate('/planner')); }}><Text style={{ color: t.accent, fontSize: 13 }}>Open the Planner</Text></Pressable>
           </>
         )}
       </Section>

@@ -16,6 +16,7 @@ import {
   type Budget, type Category, type CategoryMonth, type MonthSummary,
 } from '@/lib/reports';
 import { loadGroupIcons } from '@/lib/categories';
+import { afterClose } from '@/lib/useBackToClose';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 
@@ -93,7 +94,7 @@ function drill(d: Data, line: { categoryId: string | null; groupName: string | n
   if (line.categoryId) q.set('category', line.categoryId);
   else if (line.groupName) q.set('group', line.groupName);
   else q.set('category', 'none');
-  router.push(`/report?${q.toString()}` as any);
+  afterClose(() => router.push(`/report?${q.toString()}` as any));
 }
 
 // ───────────────────────── Month ─────────────────────────
