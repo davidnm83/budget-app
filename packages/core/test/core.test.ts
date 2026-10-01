@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addDays, computeLoanInterest, dedupeAgainstExisting, fromPlaidAmount, hourIn, learnMerchantRules,
-  merchantFor, normalizeDescription, parseBankCsv, parseMoney, suggestCategory, todayIn, toIsoDate, weekStart,
+  guessMerchant, merchantFor, normalizeDescription, parseBankCsv, parseMoney, suggestCategory, todayIn, toIsoDate, weekStart,
 } from '../src/index.ts';
 
 describe('money', () => {
@@ -29,6 +29,10 @@ describe('dates', () => {
     expect(toIsoDate('09/27/2026')).toBe('2026-09-27');
     expect(toIsoDate('2026/9/2')).toBe('2026-09-02');
     expect(toIsoDate('hello')).toBe('');
+    expect(toIsoDate('20 Sep 2026')).toBe('2026-09-20');
+    expect(toIsoDate('03 Sep 2026')).toBe('2026-09-03');
+    expect(toIsoDate('Sep 3, 2026')).toBe('2026-09-03');
+    expect(toIsoDate('20 Foo 2026')).toBe('');
   });
   it('knows the local hour and day for the 5 AM sync', () => {
     const t = new Date('2026-09-30T09:15:00Z'); // 5:15 AM in Toronto (EDT)
@@ -82,6 +86,16 @@ describe('categorize', () => {
   });
 });
 
+describe('guessMerchant', () => {
+  it('turns card descriptions into readable names', () => {
+    expect(guessMerchant('DOLLARAMA # 370         TORONTO')).toBe('Dollarama');
+    expect(guessMerchant('AMZN MKTP CA*5R5OD9R21  866-216-1072')).toBe('Amzn Mktp CA');
+    expect(guessMerchant('70018 CHAMPS CANADA     TORONTO')).toBe('Champs Canada');
+    expect(guessMerchant('PRESTO MOBI/SKQJTJHVZC  TORONTO')).toBe('Presto Mobi');
+    expect(guessMerchant('PAYMENT RECEIVED - THANK YOU')).toBe('Payment Received - Thank You');
+  });
+});
+
 describe('csv import', () => {
   const rogers = [
     'Date,Posted Date,Reference Number,Activity Type,Activity Status,Card Number,Merchant Category Description,Merchant Name,Merchant City,Merchant State or Province,Merchant Country Code,Merchant Postal Code,Amount,Rewards,Name on Card',
@@ -105,6 +119,15 @@ describe('csv import', () => {
     expect(parseBankCsv('2026-09-02,SHOP,25.95,\n2026-09-03,PAY,,150.00\n').rows.map((r) => r.amount)).toEqual([-25.95, 150]);
     expect(parseBankCsv('Transaction Date,Description,Amount\n2026-01-05,Thing,-3.50\n').rows[0].amount).toBe(-3.5);
     expect(() => parseBankCsv('a,b\n1,2')).toThrow(/Could not find/);
+  });
+  it('reads American Express exports (charges positive in the file)', () => {
+    const amex = 'Date,Date Processed,Description,Amount\n' +
+      '20 Sep 2026,20 Sep 2026,INTEREST,6.63\n' +
+      '19 Sep 2026,19 Sep 2026,SAMPLE STORE            555-000-0000,-21.46\n' +
+      '10 Sep 2026,12 Sep 2026,PAYMENT RECEIVED - THANK YOU,-100.00\n';
+    const p = parseBankCsv(amex);
+    expect(p.format).toBe('amex');
+    expect(p.rows.map((r) => [r.date, r.amount])).toEqual([['2026-09-20', -6.63], ['2026-09-19', 21.46], ['2026-09-10', 100]]);
   });
   it('skips rows already present, allowing a few days of date drift', () => {
     const rows = [

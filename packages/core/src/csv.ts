@@ -1,6 +1,7 @@
 /**
  * Bank CSV import for accounts Plaid can't reach.
- * Known formats: Rogers Bank Mastercard, PC Financial Mastercard. Anything else
+ * Known formats: Rogers Bank Mastercard, PC Financial Mastercard, American Express
+ * (Canada). Anything else
  * with date + description + amount (or debit/credit) columns also works,
  * including headerless CIBC-style files (date, description, debit, credit).
  */
@@ -14,7 +15,7 @@ export interface CsvRow {
 }
 
 export interface ParsedCsv {
-  format: 'rogers' | 'pcf' | 'headerless' | 'generic';
+  format: 'rogers' | 'pcf' | 'amex' | 'headerless' | 'generic';
   label: string;
   rows: CsvRow[];
   skipped: number;
@@ -70,6 +71,11 @@ export function parseBankCsv(text: string): ParsedCsv {
     const d = head.indexOf('date'), n = head.indexOf('description'), a = head.indexOf('amount');
     for (const r of data.slice(1)) push(r[d], r[n], parseMoney(r[a]));
     return { format: 'pcf', label: 'PC Financial', rows, skipped };
+  }
+  if (head.includes('date processed') && head.includes('description') && head.includes('amount')) {
+    const d = head.indexOf('date'), n = head.indexOf('description'), a = head.indexOf('amount');
+    for (const r of data.slice(1)) push(r[d], r[n], -parseMoney(r[a])); // Amex lists purchases as positive
+    return { format: 'amex', label: 'American Express', rows, skipped };
   }
   if (toIsoDate(data[0][0])) {
     for (const r of data) push(r[0], r[1], (parseMoney(r[3]) || 0) - (parseMoney(r[2]) || 0));

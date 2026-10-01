@@ -1,5 +1,5 @@
 import { formatMoney } from '@budget-app/core';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import { Button, Empty } from '@/components/ui';
@@ -54,14 +54,17 @@ export default function Accounts() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={{ padding: 16, gap: 8 }}>
-        <Button title="Sync now" onPress={syncNow} busy={syncing} />
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button title="Sync now" onPress={syncNow} busy={syncing} style={{ flex: 1 }} />
+          <Button title="Import CSV" kind="plain" onPress={() => router.push('/import')} style={{ flex: 1 }} />
+        </View>
         {!!msg && <Text style={{ color: t.muted }}>{msg}</Text>}
       </View>
       <SectionList
         sections={sections}
         keyExtractor={(a) => a.id}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-        ListEmptyComponent={<Empty text="No accounts yet. Link a bank in Settings." />}
+        ListEmptyComponent={<Empty text="No accounts yet. Link a bank in Settings, or import a CSV." />}
         renderSectionHeader={({ section }) => (
           <View style={styles.header}>
             <Text style={{ color: t.muted, fontWeight: '600' }}>{section.title}</Text>

@@ -18,6 +18,7 @@ function RootStack() {
       <Stack.Protected guard={!!session}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="transaction/[id]" options={{ title: 'Transaction', presentation: 'modal' }} />
+        <Stack.Screen name="import" options={{ title: 'Import CSV' }} />
       </Stack.Protected>
     </Stack>
   );

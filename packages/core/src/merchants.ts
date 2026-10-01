@@ -54,3 +54,19 @@ export function learnMerchantRules(rows: { name: string; merchant: string }[]): 
     .map(([match, m]) => ({ match, merchant: [...m.entries()].sort((a, b) => b[1] - a[1])[0][0] }))
     .sort((a, b) => a.match.localeCompare(b.match));
 }
+
+const KEEP_UPPER = new Set(['CA', 'US', 'TD', 'BMO', 'RBC', 'CIBC', 'LCBO', 'TTC', 'IKEA', 'HM', 'KFC', 'PC']);
+
+/**
+ * A readable merchant name from a raw card description, used for CSV imports when no
+ * merchant rule matches (Plaid supplies its own). "DOLLARAMA # 370         TORONTO" →
+ * "Dollarama"; "AMZN MKTP CA*5R5OD9R21  866-216-1072" → "Amzn Mktp CA".
+ */
+export function guessMerchant(description: string): string {
+  let d = String(description ?? '').trim().split(/\s{2,}/)[0];     // card exports pad the city into a fixed column
+  d = d.replace(/\*\S*\d\S*/g, ' ').replace(/\/[A-Z0-9]{5,}\b/gi, ' ').replace(/\*/g, ' '); // refs like *5R5OD9R21, /SKQJTJHVZC
+  d = d.replace(/(^|\s)#?\s*\d[\d-]*(?=\s|$)/g, ' ').replace(/#/g, ' '); // store numbers
+  d = d.replace(/\s+/g, ' ').trim();
+  if (!d) return '';
+  return d.split(' ').map((w) => (KEEP_UPPER.has(w.toUpperCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())).join(' ');
+}
