@@ -16,6 +16,7 @@ import {
   type Budget, type Category, type CategoryMonth, type MonthSummary,
 } from '@/lib/reports';
 import { loadGroupIcons } from '@/lib/categories';
+import { TransactionEditor } from '@/components/TransactionEditor';
 import { afterClose } from '@/lib/useBackToClose';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
@@ -107,6 +108,7 @@ function MonthView(d: Data) {
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [incomeOpen, setIncomeOpen] = useState(true);
 
   const monthBudgets = d.budgets.filter((b) => b.month === month);
   const view = useMemo(() => {
@@ -196,6 +198,14 @@ function MonthView(d: Data) {
 
       {groupedExpenses.length > 0 && (
         <Card style={{ padding: 0 }}>
+          {(() => {
+            const multi = groupedExpenses.filter((g) => !(g.lines.length === 1 && g.lines[0].groupName));
+            const allClosed = multi.length > 0 && multi.every((g) => collapsed.has(g.group));
+            return (
+              <SectionHead t={t} title="SPENDING" open={!allClosed}
+                onToggle={() => setCollapsed(allClosed ? new Set() : new Set(multi.map((g) => g.group)))} />
+            );
+          })()}
           {groupedExpenses.map((g) => {
             const open = !collapsed.has(g.group);
             const single = g.lines.length === 1 && g.lines[0].groupName;
@@ -219,8 +229,8 @@ function MonthView(d: Data) {
 
       {view.income.length > 0 && (
         <Card style={{ padding: 0 }}>
-          <Text style={[styles.cardHead, { color: t.muted }]}>MONEY IN</Text>
-          {[...view.income].sort((a, b) => b.actual - a.actual || b.available - a.available).map((l) => (
+          <SectionHead t={t} title="MONEY IN" open={incomeOpen} onToggle={() => setIncomeOpen(!incomeOpen)} />
+          {incomeOpen && [...view.income].sort((a, b) => b.actual - a.actual || b.available - a.available).map((l) => (
             <Pressable key={l.key} onPress={() => setEditing(l)} style={styles.lineRow}>
               <Line t={t} icon={catIcon(l.categoryId)} label={l.label} actual={l.actual} available={l.available} pace={pace} income />
             </Pressable>
@@ -290,6 +300,20 @@ function Line({ t, icon, label, actual, available, pace, bold, income, carry }: 
   );
 }
 
+/** A card's heading with a Collapse all / Expand all switch on the right. */
+function SectionHead({ t, title, open, onToggle }: { t: Theme; title: string; open: boolean; onToggle: () => void }) {
+  return (
+    <View style={[styles.between, { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 }]}>
+      <Text style={{ color: t.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>{title}</Text>
+      <Pressable onPress={onToggle} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+        accessibilityLabel={open ? `Collapse all ${title.toLowerCase()}` : `Expand all ${title.toLowerCase()}`}>
+        <Ionicons name={open ? 'contract-outline' : 'expand-outline'} size={14} color={t.accent} />
+        <Text style={{ color: t.accent, fontSize: 12, fontWeight: '600' }}>{open ? 'Collapse all' : 'Expand all'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 type PaceState = 'over' | 'ahead' | 'ok' | 'income';
 /** Over budget, spending ahead of the month's pace (by 10 points or more), or on track. */
 function paceState(actual: number, available: number, pace: number): PaceState {
@@ -338,7 +362,7 @@ function Tile({ t, label, value, sub, warn, color }: { t: Theme; label: string; 
 }
 
 /** The month's transactions for a budget line, listed right in its pop-up. */
-function MonthTxns({ d, line, onOpen, onAll }: { d: Data; line: BudgetLine; onOpen: (id: string) => void; onAll: () => void }) {
+function MonthTxns({ d, line, reload, onOpen, onAll }: { d: Data; line: BudgetLine; reload: number; onOpen: (id: string) => void; onAll: () => void }) {
   const { t, month } = d;
   const [rows, setRows] = useState<{ transaction_id: string; date: string; amount: number; merchant: string }[] | null>(null);
   useEffect(() => {
@@ -353,7 +377,7 @@ function MonthTxns({ d, line, onOpen, onAll }: { d: Data; line: BudgetLine; onOp
       const { data } = await q;
       setRows(((data ?? []) as any[]).map((r) => ({ ...r, amount: Number(r.amount) })));
     })();
-  }, [line.key, month]);
+  }, [line.key, month, reload]);
   return (
     <View style={{ gap: 2 }}>
       <Text style={[styles.h, { color: t.muted }]}>{monthName(month)} transactions{rows ? ` · ${rows.length}${rows.length === 60 ? '+' : ''}` : ''}</Text>
@@ -378,6 +402,8 @@ function BudgetEditor({ d, line, onClose }: { d: Data; line: BudgetLine; onClose
   const [amount, setAmount] = useState(String(line.budgeted));
   const [rollover, setRollover] = useState(line.rollover);
   const income = line.kind === 'income';
+  const [txnId, setTxnId] = useState<string | null>(null);
+  const [txnKey, setTxnKey] = useState(0);
   const last3 = [1, 2, 3].map((n) => actualOfKey(d, line.key, addMonths(month, -n)));
   const save = async () => {
     const v = Number(amount.replace(/[$,\s]/g, ''));
@@ -411,8 +437,14 @@ function BudgetEditor({ d, line, onClose }: { d: Data; line: BudgetLine; onClose
           <Switch value={rollover} onValueChange={setRollover} />
         </View>
       )}
-      <MonthTxns d={d} line={line} onOpen={(id) => { onClose(); afterClose(() => router.push({ pathname: '/transaction/[id]', params: { id } })); }}
+      <MonthTxns d={d} line={line} reload={txnKey} onOpen={setTxnId}
         onAll={() => { onClose(); drill(d, line, month, monthEnd(month)); }} />
+      {/* The transaction opens on top of this pop-up; closing it comes back here. */}
+      {txnId && (
+        <Sheet title="Transaction" scroll={false} onClose={() => setTxnId(null)}>
+          <TransactionEditor key={txnId} id={txnId} onOpen={setTxnId} onDone={() => { setTxnId(null); setTxnKey((k) => k + 1); d.reload(); }} />
+        </Sheet>
+      )}
     </Sheet>
   );
 }

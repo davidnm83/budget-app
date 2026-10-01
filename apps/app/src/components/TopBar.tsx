@@ -11,6 +11,7 @@ import { afterClose, useBackToClose } from '@/lib/useBackToClose';
 
 const ITEMS: { icon: keyof typeof Ionicons.glyphMap; label: string; href: string }[] = [
   { icon: 'repeat', label: 'Bills & income', href: '/bills' },
+  { icon: 'bicycle-outline', label: 'Gig work', href: '/gig' },
   { icon: 'bar-chart-outline', label: 'Reports', href: '/reports' },
   { icon: 'pricetags-outline', label: 'Categories', href: '/categories' },
   { icon: 'settings-outline', label: 'Settings', href: '/settings' },
