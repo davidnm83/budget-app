@@ -87,19 +87,43 @@ export function summarizePayouts(payouts: Payout[], today: IsoDate, weeks = 12, 
   };
 }
 
+/** One app's share of a shift: what it paid and how much of the time it kept you busy. */
+export interface ShiftPart {
+  platform: string; earnings: number; tips?: number | null;
+  /** Time on that app's orders. With several apps on at once these can overlap. */
+  activeMinutes?: number | null;
+  deliveries?: number | null;
+}
+
+/**
+ * A shift ("dash"): one stretch of driving with one or more apps on. Time, km and gas belong to
+ * the shift; earnings, active time and orders belong to each app (`parts`). Older single-app
+ * shifts keep platform/earnings/activeMinutes/deliveries on the shift itself.
+ */
 export interface Shift {
   date: IsoDate; platform: string;
   /** "HH:MM", optional. */
   start?: string | null; end?: string | null;
-  /** Time spent on deliveries, if the app reports it; otherwise start→end is used. */
   activeMinutes?: number | null;
   deliveries?: number | null; earnings: number; tips?: number | null; km?: number | null;
   /** What the gas for this shift cost, when known; otherwise km × cost per km. */
   fuelCost?: number | null;
+  parts?: ShiftPart[] | null;
+}
+
+export function partsOf(s: Shift): ShiftPart[] {
+  return s.parts?.length ? s.parts
+    : [{ platform: s.platform, earnings: s.earnings, tips: s.tips ?? null, activeMinutes: s.activeMinutes ?? null, deliveries: s.deliveries ?? null }];
 }
 
 export interface ShiftStats {
-  hours: number | null; perHour: number | null; perKm: number | null; perDelivery: number | null;
+  /** Dash time: start → end (or the active time when no times were logged). */
+  minutes: number | null; hours: number | null;
+  activeMinutes: number | null;
+  /** Active ÷ dash time, at most 100% (overlapping apps can add up to more). */
+  activeShare: number | null;
+  earnings: number; deliveries: number | null;
+  perHour: number | null; perActiveHour: number | null; perKm: number | null; perDelivery: number | null;
   carCost: number | null; net: number; netPerHour: number | null;
 }
 
@@ -111,20 +135,41 @@ export function minutesBetween(start: string, end: string): number | null {
   return b >= a ? b - a : b + 24 * 60 - a;
 }
 
+/** 1280 → "21h 20m"; 45 → "45m"; 180 → "3h". */
+export function formatDuration(minutes: number | null | undefined): string {
+  if (minutes == null || !isFinite(minutes)) return '–';
+  const m = Math.round(minutes);
+  const h = Math.floor(m / 60), r = m % 60;
+  return h ? (r ? `${h}h ${r}m` : `${h}h`) : `${r}m`;
+}
+
+/** Gas for a drive: km × (L/100 km) ÷ 100 × $/L. */
+export function fuelCostFor(km: number | null | undefined, litresPer100km: number | null | undefined, pricePerLitre: number | null | undefined): number | null {
+  if (!km || !litresPer100km || !pricePerLitre) return null;
+  return round2((km * litresPer100km / 100) * pricePerLitre);
+}
+
 export function shiftStats(s: Shift, costPerKm: number | null): ShiftStats {
+  const parts = partsOf(s);
+  const earnings = round2(parts.reduce((x, p) => x + (p.earnings || 0), 0));
+  const timed = parts.filter((p) => p.activeMinutes != null && p.activeMinutes > 0);
+  const activeMinutes = timed.length ? timed.reduce((x, p) => x + p.activeMinutes!, 0) : null;
+  const deliveries = parts.some((p) => p.deliveries) ? parts.reduce((x, p) => x + (p.deliveries ?? 0), 0) : null;
   const span = s.start && s.end ? minutesBetween(s.start, s.end) : null;
-  const minutes = span ?? (s.activeMinutes || null);
+  const minutes = span ?? activeMinutes;
   const hours = minutes ? minutes / 60 : null;
   const carCost = s.fuelCost != null ? round2(s.fuelCost) : s.km && costPerKm ? round2(s.km * costPerKm) : null;
-  const net = round2(s.earnings - (carCost ?? 0));
+  const net = round2(earnings - (carCost ?? 0));
+  const activeEarn = timed.reduce((x, p) => x + p.earnings, 0);
   return {
-    hours: hours != null ? round2(hours) : null,
-    perHour: hours ? round2(s.earnings / hours) : null,
-    perKm: s.km ? round2(s.earnings / s.km) : null,
-    perDelivery: s.deliveries ? round2(s.earnings / s.deliveries) : null,
-    carCost,
-    net,
-    netPerHour: hours ? round2(net / hours) : null,
+    minutes, hours: hours != null ? round2(hours) : null, activeMinutes,
+    activeShare: span && activeMinutes ? Math.min(1, activeMinutes / span) : null,
+    earnings, deliveries,
+    perHour: hours ? round2(earnings / hours) : null,
+    perActiveHour: activeMinutes ? round2(activeEarn / (activeMinutes / 60)) : null,
+    perKm: s.km ? round2(earnings / s.km) : null,
+    perDelivery: deliveries ? round2(earnings / deliveries) : null,
+    carCost, net, netPerHour: hours ? round2(net / hours) : null,
   };
 }
 
@@ -133,17 +178,117 @@ export function costPerKmFrom(gasSpend: number, km: number): number | null {
   return km > 0 && gasSpend > 0 ? Math.round((gasSpend / km) * 1000) / 1000 : null;
 }
 
-export interface ShiftTotals { shifts: number; hours: number; earnings: number; km: number; net: number; perHour: number | null; perKm: number | null }
+export interface ShiftTotals {
+  shifts: number; minutes: number; hours: number; activeMinutes: number; earnings: number; deliveries: number; km: number; net: number;
+  perHour: number | null; perActiveHour: number | null; activeShare: number | null; perKm: number | null;
+}
 
 export function totalShifts(list: Shift[], costPerKm: number | null): ShiftTotals {
-  let hours = 0, earnings = 0, km = 0, net = 0, timedEarnings = 0;
+  let minutes = 0, timedEarn = 0, active = 0, activeEarn = 0, spanForActive = 0, earnings = 0, km = 0, net = 0, deliveries = 0;
   for (const s of list) {
     const st = shiftStats(s, costPerKm);
-    if (st.hours) { hours += st.hours; timedEarnings += s.earnings; }
-    earnings += s.earnings; km += s.km ?? 0; net += st.net;
+    if (st.minutes) { minutes += st.minutes; timedEarn += st.earnings; }
+    if (st.activeMinutes) {
+      active += st.activeMinutes;
+      activeEarn += partsOf(s).filter((p) => p.activeMinutes).reduce((x, p) => x + p.earnings, 0);
+      if (s.start && s.end) spanForActive += Math.max(st.minutes ?? 0, 0);
+    }
+    earnings += st.earnings; km += s.km ?? 0; net += st.net; deliveries += st.deliveries ?? 0;
   }
   return {
-    shifts: list.length, hours: round2(hours), earnings: round2(earnings), km: round2(km), net: round2(net),
-    perHour: hours ? round2(timedEarnings / hours) : null, perKm: km ? round2(earnings / km) : null,
+    shifts: list.length, minutes, hours: round2(minutes / 60), activeMinutes: active, earnings: round2(earnings), deliveries,
+    km: round2(km), net: round2(net),
+    perHour: minutes ? round2(timedEarn / (minutes / 60)) : null,
+    perActiveHour: active ? round2(activeEarn / (active / 60)) : null,
+    activeShare: spanForActive ? Math.min(1, active / spanForActive) : null,
+    perKm: km ? round2(earnings / km) : null,
   };
+}
+
+export interface PlatformTotals { platform: string; shifts: number; earnings: number; activeMinutes: number; deliveries: number; perActiveHour: number | null }
+
+/** Per app across shifts, biggest earner first. */
+export function totalsByPlatform(list: Shift[]): PlatformTotals[] {
+  const m = new Map<string, PlatformTotals & { activeEarn: number }>();
+  for (const s of list) {
+    for (const p of partsOf(s)) {
+      const x = m.get(p.platform) ?? { platform: p.platform, shifts: 0, earnings: 0, activeMinutes: 0, deliveries: 0, perActiveHour: null, activeEarn: 0 };
+      x.shifts++; x.earnings += p.earnings; x.deliveries += p.deliveries ?? 0;
+      if (p.activeMinutes) { x.activeMinutes += p.activeMinutes; x.activeEarn += p.earnings; }
+      m.set(p.platform, x);
+    }
+  }
+  return [...m.values()].map(({ activeEarn, ...x }) => ({
+    ...x, earnings: round2(x.earnings), perActiveHour: x.activeMinutes ? round2(activeEarn / (x.activeMinutes / 60)) : null,
+  })).sort((a, b) => b.earnings - a.earnings);
+}
+
+// ───────────────────────── payouts in the planner ─────────────────────────
+
+export interface PayoutRule {
+  platform: string;
+  /** weekly: last week's earnings land on `weekday`; instant: each shift's pay lands that day, less the fee. */
+  mode: 'weekly' | 'instant' | 'off';
+  /** 0 = Monday … 6 = Sunday. */
+  weekday: number;
+  instantFee: number;
+  accountId: string | null;
+  matchText: string | null;
+}
+
+export const DEFAULT_MATCH: Record<string, string> = { doordash: 'DOORDASH', uber: 'UBER', instacart: 'INSTACART', skip: 'SKIP', lyft: 'LYFT', 'naan-kabob': 'NAAN KABOB' };
+
+/** The payout date for a week's work (Monday `week`): the first `weekday` after that week ends. */
+export function weeklyPayoutDate(week: IsoDate, weekday: number): IsoDate {
+  return addDays(week, 7 + ((weekday % 7) + 7) % 7);
+}
+
+/**
+ * Planned gig income between `from` and `to`, as planner items. Weekly apps: logged earnings of
+ * the week before, on the payout day. Instant: each shift's earnings less the fee, the same day.
+ * With `averages` (per app, per week), weeks with less logged than usual use the average instead,
+ * so the plan has an estimate before the shifts happen.
+ */
+export function gigPlanned(shifts: Shift[], rules: PayoutRule[], from: IsoDate, to: IsoDate,
+  today: IsoDate, averages: Record<string, number> | null = null) {
+  const out: { key: string; date: IsoDate; description: string; amount: number; accountId: string | null; categoryId: string | null;
+    estimated: boolean; matchText: string | null; recurringId: null; occurrenceDate: null; entryId: null; transfer: false; matchedTxnId: null }[] = [];
+  const thisWeek = weekStart(today);
+  for (const r of rules.filter((x) => x.mode !== 'off' && x.accountId)) {
+    const name = platformByKey(r.platform).name;
+    const base = { accountId: r.accountId, categoryId: null, estimated: true, matchText: r.matchText ?? DEFAULT_MATCH[r.platform] ?? null,
+      recurringId: null, occurrenceDate: null, entryId: null, transfer: false as const, matchedTxnId: null };
+    if (r.mode === 'instant') {
+      for (const s of shifts) {
+        if (s.date < from || s.date > to) continue;
+        const earned = partsOf(s).filter((p) => p.platform === r.platform).reduce((x, p) => x + p.earnings, 0);
+        if (earned > 0) out.push({ ...base, key: `gig:${r.platform}:${s.date}:${s.start ?? ''}`, date: s.date, description: `${name} instant pay`, amount: round2(earned - r.instantFee) });
+      }
+      continue;
+    }
+    // Weekly: every work week whose payout day falls in the range.
+    for (let w = weekStart(addDays(from, -14)); w <= to; w = addDays(w, 7)) {
+      const date = weeklyPayoutDate(w, r.weekday);
+      if (date < from || date > to) continue;
+      const logged = round2(shifts.filter((s) => s.date >= w && s.date <= addDays(w, 6))
+        .reduce((x, s) => x + partsOf(s).filter((p) => p.platform === r.platform).reduce((y, p) => y + p.earnings, 0), 0));
+      const avg = averages?.[r.platform] ?? 0;
+      const amount = w >= thisWeek && avg > logged ? round2(avg) : logged;
+      if (amount > 0) out.push({ ...base, key: `gig:${r.platform}:${w}`, date, amount,
+        description: `${name} pay${w >= thisWeek && avg > logged ? ' (est.)' : ''}` });
+    }
+  }
+  return out;
+}
+
+/** Each app's average weekly earnings over the last `weeks` full weeks of logged shifts. */
+export function weeklyAverages(shifts: Shift[], today: IsoDate, weeks = 8): Record<string, number> {
+  const end = weekStart(today);
+  const startW = addDays(end, -7 * weeks);
+  const sums: Record<string, number> = {};
+  for (const s of shifts) {
+    if (s.date < startW || s.date >= end) continue;
+    for (const p of partsOf(s)) sums[p.platform] = (sums[p.platform] ?? 0) + p.earnings;
+  }
+  return Object.fromEntries(Object.entries(sums).map(([k, v]) => [k, round2(v / weeks)]));
 }

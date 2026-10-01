@@ -3,18 +3,24 @@
 import { createElement } from 'react';
 import { useTheme } from '@/lib/theme';
 
+function inputStyle(t: ReturnType<typeof useTheme>) {
+  const dark = t.bg.toLowerCase() < '#888888';
+  return {
+    boxSizing: 'border-box', width: '100%', minHeight: 40, border: `1px solid ${t.line}`, borderRadius: 8,
+    padding: '8px 10px', fontSize: 15, color: t.text, background: t.card, fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    colorScheme: dark ? 'dark' : 'light', outline: 'none',
+  };
+}
+
 export function DateField({ value, onChange, min, max }: {
   value: string; onChange: (v: string) => void; placeholder?: string; min?: string; max?: string;
 }) {
   const t = useTheme();
-  const dark = t.bg.toLowerCase() < '#888888';
-  return createElement('input', {
-    type: 'date', value: value ?? '', min, max,
-    onChange: (e: any) => onChange(e.target.value),
-    style: {
-      boxSizing: 'border-box', width: '100%', minHeight: 40, border: `1px solid ${t.line}`, borderRadius: 8,
-      padding: '8px 10px', fontSize: 15, color: t.text, background: t.card, fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-      colorScheme: dark ? 'dark' : 'light', outline: 'none',
-    },
-  });
+  return createElement('input', { type: 'date', value: value ?? '', min, max, onChange: (e: any) => onChange(e.target.value), style: inputStyle(t) });
+}
+
+/** A time of day ("HH:MM"); opens the phone's time picker. */
+export function TimeField({ value, onChange }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const t = useTheme();
+  return createElement('input', { type: 'time', value: value ?? '', onChange: (e: any) => onChange(e.target.value), style: inputStyle(t) });
 }

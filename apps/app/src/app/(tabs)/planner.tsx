@@ -41,6 +41,7 @@ export default function Planner() {
   const openRow = (r: WeekRow) => {
     if (r.kind === 'actual' && r.txn) { router.push({ pathname: '/transaction/[id]', params: { id: r.txn.id } }); return; }
     const p = r.item!;
+    if (p.key.startsWith('gig:') && !r.txn) { router.push('/gig' as any); return; }
     setForm({
       id: p.entryId, date: p.date, description: p.description, amount: p.amount, account_id: p.accountId,
       recurring_id: p.recurringId, occurrence_date: p.occurrenceDate, to_account_id: null,
@@ -121,7 +122,7 @@ export default function Planner() {
               ))}
             </Card>
             <Text style={{ color: t.muted, fontSize: 12 }}>
-              Planned entries come from Bills & income (menu) and the + button. A posted transaction replaces its planned amount; ones nobody planned show as “unplanned”.
+              Planned entries come from Bills & income (menu), gig payouts (Gig work → settings) and the + button. A posted transaction replaces its planned amount; ones nobody planned show as “unplanned”.
             </Text>
           </>
         )}
