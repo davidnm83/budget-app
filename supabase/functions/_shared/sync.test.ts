@@ -157,6 +157,36 @@ Deno.test('syncItem links bank rows to imported ones and keeps your edited date/
   assertEquals([b2.amount, b2.original_amount, b2.date], [-12.5, -13, '2026-09-06']);
 });
 
+Deno.test('linking a bank takes over the matching manual account and its imported history', async () => {
+  Deno.env.set('PLAID_ENV', 'sandbox');
+  const user = 'u1';
+  const tables: Record<string, Row[]> = {
+    accounts: [{ id: 'man', user_id: user, kind: 'manual', mask: '2009', type: 'credit', plaid_account_id: null, name: 'American Express Cobalt', start_balance: -100 }],
+    transactions: [
+      { id: 'i1', user_id: user, account_id: 'man', plaid_transaction_id: null, date: '2026-09-02', amount: -40, name: 'SHOP', category_id: 'c1', reviewed: true },
+      { id: 'i2', user_id: user, account_id: 'man', plaid_transaction_id: null, date: '2026-09-05', amount: -29.37, name: 'AMAZON', category_id: 'c2', notes: 'desk', reviewed: true },
+      { id: 'i3', user_id: user, account_id: 'man', plaid_transaction_id: null, date: '2026-09-05', amount: -18.07, name: 'AMAZON', category_id: 'c3', reviewed: true },
+    ],
+    transaction_splits: [], merchant_rules: [], category_rules: [], categories: [],
+    plaid_items: [{ id: 'item-row', user_id: user, item_id: 'item-3', institution_name: 'American Express', access_token_secret_id: 's', cursor: null }],
+    sync_runs: [],
+  };
+  fakePlaid([{ from: '', res: { added: [
+    tx('b1', 'amex', '2026-09-03', 40, 'SHOP'), tx('b2', 'amex', '2026-09-06', 47.44, 'AMAZON'), tx('b3', 'amex', '2026-09-07', 5, 'NEW'),
+  ], modified: [], removed: [], next_cursor: 'c1', has_more: false } }],
+  [{ account_id: 'amex', name: 'Cobalt', mask: '32009', type: 'credit', subtype: 'credit card', balances: { current: 2500.77 } }]);
+  const r = await syncItem(fakeDb(tables), tables.plaid_items[0] as any);
+  assertEquals([r.status, r.added, r.updated], ['ok', 1, 2], r.error);
+  assertEquals(tables.accounts.length, 1);
+  assertEquals([tables.accounts[0].kind, tables.accounts[0].plaid_account_id, tables.accounts[0].name, tables.accounts[0].start_balance], ['plaid', 'amex', 'American Express Cobalt', null]);
+  const byId = (id: string) => tables.transactions.find((t) => t.id === id);
+  assertEquals([byId('i1')!.plaid_transaction_id, byId('i1')!.category_id], ['b1', 'c1']);
+  assertEquals([byId('i2')!.plaid_transaction_id, byId('i2')!.amount, byId('i2')!.category_id], ['b2', -47.44, null]);
+  assertEquals(byId('i3'), undefined);
+  assertEquals(tables.transaction_splits.map((x) => [x.transaction_id, x.category_id, x.amount, x.notes ?? null]), [['i2', 'c2', -29.37, 'desk'], ['i2', 'c3', -18.07, null]]);
+  assertEquals(tables.transactions.filter((t) => t.plaid_transaction_id === 'b3').length, 1);
+});
+
 Deno.test('syncItem marks connections that need a new sign-in', async () => {
   const tables: Record<string, Row[]> = { accounts: [], transactions: [], merchant_rules: [], category_rules: [], categories: [],
     plaid_items: [{ id: 'i', user_id: 'u', item_id: 'item-2', institution_name: 'Bank', access_token_secret_id: 's', cursor: null }], sync_runs: [] };

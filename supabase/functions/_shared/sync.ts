@@ -12,7 +12,7 @@
 import type { Admin } from './supabase.ts';
 import { plaid, PlaidError, RELINK_CODES } from './plaid.ts';
 import {
-  addDays, fromPlaidAmount, isTransferCategory, matchHistory, merchantFor, plaidCategoryNames, suggestCategory,
+  addDays, fromPlaidAmount, isTransferCategory, merchantFor, plaidCategoryNames, planMerge, sameAccount, suggestCategory,
   type CategoryRule, type MerchantRule,
 } from './core/index.ts';
 
@@ -57,6 +57,25 @@ export async function upsertAccounts(admin: Admin, item: PlaidItemRow, token: st
       available_balance: a.balances?.available,
       balance_updated_at: now,
     }).eq('id', map.get(a.account_id)!);
+  }
+  // A card or account you were already tracking by hand (CSV or Fina import) with the same last
+  // 4 digits and type becomes this bank account, so its history and balance carry on in one place.
+  const unseen = res.accounts.filter((x) => !map.has(x.account_id));
+  if (unseen.length) {
+    const { data: manual } = await admin.from('accounts').select('id, name, mask, type')
+      .eq('user_id', item.user_id).eq('kind', 'manual').is('plaid_account_id', null);
+    const taken = new Set<string>();
+    for (const a of unseen) {
+      const m = (manual ?? []).find((x: any) => !taken.has(x.id) && sameAccount(x, { mask: a.mask, type: a.type }));
+      if (!m) continue;
+      taken.add(m.id);
+      await admin.from('accounts').update({
+        kind: 'plaid', plaid_item_id: item.id, plaid_account_id: a.account_id, official_name: a.official_name,
+        mask: a.mask, subtype: a.subtype, start_balance: null,
+        current_balance: a.balances?.current, available_balance: a.balances?.available, balance_updated_at: now,
+      }).eq('id', m.id);
+      map.set(a.account_id, m.id);
+    }
   }
   const fresh = res.accounts.filter((x) => !map.has(x.account_id)).map((a) => ({
     user_id: item.user_id,
@@ -159,27 +178,52 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
     let fresh = posted.filter((t) => !existing.has(t.transaction_id) && accounts.has(t.account_id));
 
     // Already in the app from a CSV or Fina import? Link it instead of adding a second copy.
+    // Imported split parts (same date and description) that add up to one bank transaction
+    // become that transaction's splits.
     if (fresh.length) {
       const dates = fresh.map((t) => t.date).sort();
-      const { data: unlinked } = await admin.from('transactions').select('id, account_id, date, amount')
+      const { data: unlinked } = await admin.from('transactions').select('id, account_id, date, amount, name, category_id, notes, import_id')
         .eq('user_id', item.user_id).is('plaid_transaction_id', null)
         .in('account_id', [...new Set(fresh.map((t) => accounts.get(t.account_id)!))])
         .gte('date', addDays(dates[0], -3)).lte('date', addDays(dates[dates.length - 1], 3));
-      if (unlinked?.length) {
-        const m = matchHistory(
-          fresh.map((t, index) => ({ index, accountId: accounts.get(t.account_id)!, date: t.date, amount: fromPlaidAmount(t.amount), groupKey: t.transaction_id })),
-          unlinked.map((u: any) => ({ id: u.id, accountId: u.account_id, date: u.date, amount: Number(u.amount) })),
+      const claimed = new Set<string>();
+      for (const accountId of new Set((unlinked ?? []).map((u: any) => u.account_id as string))) {
+        const mine = (unlinked ?? []).filter((u: any) => u.account_id === accountId);
+        const theirs = fresh.filter((t) => accounts.get(t.account_id) === accountId);
+        const plan = planMerge(
+          mine.map((u: any) => ({ id: u.id, date: u.date, amount: Number(u.amount), name: u.name ?? '' })),
+          theirs.map((t) => ({ id: t.transaction_id, date: t.date, amount: fromPlaidAmount(t.amount), name: t.original_description || t.name || '' })),
         );
-        for (const [index, id] of m.single) {
-          const t = fresh[index];
+        const byId = new Map(theirs.map((t) => [t.transaction_id, t]));
+        for (const [rowId, txnId] of plan.pairs) {
+          const t = byId.get(txnId)!;
           await admin.from('transactions').update({
             plaid_transaction_id: t.transaction_id, authorized_date: t.authorized_date, plaid_category: t.personal_finance_category?.detailed ?? null,
-          }).eq('id', id);
+          }).eq('id', rowId);
+          claimed.add(txnId);
           result.updated++;
         }
-        fresh = fresh.filter((_, i) => !m.single.has(i));
+        for (const g of plan.groups) {
+          const t = byId.get(g.bankId)!;
+          const parts = mine.filter((u: any) => g.manualIds.includes(u.id));
+          const [keep, ...rest] = parts;
+          await admin.from('transaction_splits').insert(parts.map((u: any) => ({
+            user_id: item.user_id, transaction_id: keep.id, category_id: u.category_id, amount: u.amount, notes: u.notes,
+          })));
+          // Remove the other parts first; their import ids move to the kept row (they must stay unique).
+          await admin.from('transactions').delete().in('id', rest.map((u: any) => u.id));
+          await admin.from('transactions').update({
+            plaid_transaction_id: t.transaction_id, authorized_date: t.authorized_date, amount: fromPlaidAmount(t.amount),
+            category_id: null, notes: null, plaid_category: t.personal_finance_category?.detailed ?? null,
+            import_id: parts.map((u: any) => u.import_id).filter(Boolean).join('\n') || null,
+          }).eq('id', keep.id);
+          claimed.add(g.bankId);
+          result.updated++;
+        }
       }
+      fresh = fresh.filter((t) => !claimed.has(t.transaction_id));
     }
+
     const withMerchant = fresh.map((t) => {
       const name = t.original_description || t.name || '';
       const merchant = merchantFor(rules.merchantRules, name) || t.merchant_name || t.counterparties?.[0]?.name || '';

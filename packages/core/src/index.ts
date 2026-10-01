@@ -7,3 +7,4 @@ export * from './loans.ts';
 export * from './fina.ts';
 export * from './budget.ts';
 export * from './transactions.ts';
+export * from './merge.ts';

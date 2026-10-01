@@ -87,6 +87,12 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
     }
   }
 
+  // Everything imported before, in any account (rows may have moved since, e.g. in a merge).
+  progress('Checking what was imported before…');
+  const before = await fetchAll<{ import_id: string }>((from, to) => supabase.from('transactions').select('import_id')
+    .not('import_id', 'is', null).order('id').range(from, to));
+  const done = new Set(before.flatMap((e) => e.import_id.split('\n')));
+
   // ── 2. accounts ──
   progress('Setting up accounts…');
   const accountId = new Map<string, string | null>(); // Fina account → app account id (null = skip)
@@ -94,6 +100,7 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
     const choice = opts.accounts.get(a.name) ?? { kind: 'new' };
     if (choice.kind === 'skip') accountId.set(a.name, null);
     else if (choice.kind === 'existing') accountId.set(a.name, choice.accountId);
+    else if (fina.rows.every((r) => r.account !== a.name || done.has(r.importId))) accountId.set(a.name, null); // nothing new for it
     else {
       const { data, error } = await supabase.from('accounts')
         .insert({ name: finaAccountName(a.name), mask: a.mask, kind: 'manual', type: a.type, subtype: a.subtype })
@@ -114,13 +121,12 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
     ? await fetchAll<Ex>((from, to) => supabase.from('transactions').select('id, account_id, date, amount, reviewed, import_id')
         .in('account_id', ids).gte('date', first).lte('date', last).order('id').range(from, to))
     : [];
-  const done = new Set(existing.flatMap((e) => (e.import_id ?? '').split('\n')).filter(Boolean));
 
   const todo: (FinaRow & { accountId: string })[] = [];
   for (const r of fina.rows) {
+    if (done.has(r.importId)) { result.alreadyImported++; continue; }
     const acc = accountId.get(r.account);
     if (!acc) { result.skipped++; continue; }
-    if (done.has(r.importId)) { result.alreadyImported++; continue; }
     todo.push({ ...r, accountId: acc });
   }
   const pool_ = existing.filter((e) => !e.import_id).map((e) => ({ id: e.id, accountId: e.account_id, date: e.date, amount: Number(e.amount) }));

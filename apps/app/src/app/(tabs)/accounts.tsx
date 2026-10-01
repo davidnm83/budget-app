@@ -2,7 +2,8 @@ import { formatMoney } from '@budget-app/core';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Button, Empty } from '@/components/ui';
+import { Button, Chip, Empty } from '@/components/ui';
+import { mergeAccounts } from '@/lib/mergeAccounts';
 import { callFunction, supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
 import type { Account } from '@/lib/types';
@@ -20,6 +21,23 @@ export default function Accounts() {
   const [msg, setMsg] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [balance, setBalance] = useState('');
+  const [mergeTarget, setMergeTarget] = useState<string | null>(null);
+  const [merging, setMerging] = useState(false);
+
+  const merge = async (from: Account) => {
+    if (!mergeTarget) return;
+    setMerging(true);
+    try {
+      const r = await mergeAccounts(from.id, mergeTarget);
+      setMsg(`Merged ${from.name}: ${r.linked} matched bank transactions, ${r.split} rebuilt as splits, ${r.moved} older ones moved over.`);
+      setEditing(null); setMergeTarget(null);
+      load();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMerging(false);
+    }
+  };
 
   // Manual accounts (CSV or Fina) have no bank feed: type today's balance once and the app works
   // out a start balance; from then on balance = start + transactions, like Fina's auto balance.
@@ -89,12 +107,29 @@ export default function Accounts() {
           </View>
         )}
         renderItem={({ item }) => editing === item.id ? (
-          <View style={[styles.row, { backgroundColor: t.card, borderColor: t.line, gap: 8 }]}>
-            <Text style={{ color: t.text, flex: 1 }} numberOfLines={1}>{item.name}</Text>
-            <TextInput autoFocus value={balance} onChangeText={setBalance} keyboardType="decimal-pad" onSubmitEditing={() => saveBalance(item)}
-              placeholder={item.type === 'credit' || item.type === 'loan' ? 'Amount owing' : 'Balance'} placeholderTextColor={t.muted}
-              style={{ color: t.text, borderWidth: 1, borderColor: t.line, borderRadius: 8, padding: 8, width: 130 }} />
-            <Button title="Save" onPress={() => saveBalance(item)} />
+          <View style={[styles.row, { backgroundColor: t.card, borderColor: t.line, flexDirection: 'column', alignItems: 'stretch', gap: 10 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ color: t.text, flex: 1 }} numberOfLines={1}>{item.name}</Text>
+              <TextInput autoFocus value={balance} onChangeText={setBalance} keyboardType="decimal-pad" onSubmitEditing={() => saveBalance(item)}
+                placeholder={item.type === 'credit' || item.type === 'loan' ? 'Amount owing' : 'Balance'} placeholderTextColor={t.muted}
+                style={{ color: t.text, borderWidth: 1, borderColor: t.line, borderRadius: 8, padding: 8, width: 130 }} />
+              <Button title="Save" onPress={() => saveBalance(item)} />
+            </View>
+            {accounts.some((a) => a.kind === 'plaid') && (
+              <View style={{ gap: 6 }}>
+                <Text style={{ color: t.muted, fontSize: 13 }}>Now connected to the bank? Merge this account's history into the connected one:</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                  {accounts.filter((a) => a.kind === 'plaid').sort((a, b) => Number(b.type === item.type) - Number(a.type === item.type)).map((a) => (
+                    <Chip key={a.id} label={`${a.name}${a.mask ? ` ••${a.mask}` : ''}`} on={mergeTarget === a.id} onPress={() => setMergeTarget(mergeTarget === a.id ? null : a.id)} />
+                  ))}
+                </View>
+                {mergeTarget && (
+                  <Button kind="danger" busy={merging} onPress={() => merge(item)}
+                    title={`Merge into ${accounts.find((a) => a.id === mergeTarget)?.name} (can't be undone)`} />
+                )}
+              </View>
+            )}
+            <Button title="Close" kind="plain" onPress={() => { setEditing(null); setMergeTarget(null); }} />
           </View>
         ) : (
           <Pressable disabled={item.kind !== 'manual'} onPress={() => { setEditing(item.id); setBalance(item.current_balance == null ? '' : String(Math.abs(Number(item.current_balance)))); }}
