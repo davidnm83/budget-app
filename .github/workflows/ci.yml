@@ -1,0 +1,28 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Core logic tests
+        run: npm test
+      - name: Core copy in Edge Functions is up to date
+        run: npm run sync-core && git diff --exit-code supabase/functions/_shared/core
+      - name: App typecheck
+        run: npm run typecheck -w app
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Edge Functions typecheck + tests
+        working-directory: supabase/functions
+        run: |
+          deno check --config deno.json */index.ts
+          deno test --config deno.json --allow-env --allow-net --no-check _shared/sync.test.ts

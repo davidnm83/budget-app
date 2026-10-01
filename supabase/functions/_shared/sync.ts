@@ -1,0 +1,224 @@
+/**
+ * Syncs one Plaid Item (one bank login) into the database:
+ *   • pages through /transactions/sync from the saved cursor
+ *   • writes POSTED transactions only (pending ones arrive later as posted)
+ *   • new rows get a cleaned merchant and a suggested category, unreviewed
+ *   • changed rows only get the bank's fields updated; your edits are kept
+ *   • refreshes account balances, then saves the cursor
+ */
+import type { Admin } from './supabase.ts';
+import { plaid, PlaidError, RELINK_CODES } from './plaid.ts';
+import {
+  fromPlaidAmount, isTransferCategory, merchantFor, plaidCategoryToName, suggestCategory,
+  type CategoryRule, type MerchantRule,
+} from './core/index.ts';
+
+export interface PlaidItemRow {
+  id: string;
+  user_id: string;
+  item_id: string;
+  institution_name: string;
+  access_token_secret_id: string;
+  cursor: string | null;
+}
+
+export interface SyncResult {
+  itemId: string;
+  institution: string;
+  added: number;
+  updated: number;
+  removed: number;
+  status: 'ok' | 'login_required' | 'error';
+  error?: string;
+}
+
+export async function accessToken(admin: Admin, secretId: string): Promise<string> {
+  const { data, error } = await admin.rpc('read_plaid_token', { p_secret_id: secretId });
+  if (error || !data) throw new Error('Could not read the bank connection token: ' + (error?.message ?? 'missing'));
+  return data as string;
+}
+
+/** Inserts or refreshes the accounts of an Item; returns plaid_account_id → account row id. */
+export async function upsertAccounts(admin: Admin, item: PlaidItemRow, token: string): Promise<Map<string, string>> {
+  const res = await plaid<{ accounts: any[] }>('/accounts/get', { access_token: token });
+  const now = new Date().toISOString();
+  const { data: known } = await admin.from('accounts').select('id, plaid_account_id')
+    .in('plaid_account_id', res.accounts.map((a) => a.account_id));
+  const map = new Map<string, string>((known ?? []).map((r: any) => [r.plaid_account_id, r.id]));
+
+  // Existing accounts: refresh balances only, so names you changed in the app stay.
+  for (const a of res.accounts.filter((x) => map.has(x.account_id))) {
+    await admin.from('accounts').update({
+      plaid_item_id: item.id,
+      current_balance: a.balances?.current,
+      available_balance: a.balances?.available,
+      balance_updated_at: now,
+    }).eq('id', map.get(a.account_id)!);
+  }
+  const fresh = res.accounts.filter((x) => !map.has(x.account_id)).map((a) => ({
+    user_id: item.user_id,
+    plaid_item_id: item.id,
+    plaid_account_id: a.account_id,
+    kind: 'plaid',
+    name: a.official_name || a.name,
+    official_name: a.official_name,
+    mask: a.mask,
+    type: a.type,
+    subtype: a.subtype,
+    currency: a.balances?.iso_currency_code ?? 'CAD',
+    current_balance: a.balances?.current,
+    available_balance: a.balances?.available,
+    balance_updated_at: now,
+  }));
+  if (fresh.length) {
+    const { data, error } = await admin.from('accounts').insert(fresh).select('id, plaid_account_id');
+    if (error) throw new Error('Saving accounts failed: ' + error.message);
+    for (const r of data ?? []) map.set(r.plaid_account_id, r.id);
+  }
+  return map;
+}
+
+async function pullChanges(token: string, startCursor: string | null) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      let cursor = startCursor ?? '';
+      const byId = new Map<string, any>();
+      const removed: string[] = [];
+      let hasMore = true;
+      while (hasMore) {
+        const body: Record<string, unknown> = { access_token: token, count: 500, options: { include_original_description: true } };
+        if (cursor) body.cursor = cursor;
+        const res = await plaid<any>('/transactions/sync', body);
+        for (const t of [...res.added, ...res.modified]) byId.set(t.transaction_id, t);
+        for (const r of res.removed) { byId.delete(r.transaction_id); removed.push(r.transaction_id); }
+        cursor = res.next_cursor;
+        hasMore = res.has_more;
+      }
+      return { posted: [...byId.values()].filter((t) => !t.pending), removed, cursor };
+    } catch (e) {
+      if (e instanceof PlaidError && e.code === 'TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION') continue;
+      throw e;
+    }
+  }
+  throw new Error('Bank data kept changing during sync; it will retry next time.');
+}
+
+async function loadUserRules(admin: Admin, userId: string) {
+  const [m, c, cats] = await Promise.all([
+    admin.from('merchant_rules').select('match, merchant').eq('user_id', userId),
+    admin.from('category_rules').select('match_text, category_id, account_id, min_amount, max_amount').eq('user_id', userId),
+    admin.from('categories').select('id, name, kind').eq('user_id', userId),
+  ]);
+  const merchantRules: MerchantRule[] = (m.data ?? []) as MerchantRule[];
+  const categoryRules: CategoryRule[] = (c.data ?? []).map((r: any) => ({
+    matchText: r.match_text, categoryId: r.category_id, accountId: r.account_id, minAmount: r.min_amount, maxAmount: r.max_amount,
+  }));
+  const byName = new Map<string, { id: string; kind: string }>((cats.data ?? []).map((r: any) => [r.name, { id: r.id, kind: r.kind }]));
+  const kindById = new Map<string, string>((cats.data ?? []).map((r: any) => [r.id, r.kind]));
+  return { merchantRules, categoryRules, byName, kindById };
+}
+
+/** merchant (lowercase) → category you used most recently for it, from reviewed rows. */
+async function learnedCategories(admin: Admin, userId: string, merchants: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  const unique = [...new Set(merchants.filter(Boolean))];
+  if (!unique.length) return out;
+  const { data } = await admin.from('transactions')
+    .select('merchant, category_id, date')
+    .eq('user_id', userId).eq('reviewed', true).not('category_id', 'is', null)
+    .in('merchant', unique)
+    .order('date', { ascending: false })
+    .limit(2000);
+  for (const r of data ?? []) {
+    const k = String(r.merchant).toLowerCase();
+    if (!out[k]) out[k] = r.category_id;
+  }
+  return out;
+}
+
+export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncResult> {
+  const result: SyncResult = { itemId: item.item_id, institution: item.institution_name, added: 0, updated: 0, removed: 0, status: 'ok' };
+  try {
+    const token = await accessToken(admin, item.access_token_secret_id);
+    const accounts = await upsertAccounts(admin, item, token); // also refreshes balances
+    const { posted, removed, cursor } = await pullChanges(token, item.cursor);
+
+    // Which of these do we already have?
+    const ids = posted.map((t) => t.transaction_id);
+    const existing = new Set<string>();
+    for (let i = 0; i < ids.length; i += 500) {
+      const { data } = await admin.from('transactions').select('plaid_transaction_id').in('plaid_transaction_id', ids.slice(i, i + 500));
+      for (const r of data ?? []) existing.add(r.plaid_transaction_id);
+    }
+
+    const rules = await loadUserRules(admin, item.user_id);
+    const fresh = posted.filter((t) => !existing.has(t.transaction_id) && accounts.has(t.account_id));
+    const withMerchant = fresh.map((t) => {
+      const name = t.original_description || t.name || '';
+      const merchant = merchantFor(rules.merchantRules, name) || t.merchant_name || t.counterparties?.[0]?.name || '';
+      return { t, name, merchant };
+    });
+    const learned = await learnedCategories(admin, item.user_id, withMerchant.map((x) => x.merchant));
+
+    const inserts = withMerchant.map(({ t, name, merchant }) => {
+      const pfc = t.personal_finance_category ?? {};
+      const amount = fromPlaidAmount(t.amount);
+      const accountId = accounts.get(t.account_id)!;
+      const plaidName = plaidCategoryToName(pfc.detailed, pfc.primary);
+      const plaidMap: Record<string, string> = {};
+      if (pfc.detailed && plaidName && rules.byName.has(plaidName)) plaidMap[pfc.detailed] = rules.byName.get(plaidName)!.id;
+      const s = suggestCategory(
+        { name, merchant, amount, accountId, plaidCategory: pfc.detailed ?? null },
+        rules.categoryRules, learned, plaidMap,
+      );
+      return {
+        user_id: item.user_id,
+        account_id: accountId,
+        plaid_transaction_id: t.transaction_id,
+        source: 'plaid',
+        date: t.date,
+        authorized_date: t.authorized_date,
+        amount,
+        currency: t.iso_currency_code ?? t.unofficial_currency_code ?? 'CAD',
+        name,
+        merchant: merchant || null,
+        category_id: s.categoryId,
+        category_source: s.source,
+        plaid_category: pfc.detailed ?? null,
+        is_transfer: isTransferCategory(pfc.primary, pfc.detailed) || (s.categoryId ? rules.kindById.get(s.categoryId) === 'transfer' : false),
+        reviewed: false,
+      };
+    });
+    for (let i = 0; i < inserts.length; i += 500) {
+      const { error } = await admin.from('transactions').insert(inserts.slice(i, i + 500));
+      if (error) throw new Error('Saving transactions failed: ' + error.message);
+    }
+    result.added = inserts.length;
+
+    // Bank corrected something we already have: update its bank fields only.
+    for (const t of posted.filter((x) => existing.has(x.transaction_id))) {
+      await admin.from('transactions').update({
+        date: t.date, authorized_date: t.authorized_date, amount: fromPlaidAmount(t.amount),
+      }).eq('plaid_transaction_id', t.transaction_id);
+      result.updated++;
+    }
+    if (removed.length) {
+      await admin.from('transactions').delete().in('plaid_transaction_id', removed);
+      result.removed = removed.length;
+    }
+
+    await admin.from('plaid_items').update({
+      cursor, status: 'ok', error_code: null, last_synced_at: new Date().toISOString(),
+    }).eq('id', item.id);
+  } catch (e) {
+    const code = e instanceof PlaidError ? e.code : null;
+    result.status = code && RELINK_CODES.has(code) ? 'login_required' : 'error';
+    result.error = e instanceof Error ? e.message : String(e);
+    await admin.from('plaid_items').update({ status: result.status, error_code: code ?? 'ERROR' }).eq('id', item.id);
+  }
+  await admin.from('sync_runs').insert({
+    user_id: item.user_id, finished_at: new Date().toISOString(), added: result.added,
+    message: `${item.institution_name}: ${result.status}${result.error ? ' – ' + result.error : ''}`,
+  });
+  return result;
+}

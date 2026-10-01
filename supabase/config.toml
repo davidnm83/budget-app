@@ -1,0 +1,16 @@
+# Minimal Supabase CLI config. Run `supabase link --project-ref <ref>` to connect your project.
+project_id = "budget-app"
+
+# Every function checks the caller itself (signed-in user's token, or the cron secret),
+# which works with both the new and the legacy Supabase API keys.
+[functions.plaid-link-token]
+verify_jwt = false
+
+[functions.plaid-exchange]
+verify_jwt = false
+
+[functions.plaid-sync]
+verify_jwt = false
+
+[functions.plaid-remove]
+verify_jwt = false
