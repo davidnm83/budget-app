@@ -146,7 +146,7 @@ const Section = ({ t, title, children }: { t: Theme; title: string; children: Re
 );
 
 /** Loans (LOAN-2, LOAN-3): payoff estimate from the last 2 months, plus totals to date. */
-function LoanBlock({ t, a, txns }: { t: Theme; a: Account; txns: Txn[] }) {
+export function LoanBlock({ t, a, txns }: { t: Theme; a: Account; txns: Txn[] }) {
   const owed = Math.abs(signedBalance(a));
   const s = loanSummary(owed, txns, today());
   const years = s.monthsLeft != null ? `${Math.floor(s.monthsLeft / 12)}y ${s.monthsLeft % 12}m` : '';
@@ -183,7 +183,7 @@ function LoanBlock({ t, a, txns }: { t: Theme; a: Account; txns: Txn[] }) {
 }
 
 /** Credit cards: statement and due date, interest estimate, utilisation. */
-function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns: Txn[]; onSetUp: () => void }) {
+export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns: Txn[]; onSetUp: () => void }) {
   const owed = Math.max(0, -signedBalance(a));
   const u = utilization(owed, a.credit_limit);
   const set = a.statement_day && a.due_day;
@@ -467,7 +467,7 @@ const Small = ({ t, label, value, onChange }: { t: Theme; label: string; value: 
 );
 
 /** Weekly balance for the past year as a thin-column area, low to high, with the range labelled. */
-function BalanceChart({ t, points }: { t: Theme; points: { date: string; balance: number }[] }) {
+export function BalanceChart({ t, points, title = 'BALANCE, PAST YEAR' }: { t: Theme; points: { date: string; balance: number }[]; title?: string }) {
   const { lo, hi } = useMemo(() => {
     const vs = points.map((p) => p.balance);
     const min = Math.min(...vs), max = Math.max(...vs);
@@ -479,7 +479,7 @@ function BalanceChart({ t, points }: { t: Theme; points: { date: string; balance
   return (
     <View style={{ gap: 4 }}>
       <View style={styles.between}>
-        <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', letterSpacing: 0.5 }}>BALANCE, PAST YEAR</Text>
+        <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', letterSpacing: 0.5 }}>{title}</Text>
         <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>{shortDate(shown.date)} {shown.date.slice(0, 4)} · {formatMoney(shown.balance)}</Text>
       </View>
       <View style={{ flexDirection: 'row', gap: 6 }}>

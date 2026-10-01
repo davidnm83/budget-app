@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   costPerKmFrom, formatDuration, fuelCostFor, gigPlanned, minutesBetween, platformOf, shiftStats, summarizePayouts, totalShifts, totalsByPlatform,
-  weeklyAverages, weeklyPayoutDate,
+  gigFuelByMonth, weeklyAverages, weeklyPayoutDate,
 } from '../src/gig';
 
 describe('gig work', () => {
@@ -99,6 +99,7 @@ describe('multi-app shifts and payouts', () => {
     const est = gigPlanned([shift], rules.slice(0, 1), '2026-09-28', '2026-10-11', '2026-10-01', { doordash: 250 });
     expect(est[0]).toMatchObject({ amount: 250, description: 'DoorDash pay (est.)' });
     expect(weeklyAverages([shift], '2026-10-08', 2)).toEqual({ doordash: 30, uber: 15 });
+    expect(gigFuelByMonth([shift, { ...shift, date: '2026-10-02', fuelCost: 5 }], 0.1)).toEqual({ '2026-09-01': 6, '2026-10-01': 5 });
   });
 });
 

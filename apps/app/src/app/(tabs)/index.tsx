@@ -3,7 +3,7 @@
 //   2. This week: cash in the bill-paying accounts, projected end of week, any warning, what's next
 //   3. Budget pace: spent vs where you'd expect to be by today, and the categories running ahead
 //   4. Net worth: today and the change since the 1st
-// Each card is a block that can move onto custom pages later.
+// Plus any widgets you add (Customize at the bottom); the order and choice are kept per user.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   addDays, buildBudgetMonth, formatMoney, monthEnd, monthName, shortDate, weekStart as mondayOf,
@@ -13,6 +13,8 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { TopBar } from '@/components/TopBar';
+import { CardShell, DEFAULT_HOME, Mini, Widget, WidgetPicker } from '@/components/Widgets';
+import { loadPrefs } from '@/lib/prefs';
 import { Bar } from '@/components/ui';
 import { loadWeek, today, type PlannerData } from '@/lib/plan';
 import { loadBudgets, loadCategories, loadCategoryMonths, thisMonth, totalsFor } from '@/lib/reports';
@@ -35,9 +37,13 @@ export default function Home() {
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [widgets, setWidgets] = useState<string[] | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [refresh, setRefresh] = useState(0);
 
   const load = useCallback(async () => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setRefresh((r) => r + 1);
+    loadPrefs().then((p) => setWidgets(p.home_widgets ?? DEFAULT_HOME)).catch(() => setWidgets(DEFAULT_HOME));
     try {
       const now = today();
       const month = thisMonth();
@@ -95,28 +101,24 @@ export default function Home() {
       </TopBar>
       <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+        {data && widgets && widgets.map((k) => {
+          switch (k) {
+            case 'review': return <ReviewCard key={k} t={t} n={data.toReview} />;
+            case 'week': return <WeekCard key={k} t={t} data={data.week} now={now} />;
+            case 'budget': return <BudgetCard key={k} t={t} b={data.budget} />;
+            case 'networth': return <NetWorthCard key={k} t={t} n={data.net} />;
+            default: return <Widget key={k} k={k} refresh={refresh} />;
+          }
+        })}
         {data && (
-          <>
-            <ReviewCard t={t} n={data.toReview} />
-            <WeekCard t={t} data={data.week} now={now} />
-            <BudgetCard t={t} b={data.budget} />
-            <NetWorthCard t={t} n={data.net} />
-          </>
+          <Pressable onPress={() => setPicking(true)} style={styles.customize}>
+            <Ionicons name="options-outline" size={16} color={t.accent} />
+            <Text style={{ color: t.accent }}>Customize Home</Text>
+          </Pressable>
         )}
+        {picking && widgets && <WidgetPicker place="home" current={widgets} onClose={() => setPicking(false)} onSaved={setWidgets} />}
       </ScrollView>
     </View>
-  );
-}
-
-function CardShell({ t, title, link, onPress, children }: { t: Theme; title: string; link?: string; onPress?: () => void; children: React.ReactNode }) {
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { backgroundColor: t.card, borderColor: t.line, opacity: pressed ? 0.85 : 1 }]}>
-      <View style={styles.between}>
-        <Text style={{ color: t.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>{title.toUpperCase()}</Text>
-        {link && <Text style={{ color: t.accent, fontSize: 12 }}>{link} ›</Text>}
-      </View>
-      {children}
-    </Pressable>
   );
 }
 
@@ -156,7 +158,7 @@ function WeekCard({ t, data, now }: { t: Theme; data: PlannerData; now: string }
     <CardShell t={t} title="This week" link="Planner" onPress={() => router.navigate('/planner')}>
       <View style={styles.tiles}>
         <Mini t={t} label="Cash now" value={money0(cash)} sub={plan.length > 1 ? `${plan.length} accounts` : plan[0].name} />
-        <Mini t={t} label={`By ${shortDate(addDays(mondayOf(now), 6))}`} value={money0(v.endBalance)} sub="projected" warn={!!w} />
+        <Mini t={t} label={`By ${shortDate(addDays(mondayOf(now), 6))}`} value={money0(v.endBalance)} sub="projected" color={w ? t.danger : undefined} />
       </View>
       {w && (
         <View style={styles.row}>
@@ -228,21 +230,11 @@ function NetWorthCard({ t, n }: { t: Theme; n: HomeData['net'] }) {
   );
 }
 
-function Mini({ t, label, value, sub, warn }: { t: Theme; label: string; value: string; sub?: string; warn?: boolean }) {
-  return (
-    <View style={[styles.mini, { borderColor: warn ? t.danger : t.line }]}>
-      <Text style={{ color: t.muted, fontSize: 10 }}>{label.toUpperCase()}</Text>
-      <Text style={{ color: warn ? t.danger : t.text, fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{value}</Text>
-      {!!sub && <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{sub}</Text>}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   page: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 40, gap: 10, maxWidth: 760, width: '100%', alignSelf: 'center' },
   card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 12, gap: 8 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   tiles: { flexDirection: 'row', gap: 8 },
-  mini: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
+  customize: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12 },
 });

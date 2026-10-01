@@ -292,3 +292,13 @@ export function weeklyAverages(shifts: Shift[], today: IsoDate, weeks = 8): Reco
   }
   return Object.fromEntries(Object.entries(sums).map(([k, v]) => [k, round2(v / weeks)]));
 }
+
+/** Gas used on gig shifts per month ("YYYY-MM-01" → $), for taking it out of personal Gas spending. */
+export function gigFuelByMonth(shifts: Shift[], costPerKm: number | null): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const s of shifts) {
+    const c = shiftStats(s, costPerKm).carCost;
+    if (c) out[`${s.date.slice(0, 7)}-01`] = round2((out[`${s.date.slice(0, 7)}-01`] ?? 0) + c);
+  }
+  return out;
+}

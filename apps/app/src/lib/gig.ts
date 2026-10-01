@@ -10,7 +10,7 @@ export interface ShiftRow extends Shift {
 
 export interface GigSettings {
   cost_per_km: number | null; weekly_target: number | null;
-  fuel_price: number | null; fuel_efficiency: number | null; plan_ahead: boolean;
+  fuel_price: number | null; fuel_efficiency: number | null; plan_ahead: boolean; exclude_gig_gas: boolean;
 }
 
 const n = (v: any) => (v == null ? null : Number(v));
@@ -37,6 +37,7 @@ export async function loadGigSettings(): Promise<GigSettings> {
   return {
     cost_per_km: n(data?.cost_per_km), weekly_target: n(data?.weekly_target),
     fuel_price: n(data?.fuel_price), fuel_efficiency: n(data?.fuel_efficiency), plan_ahead: !!data?.plan_ahead,
+    exclude_gig_gas: !!data?.exclude_gig_gas,
   };
 }
 

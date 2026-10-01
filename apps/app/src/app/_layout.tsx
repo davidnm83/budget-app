@@ -26,6 +26,9 @@ function RootStack() {
         <Stack.Screen name="reports" options={{ title: 'Reports' }} />
         <Stack.Screen name="categories" options={{ title: 'Categories' }} />
         <Stack.Screen name="gig" options={{ title: 'Gig work' }} />
+        <Stack.Screen name="credit" options={{ title: 'Credit cards' }} />
+        <Stack.Screen name="watch" options={{ title: 'Spending watch' }} />
+        <Stack.Screen name="loans" options={{ title: 'Car & loans' }} />
       </Stack.Protected>
     </Stack>
   );

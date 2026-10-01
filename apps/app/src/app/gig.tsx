@@ -23,7 +23,7 @@ const money0 = (n: number) => formatMoney(n).replace(/\.\d\d$/, '');
 const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
 const pct = (x: number | null) => (x == null ? '–' : `${Math.round(x * 100)}%`);
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const EMPTY: GigSettings = { cost_per_km: null, weekly_target: null, fuel_price: null, fuel_efficiency: null, plan_ahead: false };
+const EMPTY: GigSettings = { cost_per_km: null, weekly_target: null, fuel_price: null, fuel_efficiency: null, plan_ahead: false, exclude_gig_gas: false };
 
 export default function Gig() {
   const t = useTheme();
@@ -441,6 +441,7 @@ function SettingsForm({ initial, rules, accounts, usedApps, suggestedCpk, gas90,
   const [price, setPrice] = useState(initial.fuel_price != null ? String(initial.fuel_price) : '');
   const [cpk, setCpk] = useState(initial.cost_per_km != null ? String(initial.cost_per_km) : '');
   const [planAhead, setPlanAhead] = useState(initial.plan_ahead);
+  const [excludeGas, setExcludeGas] = useState(initial.exclude_gig_gas);
   const apps = usedApps.length ? usedApps.filter((a) => a !== 'other') : GIG_PLATFORMS.map((p) => p.key);
   const defaultAccount = accounts.find((a) => a.plan_include)?.id ?? null;
   const [drafts, setDrafts] = useState<Record<string, RuleDraft>>(() => Object.fromEntries(apps.map((a) => {
@@ -456,7 +457,7 @@ function SettingsForm({ initial, rules, accounts, usedApps, suggestedCpk, gas90,
 
   const save = async () => {
     const s = await supabase.from('gig_settings').upsert({
-      weekly_target: n(target), fuel_efficiency: n(eff), fuel_price: n(price), plan_ahead: planAhead,
+      weekly_target: n(target), fuel_efficiency: n(eff), fuel_price: n(price), plan_ahead: planAhead, exclude_gig_gas: excludeGas,
       cost_per_km: derived != null ? Math.round(derived * 1000) / 1000 : n(cpk), updated_at: new Date().toISOString(),
     });
     if (s.error) { setError(s.error.message); return; }
@@ -485,6 +486,11 @@ function SettingsForm({ initial, rules, accounts, usedApps, suggestedCpk, gas90,
           {suggestedCpk != null && <Pressable onPress={() => setCpk(String(suggestedCpk))}><Text style={{ color: t.accent, fontSize: 12 }}>Use {formatMoney(suggestedCpk)}/km: {formatMoney(gas90)} of gas ÷ {Math.round(km90)} km in the last 90 days</Text></Pressable>}
         </Field>
       )}
+
+      <View style={styles.between}>
+        <Text style={{ color: t.text, flex: 1 }}>Take gig gas out of my Gas spending (the Budget tab counts it as a work cost instead)</Text>
+        <Switch value={excludeGas} onValueChange={setExcludeGas} />
+      </View>
 
       <Text style={[styles.h, { color: t.muted }]}>Payouts in the planner</Text>
       <Text style={{ color: t.muted, fontSize: 12 }}>

@@ -2,7 +2,7 @@
 // comparisons with other months or years, and a year view of budget vs actual by month.
 import {
   actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
-  categoryIcon, groupIcon, shortDate, suggestBudget, todayIn, type BudgetLine, type Month,
+  categoryIcon, gigFuelByMonth, groupIcon, shortDate, suggestBudget, todayIn, type BudgetLine, type Month,
 } from '@budget-app/core';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -16,6 +16,9 @@ import {
   type Budget, type Category, type CategoryMonth, type MonthSummary,
 } from '@/lib/reports';
 import { loadGroupIcons } from '@/lib/categories';
+import { DEFAULT_BUDGET, Widget, WidgetPicker } from '@/components/Widgets';
+import { costPerKm, loadGigSettings, loadShifts } from '@/lib/gig';
+import { loadPrefs } from '@/lib/prefs';
 import { TransactionEditor } from '@/components/TransactionEditor';
 import { afterClose } from '@/lib/useBackToClose';
 import { supabase } from '@/lib/supabase';
@@ -33,17 +36,31 @@ export default function BudgetTab() {
   const [rows, setRows] = useState<CategoryMonth[]>([]);
   const [summaries, setSummaries] = useState<MonthSummary[]>([]);
   const [groupIcons, setGroupIcons] = useState<Record<string, string>>({});
+  const [widgets, setWidgets] = useState<string[]>([]);
+  const [gigGas, setGigGas] = useState<Record<string, number>>({});
+  const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [c, b, s, gi] = await Promise.all([loadCategories(), loadBudgets(), loadMonthSummaries(), loadGroupIcons()]);
+      setRefresh((r) => r + 1);
+      const [c, b, s, gi, prefs, gig] = await Promise.all([loadCategories(), loadBudgets(), loadMonthSummaries(), loadGroupIcons(), loadPrefs(), loadGigSettings()]);
+      setWidgets(prefs.budget_widgets ?? DEFAULT_BUDGET);
       const now = thisMonth();
       const first = [...s.map((x) => x.month), ...b.map((x) => x.month), addMonths(now, -12)].sort()[0];
       setCats(c); setBudgets(b); setSummaries(s); setGroupIcons(gi);
-      setRows(await loadCategoryMonths(first, now > month ? now : month));
+      let monthRows = await loadCategoryMonths(first, now > month ? now : month);
+      // Gig gas: take the gas used on gig shifts out of the Gas category (a work cost, not personal spending).
+      let fuel: Record<string, number> = {};
+      const gasId = c.find((x) => x.kind === 'expense' && /^(gas|gasoline|fuel)$/i.test(x.name))?.id;
+      if (gig.exclude_gig_gas && gasId) {
+        fuel = gigFuelByMonth(await loadShifts(first), costPerKm(gig));
+        monthRows = monthRows.map((r) => (r.category_id === gasId && fuel[r.month] ? { ...r, total: Math.min(0, r.total + fuel[r.month]) } : r));
+      }
+      setGigGas(fuel);
+      setRows(monthRows);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -52,7 +69,7 @@ export default function BudgetTab() {
   }, [month]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const data = { t, cats, groupIcons, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
+  const data = { t, cats, groupIcons, widgets, setWidgets, gigGas, refresh, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
     <TopBar>
@@ -73,7 +90,7 @@ export default function BudgetTab() {
 }
 
 interface Data {
-  t: Theme; cats: Category[]; groupIcons: Record<string, string>; budgets: Budget[]; rows: CategoryMonth[]; summaries: MonthSummary[];
+  t: Theme; cats: Category[]; groupIcons: Record<string, string>; widgets: string[]; setWidgets: (w: string[]) => void; gigGas: Record<string, number>; refresh: number; budgets: Budget[]; rows: CategoryMonth[]; summaries: MonthSummary[];
   month: Month; setMonth: (m: Month) => void; reload: () => void; setError: (e: string) => void; setView: (v: View_) => void;
 }
 
@@ -109,6 +126,7 @@ function MonthView(d: Data) {
   const [busy, setBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [incomeOpen, setIncomeOpen] = useState(true);
+  const [picking, setPicking] = useState(false);
 
   const monthBudgets = d.budgets.filter((b) => b.month === month);
   const view = useMemo(() => {
@@ -187,6 +205,8 @@ function MonthView(d: Data) {
         );
       })()}
       {tot.unbudgetedExpenses > 0 && <Text style={{ color: t.muted, fontSize: 12 }}>{formatMoney(tot.unbudgetedExpenses)} spent outside the budget (listed at the bottom).</Text>}
+      {!!d.gigGas[month] && <Text style={{ color: t.muted, fontSize: 12 }}>⛽ Gas leaves out ≈ {formatMoney(d.gigGas[month])} used on gig shifts (Gig work settings).</Text>}
+      {month === current && d.widgets.map((k) => <Widget key={k} k={k} refresh={d.refresh} />)}
 
       {!monthBudgets.length && (
         <Card style={{ gap: 8 }}>
@@ -262,6 +282,11 @@ function MonthView(d: Data) {
       {monthBudgets.length > 0 && <Button title={adding ? 'Close' : 'Add a budget'} kind="plain" onPress={() => setAdding(!adding)} />}
       {adding && <AddBudget d={d} monthBudgets={monthBudgets} onAdd={(r) => { add([r]); setAdding(false); }} suggestion={suggestion} />}
 
+      <Pressable onPress={() => setPicking(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 8 }}>
+        <Ionicons name="options-outline" size={16} color={t.accent} />
+        <Text style={{ color: t.accent }}>{d.widgets.length ? 'Change widgets' : 'Add widgets (watch list, averages…)'}</Text>
+      </Pressable>
+      {picking && <WidgetPicker place="budget" current={d.widgets} onClose={() => setPicking(false)} onSaved={d.setWidgets} />}
       <Archive d={d} months={pastMonths} />
       {editing && <BudgetEditor d={d} line={editing} onClose={() => setEditing(null)} />}
     </>
