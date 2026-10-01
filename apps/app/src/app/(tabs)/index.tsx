@@ -122,7 +122,7 @@ function CardShell({ t, title, link, onPress, children }: { t: Theme; title: str
 
 function ReviewCard({ t, n }: { t: Theme; n: number }) {
   return (
-    <CardShell t={t} title="To review" link={n ? 'Review' : undefined} onPress={() => router.navigate('/transactions' as any)}>
+    <CardShell t={t} title="To review" link={n ? 'Review' : undefined} onPress={() => router.navigate('/transactions?mode=review' as any)}>
       {n ? (
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
           <Text style={{ color: t.text, fontSize: 28, fontWeight: '700' }}>{n}</Text>

@@ -10,6 +10,7 @@ import { MultiPicker } from '@/components/Picker';
 import { Button, Card } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
+import { DateField } from '@/components/DateField';
 import type { Category, Txn } from '@/lib/types';
 
 export default function TransactionScreen() {
@@ -103,7 +104,7 @@ export default function TransactionScreen() {
     const changedCategory = categoryId !== txn.category_id;
     const newDate = toIsoDate(date);
     const newAmount = round2(parseMoney(amount));
-    if (!newDate || isNaN(newAmount)) { setBusy(false); setError('Check the date (YYYY-MM-DD) and amount.'); return; }
+    if (!newDate || isNaN(newAmount)) { setBusy(false); setError('Check the date and amount.'); return; }
     // First change to a bank transaction's date or amount: keep the bank's value beside it.
     const keep: Record<string, unknown> = {};
     if (txn.source === 'plaid') {
@@ -181,7 +182,7 @@ export default function TransactionScreen() {
       <View style={{ flexDirection: 'row', gap: 12 }}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.label, { color: t.muted }]}>Date</Text>
-          <TextInput style={input} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={t.muted} />
+          <DateField value={date} onChange={setDate} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[styles.label, { color: t.muted }]}>Amount (money out is negative)</Text>

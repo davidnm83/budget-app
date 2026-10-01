@@ -2,11 +2,11 @@
 // comparisons with other months or years, and a year view of budget vs actual by month.
 import {
   actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
-  categoryIcon, groupIcon, suggestBudget, todayIn, type BudgetLine, type Month,
+  categoryIcon, groupIcon, shortDate, suggestBudget, todayIn, type BudgetLine, type Month,
 } from '@budget-app/core';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Field, Sheet } from '@/components/Forms';
 import { TopBar } from '@/components/TopBar';
@@ -168,13 +168,22 @@ function MonthView(d: Data) {
     <>
       <Stepper label={monthName(month)} onPrev={() => d.setMonth(addMonths(month, -1))} onNext={() => d.setMonth(addMonths(month, 1))} nextDisabled={month >= current} />
 
-      <View style={styles.tiles}>
-        <Tile t={t} label="Spent" value={money0(tot.actualExpenses)} sub={tot.budgetedExpenses ? `of ${money0(tot.budgetedExpenses)}` : 'no budget'} />
-        <Tile t={t} label={tot.actualExpenses > tot.budgetedExpenses && tot.budgetedExpenses ? 'Over' : 'Left'} warn={tot.actualExpenses > tot.budgetedExpenses && tot.budgetedExpenses > 0}
-          value={money0(Math.abs(tot.budgetedExpenses - tot.actualExpenses))} sub={pace > 0 && pace < 1 ? `${Math.round(pace * 100)}% of month` : ''} />
-        <Tile t={t} label="Money in" value={money0(tot.actualIncome)} sub={tot.budgetedIncome ? `of ${money0(tot.budgetedIncome)}` : ''} />
-        <Tile t={t} label="Unbudgeted" value={money0(tot.budgetedIncome - tot.budgetedExpenses)} sub="income − budget" />
-      </View>
+      {/* Top: how the month stands. Left to spend (coloured by pace), actual net so far, and the plan's net. */}
+      {(() => {
+        const left = tot.budgetedExpenses - tot.actualExpenses;
+        const st = paceState(tot.actualExpenses, tot.budgetedExpenses, pace);
+        const net = tot.actualIncome - tot.actualExpenses;
+        const planNet = tot.budgetedIncome - tot.budgetedExpenses;
+        const tone = (n: number) => (n >= 0 ? t.accent : t.danger);
+        return (
+          <View style={styles.tiles}>
+            <Tile t={t} label={left < 0 ? 'Over budget' : 'Left to spend'} value={money0(Math.abs(left))} color={stateColor(t, st)}
+              sub={pace > 0 && pace < 1 ? `${Math.round(pace * 100)}% of month gone` : tot.budgetedExpenses ? `of ${money0(tot.budgetedExpenses)}` : 'no budget'} />
+            <Tile t={t} label="Net so far" value={`${net < 0 ? '−' : '+'}${money0(Math.abs(net))}`} color={tone(net)} sub="money in − spent" />
+            <Tile t={t} label="Planned net" value={`${planNet < 0 ? '−' : '+'}${money0(Math.abs(planNet))}`} color={tone(planNet)} sub="expected in − budget" />
+          </View>
+        );
+      })()}
       {tot.unbudgetedExpenses > 0 && <Text style={{ color: t.muted, fontSize: 12 }}>{formatMoney(tot.unbudgetedExpenses)} spent outside the budget (listed at the bottom).</Text>}
 
       {!monthBudgets.length && (
@@ -204,6 +213,7 @@ function MonthView(d: Data) {
               </View>
             );
           })}
+          <TotalRow t={t} label="Spent" actual={tot.actualExpenses} available={tot.budgetedExpenses} pace={pace} />
         </Card>
       )}
 
@@ -215,6 +225,7 @@ function MonthView(d: Data) {
               <Line t={t} icon={catIcon(l.categoryId)} label={l.label} actual={l.actual} available={l.available} pace={pace} income />
             </Pressable>
           ))}
+          <TotalRow t={t} label="Money in" actual={tot.actualIncome} available={tot.budgetedIncome} pace={pace} income />
         </Card>
       )}
 
@@ -254,10 +265,10 @@ function MonthView(d: Data) {
 function Line({ t, icon, label, actual, available, pace, bold, income, carry }: {
   t: Theme; icon: string; label: string; actual: number; available: number; pace: number; bold?: boolean; income?: boolean; carry?: number;
 }) {
-  const over = !income && actual > available + 0.005;
-  const ahead = !income && available > 0 && pace > 0 && pace < 1 && actual / available > pace + 0.1 && !over;
+  const st = income ? 'income' : paceState(actual, available, pace);
+  const over = st === 'over';
   const fill = available > 0 ? Math.min(1, actual / available) : actual > 0 ? 1 : 0;
-  const color = over ? t.danger : income ? t.series1 : ahead ? t.series2 : t.accent;
+  const color = stateColor(t, st);
   return (
     <View style={{ flex: 1, gap: 4 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -279,12 +290,83 @@ function Line({ t, icon, label, actual, available, pace, bold, income, carry }: 
   );
 }
 
-function Tile({ t, label, value, sub, warn }: { t: Theme; label: string; value: string; sub?: string; warn?: boolean }) {
+type PaceState = 'over' | 'ahead' | 'ok' | 'income';
+/** Over budget, spending ahead of the month's pace (by 10 points or more), or on track. */
+function paceState(actual: number, available: number, pace: number): PaceState {
+  if (actual > available + 0.005) return 'over';
+  if (available > 0 && pace > 0 && pace < 1 && actual / available > pace + 0.1) return 'ahead';
+  return 'ok';
+}
+const stateColor = (t: Theme, s: PaceState) => (s === 'over' ? t.danger : s === 'ahead' ? t.series2 : s === 'income' ? t.series1 : t.accent);
+
+/** Section total at the bottom of a card: tinted, with a thick bar, coloured like the lines. */
+function TotalRow({ t, label, actual, available, pace, income }: { t: Theme; label: string; actual: number; available: number; pace: number; income?: boolean }) {
+  const st = income ? (actual >= available ? 'ok' : 'income') : paceState(actual, available, pace);
+  const color = stateColor(t, st);
+  const fill = available > 0 ? Math.min(1, actual / available) : actual > 0 ? 1 : 0;
+  const diff = available - actual;
+  const note = income
+    ? (diff > 0 ? `${money0(diff)} still to come` : `${money0(-diff)} more than expected`)
+    : (diff >= 0 ? `${money0(diff)} left` : `${money0(-diff)} over`);
   return (
-    <View style={[styles.tile, { backgroundColor: t.card, borderColor: warn ? t.danger : t.line }]}>
+    <View style={[styles.total, { backgroundColor: color + '1f', borderLeftColor: color }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+        <Text style={{ color: t.text, fontWeight: '800', fontSize: 15, flex: 1 }}>{label}</Text>
+        <Text style={{ color, fontWeight: '800', fontSize: 18, fontVariant: ['tabular-nums'] }}>{money0(actual)}</Text>
+        <Text style={{ color: t.muted, fontSize: 13, fontVariant: ['tabular-nums'] }}>/ {money0(available)}</Text>
+      </View>
+      <View>
+        <View style={{ height: 9, borderRadius: 5, backgroundColor: t.track, overflow: 'hidden' }}>
+          <View style={{ width: `${fill * 100}%`, height: '100%', borderRadius: 5, backgroundColor: color }} />
+        </View>
+        {pace > 0 && pace < 1 && !income && <View style={{ position: 'absolute', left: `${pace * 100}%`, top: -3, bottom: -3, width: 2, backgroundColor: t.text, opacity: 0.5 }} />}
+      </View>
+      <Text style={{ color, fontSize: 12, fontWeight: '600' }}>{note}</Text>
+    </View>
+  );
+}
+
+function Tile({ t, label, value, sub, warn, color }: { t: Theme; label: string; value: string; sub?: string; warn?: boolean; color?: string }) {
+  const c = color ?? (warn ? t.danger : undefined);
+  return (
+    <View style={[styles.tile, { backgroundColor: c ? c + '14' : t.card, borderColor: c ?? t.line }, c && { borderLeftWidth: 3 }]}>
       <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{label.toUpperCase()}</Text>
-      <Text style={{ color: warn ? t.danger : t.text, fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{value}</Text>
+      <Text style={{ color: c ?? t.text, fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{value}</Text>
       {!!sub && <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{sub}</Text>}
+    </View>
+  );
+}
+
+/** The month's transactions for a budget line, listed right in its pop-up. */
+function MonthTxns({ d, line, onOpen, onAll }: { d: Data; line: BudgetLine; onOpen: (id: string) => void; onAll: () => void }) {
+  const { t, month } = d;
+  const [rows, setRows] = useState<{ transaction_id: string; date: string; amount: number; merchant: string }[] | null>(null);
+  useEffect(() => {
+    (async () => {
+      let q = supabase.from('transaction_lines').select('transaction_id, date, amount, merchant, kind')
+        .gte('date', month).lte('date', monthEnd(month)).order('date', { ascending: false }).limit(60);
+      if (line.categoryId) q = q.eq('category_id', line.categoryId);
+      else if (line.groupName) {
+        const ids = d.cats.filter((c) => c.group === line.groupName && c.kind === 'expense').map((c) => c.id);
+        q = q.in('category_id', ids).eq('kind', 'expense');
+      }
+      const { data } = await q;
+      setRows(((data ?? []) as any[]).map((r) => ({ ...r, amount: Number(r.amount) })));
+    })();
+  }, [line.key, month]);
+  return (
+    <View style={{ gap: 2 }}>
+      <Text style={[styles.h, { color: t.muted }]}>{monthName(month)} transactions{rows ? ` · ${rows.length}${rows.length === 60 ? '+' : ''}` : ''}</Text>
+      {rows === null && <Text style={{ color: t.muted }}>Loading…</Text>}
+      {rows?.length === 0 && <Text style={{ color: t.muted }}>None yet this month.</Text>}
+      {rows?.map((r) => (
+        <Pressable key={r.transaction_id + r.amount} onPress={() => onOpen(r.transaction_id)} style={({ pressed }) => [styles.txn, { borderColor: t.line }, pressed && { backgroundColor: t.line }]}>
+          <Text style={{ color: t.muted, fontSize: 12, width: 48 }}>{shortDate(r.date)}</Text>
+          <Text style={{ color: t.text, flex: 1, fontSize: 14 }} numberOfLines={1}>{r.merchant}</Text>
+          <Text style={{ color: r.amount > 0 ? t.positive : t.text, fontSize: 14, fontVariant: ['tabular-nums'] }}>{formatMoney(r.amount)}</Text>
+        </Pressable>
+      ))}
+      {rows?.length === 60 && <Button title="See all" kind="plain" onPress={onAll} />}
     </View>
   );
 }
@@ -329,7 +411,8 @@ function BudgetEditor({ d, line, onClose }: { d: Data; line: BudgetLine; onClose
           <Switch value={rollover} onValueChange={setRollover} />
         </View>
       )}
-      <Button title="See this month's transactions" kind="plain" onPress={() => { onClose(); drill(d, line, month, monthEnd(month)); }} />
+      <MonthTxns d={d} line={line} onOpen={(id) => { onClose(); afterClose(() => router.push({ pathname: '/transaction/[id]', params: { id } })); }}
+        onAll={() => { onClose(); drill(d, line, month, monthEnd(month)); }} />
     </Sheet>
   );
 }
@@ -542,6 +625,8 @@ const styles = StyleSheet.create({
   groupRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth },
   lineRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 30, paddingRight: 12, paddingVertical: 7 },
   icon: { width: 22, fontSize: 16, textAlign: 'center' },
+  txn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth },
+  total: { gap: 6, paddingHorizontal: 12, paddingVertical: 10, borderLeftWidth: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'transparent' },
   cardHead: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4 },
   h: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

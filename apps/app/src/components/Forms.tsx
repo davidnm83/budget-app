@@ -4,6 +4,7 @@ import { addDays, categoryIcon, formatMoney, parseMoney, round2, shortDate, toIs
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DateField } from './DateField';
 import { MultiPicker } from '@/components/Picker';
 import { Button, Chip, Segmented } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
@@ -51,7 +52,8 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
   const [name, setName] = useState(initial.name ?? '');
   const [amount, setAmount] = useState(initial.amount != null ? String(Math.abs(initial.amount)) : '');
   const [estimated, setEstimated] = useState(!!initial.estimated);
-  const [frequency, setFrequency] = useState<Frequency>(initial.frequency ?? 'monthly');
+  const [frequency, setFrequency] = useState<Frequency | 'once'>(initial.frequency ?? 'monthly');
+  const once = frequency === 'once';
   const [start, setStart] = useState(initial.start_date ?? '');
   const [end, setEnd] = useState(initial.end_date ?? '');
   const [accountId, setAccountId] = useState<string | null>(initial.account_id ?? null);
@@ -68,10 +70,21 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
     const card = kind === 'bill' && cardId;
     const a = card && cardRule !== 'custom' ? 0 : parseMoney(amount);
     const s = toIsoDate(start), e = end.trim() ? toIsoDate(end) : null;
-    if (!name.trim() || isNaN(a) || !s || e === '') { setError('Fill in a name, an amount and a first due date (YYYY-MM-DD).'); return; }
+    if (!name.trim() || isNaN(a) || !s || e === '') { setError('Fill in a name, an amount and a first due date.'); return; }
+    if (once) {
+      // A one-off goes straight into the plan (PLN-3) rather than the bills list.
+      if (!accountId) { setError(`Pick the account it ${kind === 'bill' ? 'comes out of' : 'goes into'}, so it shows in that week's plan.`); return; }
+      setBusy(true);
+      const { error } = await supabase.from('plan_entries').insert({
+        description: name.trim(), amount: round2(kind === 'bill' ? -Math.abs(a) : Math.abs(a)), date: s, account_id: accountId, category_id: categoryId,
+      });
+      setBusy(false);
+      if (error) setError(error.message); else { onSaved(); onClose(); }
+      return;
+    }
     setBusy(true);
     const row = {
-      name: name.trim(), kind, amount: round2(kind === 'bill' ? -Math.abs(a) : Math.abs(a)), estimated, frequency,
+      name: name.trim(), kind, amount: round2(kind === 'bill' ? -Math.abs(a) : Math.abs(a)), estimated, frequency: frequency as Frequency,
       start_date: s, end_date: e, account_id: accountId, category_id: categoryId, match_text: matchText.trim() || null, active: true,
       card_account_id: card ? cardId : null, card_rule: card ? cardRule : null,
     };
@@ -120,16 +133,19 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
       {!(kind === 'bill' && cardId && cardRule !== 'custom') && <Field t={t} label="Amount">
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={t.muted} style={[input, { flex: 1 }]} />
-          <Text style={{ color: t.text }}>Varies</Text>
-          <Switch value={estimated} onValueChange={setEstimated} />
+          {!once && <Text style={{ color: t.text }}>Varies</Text>}
+          {!once && <Switch value={estimated} onValueChange={setEstimated} />}
         </View>
       </Field>}
       <Field t={t} label="How often">
-        <View style={styles.chips}>{FREQ.map((f) => <Chip key={f.key} label={f.label} on={frequency === f.key} onPress={() => setFrequency(f.key)} />)}</View>
+        <View style={styles.chips}>
+          {FREQ.map((f) => <Chip key={f.key} label={f.label} on={frequency === f.key} onPress={() => setFrequency(f.key)} />)}
+          {!initial.id && <Chip label="Just once" on={once} onPress={() => setFrequency('once')} />}
+        </View>
       </Field>
       <View style={{ flexDirection: 'row', gap: 12 }}>
-        <View style={{ flex: 1 }}><Field t={t} label="Next / first due" hint="Sets the day it repeats on"><TextInput value={start} onChangeText={setStart} placeholder="YYYY-MM-DD" placeholderTextColor={t.muted} style={input} /></Field></View>
-        <View style={{ flex: 1 }}><Field t={t} label="Ends (optional)" hint="For instalment plans"><TextInput value={end} onChangeText={setEnd} placeholder="YYYY-MM-DD" placeholderTextColor={t.muted} style={input} /></Field></View>
+        <View style={{ flex: 1 }}><Field t={t} label={once ? 'Date' : 'Next / first due'} hint={once ? 'Shows in the planner that week' : 'Sets the day it repeats on'}><DateField value={start} onChange={setStart} /></Field></View>
+        {!once && <View style={{ flex: 1 }}><Field t={t} label="Ends (optional)" hint="For instalment plans"><DateField value={end} onChange={setEnd} min={start || undefined} /></Field></View>}
       </View>
       <Field t={t} label={kind === 'bill' ? 'Paid from' : 'Paid into'}>
         <View style={styles.chips}>
@@ -142,9 +158,9 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
           <Ionicons name="chevron-forward" size={18} color={t.muted} />
         </Pressable>
       </Field>
-      <Field t={t} label="Matches transactions containing" hint="Text in the bank description, so the payment is recognised (e.g. ROGERS). Leave blank to match by amount and date.">
+      {!once && <Field t={t} label="Matches transactions containing" hint="Text in the bank description, so the payment is recognised (e.g. ROGERS). Leave blank to match by amount and date.">
         <TextInput value={matchText} onChangeText={setMatchText} autoCapitalize="characters" placeholder="optional" placeholderTextColor={t.muted} style={input} />
-      </Field>
+      </Field>}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <MultiPicker visible={pickCat} title="Category" onClose={() => setPickCat(false)}
         items={categories.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))}
@@ -219,7 +235,7 @@ export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
       <Field t={t} label="Description"><TextInput value={description} onChangeText={setDescription} placeholder="e.g. Groceries" placeholderTextColor={t.muted} style={input} /></Field>
       <View style={{ flexDirection: 'row', gap: 12 }}>
         <View style={{ flex: 1 }}><Field t={t} label="Amount"><TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={input} /></Field></View>
-        <View style={{ flex: 1 }}><Field t={t} label="Date"><TextInput value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={t.muted} style={input} /></Field></View>
+        <View style={{ flex: 1 }}><Field t={t} label="Date"><DateField value={date} onChange={setDate} /></Field></View>
       </View>
       <Field t={t} label={dir === 'transfer' ? 'From' : 'Account'}>
         <View style={styles.chips}>{(plan.length ? plan : accounts).map((a) => <Chip key={a.id} label={a.name} on={accountId === a.id} onPress={() => setAccountId(a.id)} />)}</View>

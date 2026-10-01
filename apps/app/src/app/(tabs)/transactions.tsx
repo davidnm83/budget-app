@@ -6,7 +6,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   categoryIcon, datePresetRange, dayHeading, formatMoney, groupByDay, searchPattern, shortDate, todayIn, type DatePreset,
 } from '@budget-app/core';
-import { router, useFocusEffect, useNavigation } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Modal, Platform, Pressable, RefreshControl, ScrollView, SectionList, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,7 +54,10 @@ function activeCount(f: Filters) {
 export default function Transactions() {
   const t = useTheme();
   const navigation = useNavigation();
-  const [mode, setMode] = useState<Mode>('review');
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const [mode, setMode] = useState<Mode>(params.mode === 'review' ? 'review' : 'all');
+  // Home's "To review" card opens this tab straight on the transactions to review.
+  useEffect(() => { if (params.mode === 'review' || params.mode === 'all') setMode(params.mode); }, [params.mode]);
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<Filters>(DEFAULTS);
