@@ -2,6 +2,7 @@ export interface Category { id: string; name: string; group_name: string; kind: 
 export interface Account {
   id: string; name: string; mask: string | null; type: string | null; subtype: string | null; kind: 'plaid' | 'manual';
   current_balance: number | null; available_balance: number | null; balance_updated_at: string | null; is_hidden: boolean; plaid_item_id: string | null;
+  official_name?: string | null; plan_include?: boolean; plan_buffer?: number; start_balance?: number | null;
 }
 export interface Txn {
   id: string; account_id: string; date: string; amount: number; currency: string; name: string; merchant: string | null;
@@ -12,3 +13,6 @@ export interface Txn {
   categories?: { name: string } | null;
 }
 export interface PlaidItem { id: string; item_id: string; institution_name: string; status: 'ok' | 'login_required' | 'error'; error_code: string | null; last_synced_at: string | null }
+
+// Plaid reports what you owe on cards and loans as a positive balance; the app shows it as negative.
+export const signedBalance = (a: Pick<Account, 'type' | 'current_balance'>) => (a.type === 'credit' || a.type === 'loan' ? -1 : 1) * Number(a.current_balance ?? 0);

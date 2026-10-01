@@ -1,0 +1,159 @@
+// Planner tab (PLN): Monday-to-Sunday week of planned bills, income and one-offs against what
+// actually posted, with a running balance and a warning before an account dips below its buffer.
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { addDays, formatMoney, shortDate, weekStart as mondayOf, type WeekRow } from '@budget-app/core';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { PlanEntryForm } from '@/components/Forms';
+import { IconButton, TopBar } from '@/components/TopBar';
+import { Card, Chip, Empty } from '@/components/ui';
+import { loadWeek, today, type PlannerData } from '@/lib/plan';
+import { useTheme, type Theme } from '@/lib/theme';
+
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
+
+export default function Planner() {
+  const t = useTheme();
+  const [week, setWeek] = useState(mondayOf(today()));
+  const [only, setOnly] = useState<string | null>(null);
+  const [data, setData] = useState<PlannerData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState<any | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try { setData(await loadWeek(week, only)); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setLoading(false); }
+  }, [week, only]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const now = today();
+  const thisWeek = mondayOf(now);
+  const planAccounts = data?.accounts.filter((a) => a.plan_include) ?? [];
+  const name = (id: string | null) => data?.accounts.find((a) => a.id === id)?.name ?? '';
+  const v = data?.view;
+  const label = `${shortDate(week)} – ${shortDate(addDays(week, 6))}`;
+
+  const openRow = (r: WeekRow) => {
+    if (r.kind === 'actual' && r.txn) { router.push({ pathname: '/transaction/[id]', params: { id: r.txn.id } }); return; }
+    const p = r.item!;
+    setForm({
+      id: p.entryId, date: p.date, description: p.description, amount: p.amount, account_id: p.accountId,
+      recurring_id: p.recurringId, occurrence_date: p.occurrenceDate,
+      to_account_id: null,
+    });
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+      <TopBar>
+        <Pressable onPress={() => setWeek(addDays(week, -7))} hitSlop={10} accessibilityLabel="Previous week"><Ionicons name="chevron-back" size={22} color={t.accent} /></Pressable>
+        <Pressable onPress={() => setWeek(thisWeek)} style={{ flex: 1, alignItems: 'center' }}>
+          <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{label}</Text>
+          <Text style={{ color: t.muted, fontSize: 11 }}>{week === thisWeek ? 'This week' : week < thisWeek ? 'Past week · tap for this week' : 'Ahead · tap for this week'}</Text>
+        </Pressable>
+        <Pressable onPress={() => setWeek(addDays(week, 7))} hitSlop={10} accessibilityLabel="Next week"><Ionicons name="chevron-forward" size={22} color={t.accent} /></Pressable>
+        <IconButton icon="add" label="Plan an entry" onPress={() => setForm({ date: week > now ? week : now, description: '', amount: null, account_id: planAccounts[0]?.id ?? null })} />
+      </TopBar>
+
+      <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+        {planAccounts.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+            <Chip label="Combined" on={!only} onPress={() => setOnly(null)} />
+            {planAccounts.map((a) => <Chip key={a.id} label={a.name} on={only === a.id} onPress={() => setOnly(a.id)} />)}
+          </ScrollView>
+        )}
+        {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+        {data && !planAccounts.length && (
+          <Card><Text style={{ color: t.text }}>Choose the accounts that pay your bills: tap one on the Accounts tab (or Settings → Planner) and turn on “Plan bills from this account”.</Text></Card>
+        )}
+
+        {v && planAccounts.length > 0 && (
+          <>
+            <View style={styles.tiles}>
+              <Tile t={t} label="Start" value={money0(v.startBalance)} />
+              <Tile t={t} label={addDays(week, 6) < now ? 'End' : 'Projected end'} value={money0(v.endBalance)} strong warn={v.warnings.length > 0} />
+              <Tile t={t} label="Money in" value={money0(v.summary.actualIn)} sub={`of ${money0(v.summary.plannedIn)} planned`} />
+              <Tile t={t} label="Money out" value={money0(v.summary.actualOut)} sub={`of ${money0(v.summary.plannedOut)} planned`} />
+            </View>
+            {v.warnings.map((w) => (
+              <View key={w.accountId} style={[styles.warn, { borderColor: t.danger }]}>
+                <Ionicons name="warning" size={18} color={t.danger} />
+                <Text style={{ color: t.text, flex: 1, fontSize: 13 }}>
+                  <Text style={{ fontWeight: '700' }}>{name(w.accountId)}</Text> drops to {formatMoney(w.balance)} on {DAYS[(new Date(w.date + 'T00:00:00Z').getUTCDay() + 6) % 7]} {shortDate(w.date)}
+                  {' '}(below {formatMoney(w.buffer)}) after “{w.cause}”.
+                </Text>
+              </View>
+            ))}
+            {v.summary.overdue > 0 && (
+              <Text style={{ color: t.danger, fontSize: 13 }}>{v.summary.overdue} planned {v.summary.overdue === 1 ? 'entry hasn’t' : 'entries haven’t'} posted yet. Tap one to move it or skip it.</Text>
+            )}
+
+            <Card style={{ padding: 0 }}>
+              {v.days.map((d, i) => (
+                <View key={d.date} style={i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }}>
+                  <View style={[styles.day, { backgroundColor: d.date === now ? t.track : 'transparent' }]}>
+                    <Text style={{ color: t.text, fontWeight: '700', width: 40 }}>{DAYS[i]}</Text>
+                    <Text style={{ color: t.muted, flex: 1 }}>{shortDate(d.date)}{d.date === now ? ' · today' : ''}</Text>
+                    <Text style={{ color: d.endBalance < 0 ? t.danger : t.muted, fontVariant: ['tabular-nums'], fontSize: 13 }}>{formatMoney(d.endBalance)}</Text>
+                  </View>
+                  {d.rows.map((r) => <Row key={r.key} t={t} r={r} account={only ? '' : name(r.accountId)} onPress={() => openRow(r)} />)}
+                </View>
+              ))}
+            </Card>
+            <Text style={{ color: t.muted, fontSize: 12 }}>
+              Planned entries come from Bills & income (menu) and the + button. A posted transaction replaces its planned amount; ones nobody planned show as “unplanned”.
+            </Text>
+          </>
+        )}
+        {v && planAccounts.length > 0 && v.days.every((d) => !d.rows.length) && <Empty text="Nothing planned or posted this week." />}
+      </ScrollView>
+
+      {form && data && <PlanEntryForm initial={form} accounts={data.accounts} onClose={() => setForm(null)} onSaved={load} />}
+    </View>
+  );
+}
+
+function Row({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string; onPress: () => void }) {
+  const matched = r.kind === 'planned' && r.actual != null;
+  const icon = r.kind === 'actual' ? 'flash-outline' : matched ? 'checkmark-circle' : r.overdue ? 'alert-circle' : 'time-outline';
+  const color = r.kind === 'actual' ? t.muted : matched ? t.accent : r.overdue ? t.danger : t.muted;
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && { backgroundColor: t.line }]}>
+      <Ionicons name={icon} size={17} color={color} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: t.text, fontSize: 14, fontStyle: r.kind === 'actual' ? 'italic' : 'normal' }} numberOfLines={1}>{r.description}</Text>
+        <Text style={{ color: r.overdue ? t.danger : t.muted, fontSize: 11 }} numberOfLines={1}>
+          {r.kind === 'actual' ? 'unplanned' : matched ? `planned ${formatMoney(r.planned!)}` : r.overdue ? 'not posted yet' : 'planned'}{account ? ` · ${account}` : ''}
+        </Text>
+      </View>
+      <View style={{ alignItems: 'flex-end' }}>
+        <Text style={{ color: r.counted > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'], fontWeight: matched || r.kind === 'actual' ? '600' : '400' }}>{formatMoney(r.counted)}</Text>
+        <Text style={{ color: r.balanceAfter < 0 ? t.danger : t.muted, fontSize: 11, fontVariant: ['tabular-nums'] }}>{formatMoney(r.balanceAfter)}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function Tile({ t, label, value, strong, warn, sub }: { t: Theme; label: string; value: string; strong?: boolean; warn?: boolean; sub?: string }) {
+  return (
+    <View style={[styles.tile, { backgroundColor: t.card, borderColor: warn ? t.danger : t.line }]}>
+      <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{label}</Text>
+      <Text style={{ color: warn ? t.danger : t.text, fontSize: strong ? 16 : 13, fontWeight: strong ? '700' : '600', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{value}</Text>
+      {!!sub && <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{sub}</Text>}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  page: { padding: 12, gap: 10, paddingBottom: 40, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tile: { flexGrow: 1, flexBasis: '22%', minWidth: 80, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
+  warn: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: 1, borderRadius: 10, padding: 10 },
+  day: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 16, paddingRight: 12, paddingVertical: 6 },
+});

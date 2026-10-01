@@ -8,3 +8,5 @@ export * from './fina.ts';
 export * from './budget.ts';
 export * from './transactions.ts';
 export * from './merge.ts';
+export * from './recurring.ts';
+export * from './planner.ts';

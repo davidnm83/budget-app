@@ -22,10 +22,14 @@ Runs on iPhone, Android and the web from one codebase. Everything fits in free t
 - **CSV import** for banks Plaid can't reach (Rogers, PC Financial, American Express, or any CSV with date, description and amount). Rows the account already has are skipped. Web app only for now.
 - **Privacy.** Bank tokens are encrypted in Supabase Vault and never reach the app, and row-level security covers every table.
 
+- **Weekly planner.** Monday-to-Sunday plan per bill-paying account (or combined): bills, income and one-offs against what posted, a running balance, and a warning before an account dips below its buffer.
+- **Bills & income.** Schedules (weekly, every 2 weeks, monthly, yearly, with optional end date), this month's due dates matched to the payments automatically, and suggestions found in your history.
+- **Layout.** Tabs: Transactions, Planner, Budget, Reports, Accounts. Bills, Settings and the imports are in the menu (top left).
+
 ## Roadmap
 
-1. **Recurring bills and income**, matched to transactions automatically
-2. **Weekly planner:** planned debits and income per account, projected balance, low-balance warnings
+1. **Planner and bills, next steps:** match by hand, credit card payment rules, reminders, 4-week look-ahead
+2. **Home screen** (see the requirements doc)
 3. **Split editing and category management** (rename, regroup, merge)
 4. **Loans:** payments copied from the paying account, interest from balance changes (logic in `packages/core/src/loans.ts`)
 5. **Net worth history, CSV export**

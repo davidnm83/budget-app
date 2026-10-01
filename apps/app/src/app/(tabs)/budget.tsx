@@ -2,12 +2,15 @@
 // comparisons with other months or years, and a year view of budget vs actual by month.
 import {
   actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
-  suggestBudget, type BudgetLine, type Month,
+  suggestBudget, todayIn, type BudgetLine, type Month,
 } from '@budget-app/core';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { Bar, Button, Card, Chip, Empty, Segmented, Stepper } from '@/components/ui';
+import { Field, Sheet } from '@/components/Forms';
+import { TopBar } from '@/components/TopBar';
+import { Button, Card, Chip, Empty, Segmented, Stepper } from '@/components/ui';
 import {
   loadBudgets, loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, totalsFor,
   type Budget, type Category, type CategoryMonth, type MonthSummary,
@@ -47,15 +50,21 @@ export default function BudgetTab() {
 
   const data = { t, cats, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
   return (
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+    <TopBar>
+      <View style={{ flex: 1 }}>
+        <Segmented<View_> value={view} onChange={setView}
+          options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
+      </View>
+    </TopBar>
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-      <Segmented<View_> value={view} onChange={setView}
-        options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {view === 'month' && <MonthView {...data} />}
       {view === 'compare' && <CompareView {...data} />}
       {view === 'year' && <YearView {...data} />}
     </ScrollView>
+    </View>
   );
 }
 
@@ -86,12 +95,15 @@ function drill(d: Data, line: { categoryId: string | null; groupName: string | n
 }
 
 // ───────────────────────── Month ─────────────────────────
+// Dense layout: one line per budget (name, bar with a "pace" tick for how far through the month
+// we are, spent / budget, what's left), grouped under collapsible group rows with subtotals.
 function MonthView(d: Data) {
   const { t, month } = d;
   const current = thisMonth();
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<BudgetLine | null>(null);
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const monthBudgets = d.budgets.filter((b) => b.month === month);
   const view = useMemo(() => {
@@ -124,7 +136,7 @@ function MonthView(d: Data) {
     add(groups.map((g) => ({ group_name: g, amount: suggestion(`g:${g}`) })).filter((r) => r.amount > 0));
   };
 
-  // Category budgets sit under their group with a subtotal, as in Fina.
+  // Category budgets sit under their group with a subtotal, in Fina's order.
   const groupedExpenses = useMemo(() => {
     const groupOf = (l: BudgetLine) => l.groupName ?? d.cats.find((c) => c.id === l.categoryId)?.group ?? 'Other';
     const sortOf = (l: BudgetLine) => (l.groupName ? -1 : d.cats.find((c) => c.id === l.categoryId)?.sort ?? 0);
@@ -142,81 +154,82 @@ function MonthView(d: Data) {
     });
   }, [view, d.cats]);
 
+  // How far through the month we are (for the pace tick), only for the current month.
+  const daysIn = Number(monthEnd(month).slice(8, 10));
+  const pace = month === current ? Number(todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone).slice(8, 10)) / daysIn : month < current ? 1 : 0;
   const pastMonths = d.summaries.filter((s) => s.month < current && s.month !== month);
   const tot = view.totals;
-  const spentPct = tot.budgetedExpenses ? tot.actualExpenses / tot.budgetedExpenses : 0;
+  const toggle = (g: string) => setCollapsed((c) => { const n = new Set(c); n.has(g) ? n.delete(g) : n.add(g); return n; });
 
   return (
     <>
       <Stepper label={monthName(month)} onPrev={() => d.setMonth(addMonths(month, -1))} onNext={() => d.setMonth(addMonths(month, 1))} nextDisabled={month >= current} />
 
-      <Card style={{ gap: 10 }}>
-        <View style={styles.between}>
-          <Text style={{ color: t.muted }}>Spent</Text>
-          <Text style={{ color: t.text }}>
-            <Text style={{ fontWeight: '700', fontSize: 18 }}>{formatMoney(tot.actualExpenses)}</Text>
-            {tot.budgetedExpenses ? <Text style={{ color: t.muted }}> of {formatMoney(tot.budgetedExpenses)}</Text> : null}
-          </Text>
-        </View>
-        {tot.budgetedExpenses > 0 && <Bar value={tot.actualExpenses} max={tot.budgetedExpenses} color={t.accent} overColor={t.danger} />}
-        <View style={styles.between}>
-          <Text style={{ color: t.muted }}>Money in</Text>
-          <Text style={{ color: t.text }}>{formatMoney(tot.actualIncome)}{tot.budgetedIncome ? <Text style={{ color: t.muted }}> of {formatMoney(tot.budgetedIncome)} expected</Text> : null}</Text>
-        </View>
-        {tot.budgetedIncome > 0 && tot.budgetedExpenses > 0 && (
-          <Text style={{ color: t.muted }}>
-            Plan: {formatMoney(tot.budgetedIncome)} in − {formatMoney(tot.budgetedExpenses)} budgeted = {' '}
-            <Text style={{ color: tot.budgetedIncome < tot.budgetedExpenses ? t.danger : t.text, fontWeight: '600' }}>{formatMoney(tot.budgetedIncome - tot.budgetedExpenses)} unbudgeted</Text>
-          </Text>
-        )}
-        {tot.budgetedExpenses > 0 && (
-          <Text style={{ color: spentPct > 1 ? t.danger : t.muted }}>
-            {spentPct > 1 ? `Over budget by ${formatMoney(tot.actualExpenses - tot.budgetedExpenses)}` : `${formatMoney(tot.budgetedExpenses - tot.actualExpenses)} left to spend`}
-            {tot.unbudgetedExpenses ? ` · ${formatMoney(tot.unbudgetedExpenses)} not budgeted` : ''}
-          </Text>
-        )}
-      </Card>
+      <View style={styles.tiles}>
+        <Tile t={t} label="Spent" value={money0(tot.actualExpenses)} sub={tot.budgetedExpenses ? `of ${money0(tot.budgetedExpenses)}` : 'no budget'} />
+        <Tile t={t} label={tot.actualExpenses > tot.budgetedExpenses && tot.budgetedExpenses ? 'Over' : 'Left'} warn={tot.actualExpenses > tot.budgetedExpenses && tot.budgetedExpenses > 0}
+          value={money0(Math.abs(tot.budgetedExpenses - tot.actualExpenses))} sub={pace > 0 && pace < 1 ? `${Math.round(pace * 100)}% of month` : ''} />
+        <Tile t={t} label="Money in" value={money0(tot.actualIncome)} sub={tot.budgetedIncome ? `of ${money0(tot.budgetedIncome)}` : ''} />
+        <Tile t={t} label="Unbudgeted" value={money0(tot.budgetedIncome - tot.budgetedExpenses)} sub="income − budget" />
+      </View>
+      {tot.unbudgetedExpenses > 0 && <Text style={{ color: t.muted, fontSize: 12 }}>{formatMoney(tot.unbudgetedExpenses)} spent outside the budget (listed at the bottom).</Text>}
 
       {!monthBudgets.length && (
         <Card style={{ gap: 8 }}>
           <Text style={{ color: t.text, fontWeight: '600' }}>No budget for {monthName(month, false)} yet</Text>
           {previous && <Button title={`Copy ${monthName(previous)}'s budget`} onPress={() => copyFrom(previous)} busy={busy} />}
           <Button title="Suggest one from the last 3 months" kind={previous ? 'plain' : 'primary'} onPress={suggestAll} busy={busy} />
-          <Text style={{ color: t.muted, fontSize: 13 }}>The suggestion sets one budget per group at your average spending, rounded up to $5. Change any of them after.</Text>
         </Card>
       )}
 
-      {groupedExpenses.map((g) => (
-        <View key={g.group} style={{ gap: 8 }}>
-          <View style={[styles.between, { marginTop: 8 }]}>
-            <Text style={[styles.h, { color: t.muted, marginTop: 0 }]}>{g.group}</Text>
-            <Text style={{ color: g.actual > g.available ? t.danger : t.muted, fontSize: 13 }}>{money0(g.actual)} of {money0(g.available)}</Text>
-          </View>
-          {g.lines.map((l) => (
-            <BudgetLineRow key={l.key} d={d} line={l} editing={editing === l.key} onEdit={() => setEditing(editing === l.key ? null : l.key)} />
-          ))}
-        </View>
-      ))}
-
-      {view.income.length > 0 && <Text style={[styles.h, { color: t.muted }]}>Money in</Text>}
-      {view.income.map((l) => (
-        <BudgetLineRow key={l.key} d={d} line={l} editing={editing === l.key} onEdit={() => setEditing(editing === l.key ? null : l.key)} />
-      ))}
-
-      {view.unbudgeted.length > 0 && <Text style={[styles.h, { color: t.muted }]}>Not budgeted</Text>}
-      {view.unbudgeted.length > 0 && (
-        <Card style={{ paddingVertical: 4 }}>
-          {view.unbudgeted.map((l) => (
-            <View key={l.key} style={[styles.unb, { borderColor: t.line }]}>
-              <Pressable style={{ flex: 1 }} onPress={() => drill(d, l, month, monthEnd(month))}>
-                <Text style={{ color: t.text }}>{l.label}</Text>
-              </Pressable>
-              <Text style={{ color: t.text, marginRight: 10 }}>{l.kind === 'income' ? '+' : ''}{formatMoney(l.actual)}</Text>
-              {l.categoryId && (
-                <Pressable onPress={() => add([{ category_id: l.categoryId!, amount: suggestion(l.key) || Math.ceil(l.actual / 5) * 5 }])} hitSlop={8}>
-                  <Text style={{ color: t.accent }}>+ Budget</Text>
+      {groupedExpenses.length > 0 && (
+        <Card style={{ padding: 0 }}>
+          <ColumnHead t={t} />
+          {groupedExpenses.map((g) => {
+            const open = !collapsed.has(g.group);
+            const single = g.lines.length === 1 && g.lines[0].groupName;
+            return (
+              <View key={g.group}>
+                <Pressable onPress={() => (single ? setEditing(g.lines[0]) : toggle(g.group))} style={[styles.groupRow, { backgroundColor: t.bg, borderColor: t.line }]}>
+                  {!single && <Ionicons name={open ? 'chevron-down' : 'chevron-forward'} size={14} color={t.muted} />}
+                  <Line t={t} label={g.group} actual={g.actual} available={g.available} pace={pace} bold />
                 </Pressable>
-              )}
+                {!single && open && g.lines.map((l) => (
+                  <Pressable key={l.key} onPress={() => setEditing(l)} style={({ pressed }) => [styles.lineRow, pressed && { backgroundColor: t.line }]}>
+                    <Line t={t} label={l.label + (l.groupName ? ' (whole group)' : '')} actual={l.actual} available={l.available} pace={pace} carry={l.carryIn} />
+                  </Pressable>
+                ))}
+              </View>
+            );
+          })}
+        </Card>
+      )}
+
+      {view.income.length > 0 && (
+        <Card style={{ padding: 0 }}>
+          <Text style={[styles.cardHead, { color: t.muted }]}>MONEY IN</Text>
+          {view.income.map((l) => (
+            <Pressable key={l.key} onPress={() => setEditing(l)} style={styles.lineRow}>
+              <Line t={t} label={l.label} actual={l.actual} available={l.available} pace={pace} income />
+            </Pressable>
+          ))}
+        </Card>
+      )}
+
+      {view.unbudgeted.length > 0 && (
+        <Card style={{ padding: 0 }}>
+          <Text style={[styles.cardHead, { color: t.muted }]}>NOT BUDGETED</Text>
+          {view.unbudgeted.map((l) => (
+            <View key={l.key} style={[styles.lineRow, { gap: 8 }]}>
+              <Pressable style={{ flex: 1 }} onPress={() => drill(d, l, month, monthEnd(month))}>
+                <Text style={{ color: t.text, fontSize: 13 }} numberOfLines={1}>{l.label}</Text>
+              </Pressable>
+              <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{l.kind === 'income' ? '+' : ''}{formatMoney(l.actual)}</Text>
+              {l.categoryId ? (
+                <Pressable onPress={() => add([{ category_id: l.categoryId!, amount: suggestion(l.key) || Math.ceil(l.actual / 5) * 5 }])} hitSlop={8} accessibilityLabel={`Budget ${l.label}`}>
+                  <Ionicons name="add-circle-outline" size={20} color={t.accent} />
+                </Pressable>
+              ) : <View style={{ width: 20 }} />}
             </View>
           ))}
         </Card>
@@ -226,73 +239,103 @@ function MonthView(d: Data) {
       {adding && <AddBudget d={d} monthBudgets={monthBudgets} onAdd={(r) => { add([r]); setAdding(false); }} suggestion={suggestion} />}
 
       <Archive d={d} months={pastMonths} />
+      {editing && <BudgetEditor d={d} line={editing} onClose={() => setEditing(null)} />}
     </>
   );
 }
 
-function BudgetLineRow({ d, line, editing, onEdit }: { d: Data; line: BudgetLine; editing: boolean; onEdit: () => void }) {
+function ColumnHead({ t }: { t: Theme }) {
+  return (
+    <View style={[styles.lineRow, { paddingVertical: 6 }]}>
+      <Text style={[styles.colLabel, { color: t.muted }]}>CATEGORY</Text>
+      <Text style={[styles.colBar, { color: t.muted, fontSize: 10 }]}>│ = pace</Text>
+      <Text style={[styles.colNum, { color: t.muted, fontSize: 10 }]}>SPENT / BUDGET</Text>
+      <Text style={[styles.colLeft, { color: t.muted, fontSize: 10 }]}>LEFT</Text>
+    </View>
+  );
+}
+
+/** One budget line: label · bar (with pace tick) · spent / budget · left (or over). */
+function Line({ t, label, actual, available, pace, bold, income, carry }: {
+  t: Theme; label: string; actual: number; available: number; pace: number; bold?: boolean; income?: boolean; carry?: number;
+}) {
+  const left = income ? actual - available : available - actual;
+  const over = !income && left < 0;
+  const ahead = !income && available > 0 && pace > 0 && pace < 1 && actual / available > pace + 0.1 && !over;
+  const fill = available > 0 ? Math.min(1, actual / available) : actual > 0 ? 1 : 0;
+  return (
+    <>
+      <Text style={[styles.colLabel, { color: t.text, fontWeight: bold ? '700' : '400', fontSize: bold ? 14 : 13 }]} numberOfLines={1}>
+        {label}{carry ? <Text style={{ color: t.muted, fontSize: 11 }}>{` ${carry > 0 ? '+' : '−'}${money0(Math.abs(carry))}`}</Text> : null}
+      </Text>
+      <View style={styles.colBar}>
+        <View style={{ height: bold ? 8 : 6, borderRadius: 4, backgroundColor: t.track, overflow: 'hidden' }}>
+          <View style={{ width: `${fill * 100}%`, height: '100%', borderRadius: 4, backgroundColor: over ? t.danger : income ? t.series1 : ahead ? t.series2 : t.accent }} />
+        </View>
+        {pace > 0 && pace < 1 && !income && <View style={{ position: 'absolute', left: `${pace * 100}%`, top: -2, bottom: -2, width: 1.5, backgroundColor: t.text, opacity: 0.45 }} />}
+      </View>
+      <Text style={[styles.colNum, { color: t.text, fontWeight: bold ? '600' : '400' }]} numberOfLines={1}>
+        {money0(actual)}<Text style={{ color: t.muted }}>{` / ${money0(available)}`}</Text>
+      </Text>
+      <Text style={[styles.colLeft, { color: over ? t.danger : t.muted, fontWeight: over ? '700' : '400' }]} numberOfLines={1}>
+        {over ? `−${money0(-left)}` : money0(left)}
+      </Text>
+    </>
+  );
+}
+
+function Tile({ t, label, value, sub, warn }: { t: Theme; label: string; value: string; sub?: string; warn?: boolean }) {
+  return (
+    <View style={[styles.tile, { backgroundColor: t.card, borderColor: warn ? t.danger : t.line }]}>
+      <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{label.toUpperCase()}</Text>
+      <Text style={{ color: warn ? t.danger : t.text, fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{value}</Text>
+      {!!sub && <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{sub}</Text>}
+    </View>
+  );
+}
+
+/** Pop-up to change one budget: amount, rollover, see its transactions, remove. */
+function BudgetEditor({ d, line, onClose }: { d: Data; line: BudgetLine; onClose: () => void }) {
   const { t, month } = d;
+  const budget = d.budgets.find((b) => b.month === month && budgetKey(b) === line.key);
   const [amount, setAmount] = useState(String(line.budgeted));
   const [rollover, setRollover] = useState(line.rollover);
   const income = line.kind === 'income';
-  const over = !income && line.left < 0;
-  const budget = d.budgets.find((b) => b.month === month && budgetKey(b) === line.key);
-  useEffect(() => { if (editing) { setAmount(String(line.budgeted)); setRollover(line.rollover); } }, [editing, line.budgeted, line.rollover]);
-
+  const last3 = [1, 2, 3].map((n) => actualOfKey(d, line.key, addMonths(month, -n)));
   const save = async () => {
     const v = Number(amount.replace(/[$,\s]/g, ''));
     if (!budget || isNaN(v)) return;
     const { error } = await supabase.from('budgets').update({ amount: v, rollover }).eq('id', budget.id);
-    if (error) d.setError(error.message); else { onEdit(); d.reload(); }
+    if (error) d.setError(error.message); else { onClose(); d.reload(); }
   };
   const remove = async () => {
     if (!budget) return;
     const { error } = await supabase.from('budgets').delete().eq('id', budget.id);
-    if (error) d.setError(error.message); else { onEdit(); d.reload(); }
+    if (error) d.setError(error.message); else { onClose(); d.reload(); }
   };
-
   return (
-    <Card style={{ gap: 6, paddingVertical: 12 }}>
-      <Pressable onPress={onEdit} style={{ gap: 6 }}>
+    <Sheet title={`${line.label} · ${monthName(month)}`} onClose={onClose}
+      footer={<View style={{ flexDirection: 'row', gap: 8 }}>
+        <Button title="Remove" kind="danger" onPress={remove} />
+        <Button title="Save" onPress={save} style={{ flex: 1 }} />
+      </View>}>
+      <View style={styles.tiles}>
+        <Tile t={t} label={income ? 'Received' : 'Spent'} value={formatMoney(line.actual)} />
+        <Tile t={t} label="Available" value={formatMoney(line.available)} sub={line.carryIn ? `incl. ${formatMoney(line.carryIn)} rolled over` : ''} />
+        <Tile t={t} label="3-month average" value={formatMoney(last3.reduce((s, x) => s + x, 0) / 3)} sub={last3.map((x) => money0(x)).reverse().join(' · ')} />
+      </View>
+      <Field t={t} label={income ? 'Expected' : 'Budget'}>
+        <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" onSubmitEditing={save}
+          style={[styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }]} />
+      </Field>
+      {!income && (
         <View style={styles.between}>
-          <Text style={{ color: t.text, fontSize: 16, fontWeight: line.groupName ? '600' : '400', flex: 1 }}>{line.label}</Text>
-          <Text style={{ color: t.text }}>{formatMoney(line.actual)}<Text style={{ color: t.muted }}> / {formatMoney(line.available)}</Text></Text>
-        </View>
-        <Bar value={line.actual} max={line.available} color={income ? t.series1 : t.accent} overColor={income ? t.series1 : t.danger} />
-        <Text style={{ color: over ? t.danger : t.muted, fontSize: 13 }}>
-          {income
-            ? (line.left >= 0 ? `${formatMoney(line.left)} more than expected` : `${formatMoney(-line.left)} still to come`)
-            : (over ? `${formatMoney(-line.left)} over` : `${formatMoney(line.left)} left`)}
-          {line.carryIn ? ` · includes ${formatMoney(line.carryIn)} ${line.carryIn > 0 ? 'rolled over' : 'overspent last month'}` : ''}
-        </Text>
-      </Pressable>
-      {line.children?.map((c) => (
-        <Pressable key={c.key} onPress={() => drill(d, c, month, monthEnd(month))} style={[styles.child, { borderColor: t.line }]}>
-          <Text style={{ color: t.muted, flex: 1 }}>{c.label}</Text>
-          <Text style={{ color: t.muted }}>{formatMoney(c.actual)}</Text>
-        </Pressable>
-      ))}
-      {editing && (
-        <View style={{ gap: 8, marginTop: 6 }}>
-          <View style={[styles.between, { gap: 8 }]}>
-            <Text style={{ color: t.text }}>{income ? 'Expected' : 'Budget'}</Text>
-            <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" onSubmitEditing={save}
-              style={[styles.input, { color: t.text, borderColor: t.line }]} />
-          </View>
-          {!income && (
-            <View style={styles.between}>
-              <Text style={{ color: t.text, flex: 1 }}>Roll what's left (or overspent) into next month</Text>
-              <Switch value={rollover} onValueChange={setRollover} />
-            </View>
-          )}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Button title="Save" onPress={save} style={{ flex: 1 }} />
-            <Button title="See transactions" kind="plain" onPress={() => drill(d, line, month, monthEnd(month))} style={{ flex: 1 }} />
-            <Button title="Remove" kind="danger" onPress={remove} />
-          </View>
+          <Text style={{ color: t.text, flex: 1 }}>Roll what's left (or overspent) into next month</Text>
+          <Switch value={rollover} onValueChange={setRollover} />
         </View>
       )}
-    </Card>
+      <Button title="See this month's transactions" kind="plain" onPress={() => { onClose(); drill(d, line, month, monthEnd(month)); }} />
+    </Sheet>
   );
 }
 
@@ -498,7 +541,16 @@ function YearView(d: Data) {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, gap: 10, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  page: { paddingHorizontal: 12, paddingTop: 4, gap: 8, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tile: { flexGrow: 1, flexBasis: '22%', minWidth: 78, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
+  groupRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth },
+  lineRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 30, paddingRight: 10, paddingVertical: 6 },
+  cardHead: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4 },
+  colLabel: { flex: 1.6 },
+  colBar: { flex: 1.2, justifyContent: 'center' },
+  colNum: { width: 104, textAlign: 'right', fontSize: 12, fontVariant: ['tabular-nums'] },
+  colLeft: { width: 52, textAlign: 'right', fontSize: 12, fontVariant: ['tabular-nums'] },
   h: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },

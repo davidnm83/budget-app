@@ -21,6 +21,8 @@ function RootStack() {
         <Stack.Screen name="import" options={{ title: 'Import CSV' }} />
         <Stack.Screen name="fina-import" options={{ title: 'Import from Fina' }} />
         <Stack.Screen name="report" options={{ title: 'Report' }} />
+        <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+        <Stack.Screen name="bills" options={{ title: 'Bills & income' }} />
       </Stack.Protected>
     </Stack>
   );

@@ -5,6 +5,7 @@ import { addMonths, formatMoney, monthEnd, monthName, todayIn } from '@budget-ap
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { TopBar } from '@/components/TopBar';
 import { Bar, Card, Chip, Empty, Segmented } from '@/components/ui';
 import {
   loadCategories, loadCategoryMonths, loadMerchants, loadMonthSummaries, thisMonth,
@@ -68,15 +69,21 @@ export default function Reports() {
     router.push(`/report?${new URLSearchParams({ from: range.from, to: range.to, ...q }).toString()}` as any);
 
   return (
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+    <TopBar>
+      <View style={{ flex: 1 }}>
+        <Segmented<Tab> value={tab} onChange={setTab}
+          options={[{ value: 'categories', label: 'Categories' }, { value: 'cashflow', label: 'Cash flow' }, { value: 'merchants', label: 'Merchants' }]} />
+      </View>
+    </TopBar>
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-      <Segmented<Tab> value={tab} onChange={setTab}
-        options={[{ value: 'categories', label: 'Categories' }, { value: 'cashflow', label: 'Cash flow' }, { value: 'merchants', label: 'Merchants' }]} />
       <View style={styles.chips}>{RANGES.map((r) => <Chip key={r.key} label={r.label} on={rk === r.key} onPress={() => setRk(r.key)} />)}</View>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {tab === 'categories' && <ByCategory t={t} cats={cats} rows={rows} open={open} />}
       {tab === 'cashflow' && <CashFlow t={t} months={months} sources={sources} open={open} />}
       {tab === 'merchants' && <ByMerchant t={t} list={merchants} open={open} />}
     </ScrollView>
+    </View>
   );
 }
 
@@ -193,7 +200,7 @@ function ByMerchant({ t, list, open }: { t: Theme; list: MerchantTotal[]; open: 
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, gap: 10, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  page: { paddingHorizontal: 12, paddingTop: 4, gap: 10, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' },
   h: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },

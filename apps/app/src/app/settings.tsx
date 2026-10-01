@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import PlaidLinkButton from '@/components/PlaidLinkButton';
 import { Button, Card } from '@/components/ui';
 import { callFunction, supabase } from '@/lib/supabase';
@@ -66,6 +66,9 @@ export default function Settings() {
         <Button title="Import history from Fina" kind="plain" onPress={() => router.push('/fina-import')} />
       </Card>
 
+      <Text style={[styles.h, { color: t.text }]}>Planner</Text>
+      <PlannerSettings />
+
       <Text style={[styles.h, { color: t.text }]}>Account</Text>
       <Card style={{ gap: 12 }}>
         <Text style={{ color: t.muted }}>Signed in as {session?.user.email}</Text>
@@ -80,3 +83,40 @@ const styles = StyleSheet.create({
   h: { fontSize: 18, fontWeight: '700', marginTop: 16, marginBottom: 8 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
 });
+
+/** Which accounts the weekly planner covers, and the balance each should stay above (PLN-4, PLN-14). */
+function PlannerSettings() {
+  const t = useTheme();
+  const [accounts, setAccounts] = useState<{ id: string; name: string; mask: string | null; type: string | null; plan_include: boolean; plan_buffer: number }[]>([]);
+  const load = useCallback(async () => {
+    const { data } = await supabase.from('accounts').select('id, name, mask, type, plan_include, plan_buffer').eq('is_hidden', false).order('name');
+    setAccounts((data ?? []).map((a: any) => ({ ...a, plan_buffer: Number(a.plan_buffer) })));
+  }, []);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const save = async (id: string, patch: Record<string, unknown>) => {
+    setAccounts((xs) => xs.map((a) => (a.id === id ? { ...a, ...patch } as any : a)));
+    await supabase.from('accounts').update(patch).eq('id', id);
+  };
+  return (
+    <Card style={{ gap: 4 }}>
+      <Text style={{ color: t.muted, fontSize: 13, marginBottom: 4 }}>
+        The planner covers the accounts that pay your bills. Warn when one would drop below its buffer.
+      </Text>
+      {accounts.filter((a) => a.type === 'depository').map((a) => (
+        <View key={a.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }}>
+          <Switch value={a.plan_include} onValueChange={(v) => save(a.id, { plan_include: v })} />
+          <Text style={{ color: t.text, flex: 1 }} numberOfLines={1}>{a.name}{a.mask ? ` ••${a.mask}` : ''}</Text>
+          {a.plan_include && (
+            <>
+              <Text style={{ color: t.muted, fontSize: 13 }}>Buffer $</Text>
+              <TextInput defaultValue={String(a.plan_buffer)} keyboardType="decimal-pad"
+                onEndEditing={(e) => save(a.id, { plan_buffer: Number(e.nativeEvent.text) || 0 })}
+                onBlur={(e: any) => { const v = Number(e?.target?.value ?? e?.nativeEvent?.text); if (!isNaN(v)) save(a.id, { plan_buffer: v }); }}
+                style={{ color: t.text, borderWidth: 1, borderColor: t.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, width: 80, textAlign: 'right' }} />
+            </>
+          )}
+        </View>
+      ))}
+    </Card>
+  );
+}

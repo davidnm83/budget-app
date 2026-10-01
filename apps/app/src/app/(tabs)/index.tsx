@@ -1,14 +1,18 @@
 // Transactions tab: every transaction, grouped by day, with search, filters and sorting.
-// "To review" shows only unchecked ones (new arrivals); tick the circle to mark one reviewed,
-// or tap the row to change it. "All" shows everything; the circle there toggles reviewed.
+// The check button beside the search shows only unchecked ones (new arrivals, with a count);
+// tick the circle to mark one reviewed, or tap the row to change it. With it off you see
+// everything, and the circle toggles reviewed. Filters open in a pop-up.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   datePresetRange, dayHeading, formatMoney, groupByDay, searchPattern, shortDate, todayIn, type DatePreset,
 } from '@budget-app/core';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Button, Chip, Empty, Segmented } from '@/components/ui';
+import { FlatList, Modal, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MultiPicker } from '@/components/Picker';
+import { IconButton, TopBar } from '@/components/TopBar';
+import { Button, Chip, Empty } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 
@@ -24,11 +28,12 @@ interface Row {
 interface Filters {
   preset: DatePreset; direction: Direction; min: string; max: string;
   accounts: string[]; categories: string[]; // 'none' = uncategorised
+  merchants: string[];
   sort: Sort;
 }
 
 const PAGE = 100;
-const DEFAULTS: Filters = { preset: 'all', direction: 'any', min: '', max: '', accounts: [], categories: [], sort: 'newest' };
+const DEFAULTS: Filters = { preset: 'all', direction: 'any', min: '', max: '', accounts: [], categories: [], merchants: [], sort: 'newest' };
 const PRESETS: { key: DatePreset; label: string }[] = [
   { key: 'all', label: 'All time' }, { key: 'month', label: 'This month' }, { key: 'lastMonth', label: 'Last month' },
   { key: '30d', label: '30 days' }, { key: '90d', label: '90 days' }, { key: 'year', label: 'This year' }, { key: 'lastYear', label: 'Last year' },
@@ -42,7 +47,7 @@ const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
 
 function activeCount(f: Filters) {
   return (f.preset !== 'all' ? 1 : 0) + (f.direction !== 'any' ? 1 : 0) + (f.min || f.max ? 1 : 0)
-    + (f.accounts.length ? 1 : 0) + (f.categories.length ? 1 : 0);
+    + (f.accounts.length ? 1 : 0) + (f.categories.length ? 1 : 0) + (f.merchants.length ? 1 : 0) + (f.sort !== 'newest' ? 1 : 0);
 }
 
 export default function Transactions() {
@@ -81,6 +86,7 @@ export default function Transactions() {
     if (from) q = q.gte('date', from);
     if (to) q = q.lte('date', to);
     if (filters.accounts.length) q = q.in('account_id', filters.accounts);
+    if (filters.merchants.length) q = q.in('display_name', filters.merchants);
     if (filters.direction === 'out') q = q.lt('amount', 0).eq('is_transfer', false);
     if (filters.direction === 'in') q = q.gt('amount', 0).eq('is_transfer', false);
     if (filters.direction === 'transfer') q = q.eq('is_transfer', true);
@@ -140,8 +146,6 @@ export default function Transactions() {
   const sections = useMemo(() => (byDate ? groupByDay(rows) : []), [rows, byDate]);
   const nFilters = activeCount(filters);
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
-  const toggle = (key: 'accounts' | 'categories', id: string) =>
-    setFilters((f) => ({ ...f, [key]: f[key].includes(id) ? f[key].filter((x) => x !== id) : [...f[key], id] }));
 
   const renderRow = ({ item }: { item: Row }) => (
     <TxnRow t={t} item={item} showDate={!byDate} onToggle={() => setReviewed([item.id], !item.reviewed)} />
@@ -153,37 +157,31 @@ export default function Transactions() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <View style={[styles.top, { borderColor: t.line }]}>
-        <Segmented<Mode> value={mode} onChange={setMode}
-          options={[{ value: 'review', label: toReview ? `To review (${toReview})` : 'To review' }, { value: 'all', label: 'All' }]} />
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <View style={[styles.search, { borderColor: t.line, backgroundColor: t.card }]}>
-            <Ionicons name="search" size={16} color={t.muted} />
-            <TextInput value={search} onChangeText={setSearch} placeholder="Search merchant, description, notes" placeholderTextColor={t.muted}
-              style={[{ flex: 1, color: t.text, paddingVertical: 8, fontSize: 15 }, { outlineStyle: 'none' } as any]} autoCorrect={false} />
-            {!!search && <Pressable onPress={() => setSearch('')} hitSlop={8}><Ionicons name="close-circle" size={16} color={t.muted} /></Pressable>}
-          </View>
-          <Pressable onPress={() => setShowFilters(!showFilters)} accessibilityRole="button"
-            style={[styles.filterBtn, { borderColor: nFilters || filters.sort !== 'newest' ? t.accent : t.line, backgroundColor: showFilters ? t.accent : t.card }]}>
-            <Ionicons name="options-outline" size={18} color={showFilters ? '#fff' : t.text} />
-            <Text style={{ color: showFilters ? '#fff' : t.text, fontWeight: '600' }}>{nFilters ? `Filters · ${nFilters}` : 'Filters'}</Text>
+      <TopBar>
+        <View style={[styles.search, { borderColor: t.line, backgroundColor: t.card }]}>
+          <Ionicons name="search" size={16} color={t.muted} />
+          <TextInput value={search} onChangeText={setSearch} placeholder="Search" placeholderTextColor={t.muted}
+            style={[{ flex: 1, color: t.text, paddingVertical: 9, fontSize: 15 }, { outlineStyle: 'none' } as any]} autoCorrect={false} />
+          {!!search && <Pressable onPress={() => setSearch('')} hitSlop={8}><Ionicons name="close-circle" size={16} color={t.muted} /></Pressable>}
+        </View>
+        <IconButton icon="checkmark-done" label={mode === 'review' ? 'Showing to review; show all' : 'Show only to review'}
+          on={mode === 'review'} badge={toReview} onPress={() => setMode(mode === 'review' ? 'all' : 'review')} />
+        <IconButton icon="options-outline" label="Filters and sort" on={nFilters > 0} badge={nFilters} onPress={() => setShowFilters(true)} />
+      </TopBar>
+      <View style={[styles.status, { borderColor: t.line }]}>
+        <Text style={{ color: t.muted, fontSize: 13, flex: 1 }} numberOfLines={1}>
+          {mode === 'review' ? 'To review' : 'All'}{total == null ? '' : ` · ${total.toLocaleString()}`}
+          {filters.sort !== 'newest' ? ` · ${SORTS.find((x) => x.key === filters.sort)!.label.toLowerCase()}` : ''}
+          {nFilters ? ' · filtered' : ''}
+        </Text>
+        {mode === 'review' && rows.length > 1 && (
+          <Pressable onPress={() => setReviewed(rows.map((r) => r.id), true)} hitSlop={8}>
+            <Text style={{ color: t.accent, fontWeight: '600', fontSize: 13 }}>Mark {rows.length} reviewed</Text>
           </Pressable>
-        </View>
-        {showFilters && (
-          <FilterPanel t={t} f={filters} set={set} toggle={toggle} accounts={accounts} cats={cats} reset={() => setFilters(DEFAULTS)} />
         )}
-        <View style={styles.between}>
-          <Text style={{ color: t.muted, fontSize: 13 }}>
-            {total == null ? ' ' : `${total.toLocaleString()} transaction${total === 1 ? '' : 's'}`}
-            {filters.sort !== 'newest' ? ` · ${SORTS.find((s) => s.key === filters.sort)!.label.toLowerCase()}` : ''}
-          </Text>
-          {mode === 'review' && rows.length > 1 && (
-            <Pressable onPress={() => setReviewed(rows.map((r) => r.id), true)} hitSlop={8}>
-              <Text style={{ color: t.accent, fontWeight: '600', fontSize: 13 }}>Mark {rows.length} shown as reviewed</Text>
-            </Pressable>
-          )}
-        </View>
       </View>
+      <FilterSheet visible={showFilters} onClose={() => setShowFilters(false)} t={t} f={filters} set={set}
+        accounts={accounts} cats={cats} reset={() => setFilters(DEFAULTS)} total={total} />
       {!!error && <Text style={{ color: t.danger, padding: 12 }}>{error}</Text>}
 
       {byDate ? (
@@ -247,55 +245,74 @@ function TxnRow({ t, item, showDate, onToggle }: { t: Theme; item: Row; showDate
   );
 }
 
-function FilterPanel({ t, f, set, toggle, accounts, cats, reset }: {
-  t: Theme; f: Filters; set: (p: Partial<Filters>) => void; toggle: (k: 'accounts' | 'categories', id: string) => void;
-  accounts: { id: string; name: string; mask: string | null }[]; cats: { id: string; name: string; group_name: string }[]; reset: () => void;
+function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total }: {
+  visible: boolean; onClose: () => void; t: Theme; f: Filters; set: (p: Partial<Filters>) => void;
+  accounts: { id: string; name: string; mask: string | null }[]; cats: { id: string; name: string; group_name: string }[]; reset: () => void; total: number | null;
 }) {
-  const [showCats, setShowCats] = useState(false);
-  const groups = useMemo(() => {
-    const m = new Map<string, typeof cats>();
-    for (const c of cats) (m.get(c.group_name) ?? m.set(c.group_name, []).get(c.group_name)!).push(c);
-    return [...m.entries()];
-  }, [cats]);
+  const insets = useSafeAreaInsets();
+  const [picker, setPicker] = useState<null | 'categories' | 'accounts' | 'merchants'>(null);
+  const [merchants, setMerchants] = useState<{ merchant: string; txns: number }[]>([]);
+  useEffect(() => {
+    if (picker === 'merchants' && !merchants.length) {
+      supabase.rpc('merchant_names').then(({ data }) => setMerchants(((data ?? []) as any[]).map((m) => ({ merchant: m.merchant, txns: Number(m.txns) }))));
+    }
+  }, [picker]);
   const input = [styles.amountInput, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
+  const catName = (id: string) => (id === 'none' ? 'Uncategorised' : cats.find((c) => c.id === id)?.name ?? '');
+  const acctName = (id: string) => accounts.find((a) => a.id === id)?.name ?? '';
+  const summary = (ids: string[], name: (id: string) => string) => (ids.length ? ids.slice(0, 3).map(name).join(', ') + (ids.length > 3 ? ` +${ids.length - 3}` : '') : 'Any');
+
   return (
-    <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ gap: 10, paddingBottom: 4 }} keyboardShouldPersistTaps="handled">
-      <Label t={t} text="Sort" />
-      <View style={styles.chips}>{SORTS.map((s) => <Chip key={s.key} label={s.label} on={f.sort === s.key} onPress={() => set({ sort: s.key })} />)}</View>
-      <Label t={t} text="Dates" />
-      <View style={styles.chips}>{PRESETS.map((p) => <Chip key={p.key} label={p.label} on={f.preset === p.key} onPress={() => set({ preset: p.key })} />)}</View>
-      <Label t={t} text="Type" />
-      <View style={styles.chips}>
-        {([['any', 'Everything'], ['out', 'Money out'], ['in', 'Money in'], ['transfer', 'Transfers']] as [Direction, string][])
-          .map(([k, l]) => <Chip key={k} label={l} on={f.direction === k} onPress={() => set({ direction: k })} />)}
-      </View>
-      <Label t={t} text="Amount (either direction)" />
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <TextInput value={f.min} onChangeText={(min) => set({ min })} placeholder="Min $" placeholderTextColor={t.muted} keyboardType="decimal-pad" style={input} />
-        <Text style={{ color: t.muted }}>to</Text>
-        <TextInput value={f.max} onChangeText={(max) => set({ max })} placeholder="Max $" placeholderTextColor={t.muted} keyboardType="decimal-pad" style={input} />
-      </View>
-      <Label t={t} text="Accounts" />
-      <View style={styles.chips}>
-        {accounts.map((a) => <Chip key={a.id} label={`${a.name}${a.mask ? ` ••${a.mask}` : ''}`} on={f.accounts.includes(a.id)} onPress={() => toggle('accounts', a.id)} />)}
-      </View>
-      <Pressable onPress={() => setShowCats(!showCats)} style={styles.between}>
-        <Label t={t} text={`Categories${f.categories.length ? ` · ${f.categories.length} chosen` : ''}`} />
-        <Text style={{ color: t.accent }}>{showCats ? 'Hide' : 'Choose'}</Text>
-      </Pressable>
-      {showCats && (
-        <View style={{ gap: 8 }}>
-          <View style={styles.chips}><Chip label="Uncategorised" on={f.categories.includes('none')} onPress={() => toggle('categories', 'none')} /></View>
-          {groups.map(([g, list]) => (
-            <View key={g} style={{ gap: 4 }}>
-              <Text style={{ color: t.muted, fontSize: 12 }}>{g}</Text>
-              <View style={styles.chips}>{list.map((c) => <Chip key={c.id} label={c.name} on={f.categories.includes(c.id)} onPress={() => toggle('categories', c.id)} />)}</View>
-            </View>
-          ))}
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>
+        <View style={[styles.sheetHead, { borderColor: t.line }]}>
+          <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: 1 }}>Filters</Text>
+          <Pressable onPress={reset} hitSlop={8}><Text style={{ color: t.accent }}>Reset</Text></Pressable>
+          <Pressable onPress={onClose} style={[styles.doneBtn, { backgroundColor: t.accent }]}>
+            <Text style={{ color: '#fff', fontWeight: '600' }}>{total == null ? 'Done' : `Show ${total.toLocaleString()}`}</Text>
+          </Pressable>
         </View>
-      )}
-      <Button title="Clear filters and sort" kind="plain" onPress={reset} />
-    </ScrollView>
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+          <Label t={t} text="Sort" />
+          <View style={styles.chips}>{SORTS.map((s) => <Chip key={s.key} label={s.label} on={f.sort === s.key} onPress={() => set({ sort: s.key })} />)}</View>
+          <Label t={t} text="Dates" />
+          <View style={styles.chips}>{PRESETS.map((p) => <Chip key={p.key} label={p.label} on={f.preset === p.key} onPress={() => set({ preset: p.key })} />)}</View>
+          <Label t={t} text="Type" />
+          <View style={styles.chips}>
+            {([['any', 'Everything'], ['out', 'Money out'], ['in', 'Money in'], ['transfer', 'Transfers']] as [Direction, string][])
+              .map(([k, l]) => <Chip key={k} label={l} on={f.direction === k} onPress={() => set({ direction: k })} />)}
+          </View>
+          <Label t={t} text="Amount (either direction)" />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TextInput value={f.min} onChangeText={(min) => set({ min })} placeholder="Min $" placeholderTextColor={t.muted} keyboardType="decimal-pad" style={input} />
+            <Text style={{ color: t.muted }}>to</Text>
+            <TextInput value={f.max} onChangeText={(max) => set({ max })} placeholder="Max $" placeholderTextColor={t.muted} keyboardType="decimal-pad" style={input} />
+          </View>
+          <View style={[styles.pickRows, { borderColor: t.line, backgroundColor: t.card }]}>
+            {([
+              ['categories', 'Categories', summary(f.categories, catName)],
+              ['accounts', 'Accounts', summary(f.accounts, acctName)],
+              ['merchants', 'Merchants', summary(f.merchants, (m) => m)],
+            ] as const).map(([key, label, value], i) => (
+              <Pressable key={key} onPress={() => setPicker(key)} style={[styles.pickRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }]}>
+                <Text style={{ color: t.text, fontSize: 15, width: 100 }}>{label}</Text>
+                <Text style={{ color: f[key].length ? t.text : t.muted, flex: 1, textAlign: 'right' }} numberOfLines={1}>{value}</Text>
+                <Ionicons name="chevron-forward" size={18} color={t.muted} />
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+      <MultiPicker visible={picker === 'categories'} title="Categories" onClose={() => setPicker(null)}
+        items={[{ id: 'none', label: 'Uncategorised' }, ...cats.map((c) => ({ id: c.id, label: c.name, group: c.group_name }))]}
+        selected={f.categories} onChange={(categories) => set({ categories })} />
+      <MultiPicker visible={picker === 'accounts'} title="Accounts" onClose={() => setPicker(null)}
+        items={accounts.map((a) => ({ id: a.id, label: `${a.name}${a.mask ? ` ••${a.mask}` : ''}` }))}
+        selected={f.accounts} onChange={(accounts) => set({ accounts })} />
+      <MultiPicker visible={picker === 'merchants'} title="Merchants" onClose={() => setPicker(null)}
+        items={merchants.map((m) => ({ id: m.merchant, label: m.merchant, detail: String(m.txns) }))}
+        selected={f.merchants} onChange={(merchants) => set({ merchants })} />
+    </Modal>
   );
 }
 
@@ -304,9 +321,12 @@ const Label = ({ t, text }: { t: Theme; text: string }) => (
 );
 
 const styles = StyleSheet.create({
-  top: { padding: 12, gap: 10, borderBottomWidth: StyleSheet.hairlineWidth },
-  search: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10 },
-  filterBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12 },
+  status: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  search: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, height: 40 },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  doneBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8 },
+  pickRows: { borderWidth: 1, borderRadius: 12, marginTop: 4 },
+  pickRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 14 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   amountInput: { borderWidth: 1, borderRadius: 8, padding: 8, width: 110 },
