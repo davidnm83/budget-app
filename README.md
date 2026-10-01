@@ -24,12 +24,14 @@ Runs on iPhone, Android and the web from one codebase. Everything fits in free t
 
 - **Weekly planner.** Monday-to-Sunday plan per bill-paying account (or combined): bills, income and one-offs against what posted, a running balance, and a warning before an account dips below its buffer.
 - **Bills & income.** Schedules (weekly, every 2 weeks, monthly, yearly, with optional end date), this month's due dates matched to the payments automatically, and suggestions found in your history.
-- **Layout.** Tabs: Transactions, Planner, Budget, Reports, Accounts. Bills, Settings and the imports are in the menu (top left).
+- **Home.** To review, this week (cash, projected end, warnings, what's next), budget pace and net worth at a glance.
+- **Account pages.** Loans: payoff estimate from the last 2 months, payments and interest to date. Credit cards: utilisation, what's left on the statement by the due date, interest estimate. Cash: monthly cash flow and what the planner has coming up.
+- **Layout.** Tabs: Home, Transactions, Planner, Budget, Accounts. Bills, Reports, Settings and the imports are in the menu (top left).
 
 ## Roadmap
 
 1. **Planner and bills, next steps:** match by hand, credit card payment rules, reminders, 4-week look-ahead
-2. **Home screen** (see the requirements doc)
+2. **Custom pages** built from the same blocks as Home and the account pages
 3. **Split editing and category management** (rename, regroup, merge)
 4. **Loans:** payments copied from the paying account, interest from balance changes (logic in `packages/core/src/loans.ts`)
 5. **Net worth history, CSV export**

@@ -5,7 +5,6 @@ import { addMonths, formatMoney, monthEnd, monthName, todayIn } from '@budget-ap
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { TopBar } from '@/components/TopBar';
 import { Bar, Card, Chip, Empty, Segmented } from '@/components/ui';
 import {
   loadCategories, loadCategoryMonths, loadMerchants, loadMonthSummaries, thisMonth,
@@ -70,12 +69,10 @@ export default function Reports() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-    <TopBar>
-      <View style={{ flex: 1 }}>
-        <Segmented<Tab> value={tab} onChange={setTab}
-          options={[{ value: 'categories', label: 'Categories' }, { value: 'cashflow', label: 'Cash flow' }, { value: 'merchants', label: 'Merchants' }]} />
-      </View>
-    </TopBar>
+    <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 }}>
+      <Segmented<Tab> value={tab} onChange={setTab}
+        options={[{ value: 'categories', label: 'Categories' }, { value: 'cashflow', label: 'Cash flow' }, { value: 'merchants', label: 'Merchants' }]} />
+    </View>
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       <View style={styles.chips}>{RANGES.map((r) => <Chip key={r.key} label={r.label} on={rk === r.key} onPress={() => setRk(r.key)} />)}</View>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}

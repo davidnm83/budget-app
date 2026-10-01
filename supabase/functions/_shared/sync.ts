@@ -50,12 +50,14 @@ export async function upsertAccounts(admin: Admin, item: PlaidItemRow, token: st
   const map = new Map<string, string>((known ?? []).map((r: any) => [r.plaid_account_id, r.id]));
 
   // Existing accounts: refresh balances only, so names you changed in the app stay.
+  // A card's limit comes along when the bank reports one.
   for (const a of res.accounts.filter((x) => map.has(x.account_id))) {
     await admin.from('accounts').update({
       plaid_item_id: item.id,
       current_balance: a.balances?.current,
       available_balance: a.balances?.available,
       balance_updated_at: now,
+      ...(a.balances?.limit ? { credit_limit: a.balances.limit } : {}),
     }).eq('id', map.get(a.account_id)!);
   }
   // A card or account you were already tracking by hand (CSV or Fina import) with the same last
@@ -91,6 +93,7 @@ export async function upsertAccounts(admin: Admin, item: PlaidItemRow, token: st
     current_balance: a.balances?.current,
     available_balance: a.balances?.available,
     balance_updated_at: now,
+    credit_limit: a.balances?.limit ?? null,
   }));
   if (fresh.length) {
     const { data, error } = await admin.from('accounts').insert(fresh).select('id, plaid_account_id');

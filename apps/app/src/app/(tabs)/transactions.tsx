@@ -1,0 +1,336 @@
+// Transactions tab: every transaction, grouped by day, with search, filters and sorting.
+// The check button beside the search shows only unchecked ones (new arrivals, with a count);
+// tick the circle to mark one reviewed, or tap the row to change it. With it off you see
+// everything, and the circle toggles reviewed. Filters open in a pop-up.
+import Ionicons from '@expo/vector-icons/Ionicons';
+import {
+  datePresetRange, dayHeading, formatMoney, groupByDay, searchPattern, shortDate, todayIn, type DatePreset,
+} from '@budget-app/core';
+import { router, useFocusEffect, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, Modal, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MultiPicker } from '@/components/Picker';
+import { IconButton, TopBar } from '@/components/TopBar';
+import { Button, Chip, Empty } from '@/components/ui';
+import { supabase } from '@/lib/supabase';
+import { useTheme, type Theme } from '@/lib/theme';
+
+type Mode = 'review' | 'all';
+type Direction = 'any' | 'out' | 'in' | 'transfer';
+type Sort = 'newest' | 'oldest' | 'largest' | 'smallest' | 'merchant';
+
+interface Row {
+  id: string; date: string; amount: number; currency: string; display_name: string; category_name: string | null;
+  category_source: string | null; account_name: string; account_mask: string | null; reviewed: boolean;
+  split_count: number; is_transfer: boolean; notes: string | null; tags: string[];
+}
+interface Filters {
+  preset: DatePreset; direction: Direction; min: string; max: string;
+  accounts: string[]; categories: string[]; // 'none' = uncategorised
+  merchants: string[];
+  sort: Sort;
+}
+
+const PAGE = 100;
+const DEFAULTS: Filters = { preset: 'all', direction: 'any', min: '', max: '', accounts: [], categories: [], merchants: [], sort: 'newest' };
+const PRESETS: { key: DatePreset; label: string }[] = [
+  { key: 'all', label: 'All time' }, { key: 'month', label: 'This month' }, { key: 'lastMonth', label: 'Last month' },
+  { key: '30d', label: '30 days' }, { key: '90d', label: '90 days' }, { key: 'year', label: 'This year' }, { key: 'lastYear', label: 'Last year' },
+];
+const SORTS: { key: Sort; label: string }[] = [
+  { key: 'newest', label: 'Newest' }, { key: 'oldest', label: 'Oldest' }, { key: 'largest', label: 'Largest' },
+  { key: 'smallest', label: 'Smallest' }, { key: 'merchant', label: 'Merchant A–Z' },
+];
+const SOURCE_LABEL: Record<string, string> = { rule: 'rule', learned: 'learned', plaid: 'bank', manual: 'you' };
+const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
+
+function activeCount(f: Filters) {
+  return (f.preset !== 'all' ? 1 : 0) + (f.direction !== 'any' ? 1 : 0) + (f.min || f.max ? 1 : 0)
+    + (f.accounts.length ? 1 : 0) + (f.categories.length ? 1 : 0) + (f.merchants.length ? 1 : 0) + (f.sort !== 'newest' ? 1 : 0);
+}
+
+export default function Transactions() {
+  const t = useTheme();
+  const navigation = useNavigation();
+  const [mode, setMode] = useState<Mode>('review');
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [filters, setFilters] = useState<Filters>(DEFAULTS);
+  const [showFilters, setShowFilters] = useState(false);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
+  const [toReview, setToReview] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [accounts, setAccounts] = useState<{ id: string; name: string; mask: string | null }[]>([]);
+  const [cats, setCats] = useState<{ id: string; name: string; group_name: string }[]>([]);
+  const request = useRef(0);
+
+  // Search waits until you pause typing.
+  useEffect(() => { const h = setTimeout(() => setQuery(search), 300); return () => clearTimeout(h); }, [search]);
+
+  useEffect(() => {
+    supabase.from('accounts').select('id, name, mask').eq('is_hidden', false).order('name').then(({ data }) => setAccounts(data ?? []));
+    supabase.from('categories').select('id, name, group_name').eq('is_hidden', false).order('sort').order('name').then(({ data }) => setCats(data ?? []));
+  }, []);
+
+  const fetchPage = useCallback(async (page: number) => {
+    const id = ++request.current;
+    setLoading(true);
+    let q = supabase.from('transaction_list')
+      .select('id, date, amount, currency, display_name, category_name, category_source, account_name, account_mask, reviewed, split_count, is_transfer, notes, tags', { count: page === 0 ? 'exact' : undefined });
+    if (mode === 'review') q = q.eq('reviewed', false);
+    const { from, to } = datePresetRange(filters.preset, today());
+    if (from) q = q.gte('date', from);
+    if (to) q = q.lte('date', to);
+    if (filters.accounts.length) q = q.in('account_id', filters.accounts);
+    if (filters.merchants.length) q = q.in('display_name', filters.merchants);
+    if (filters.direction === 'out') q = q.lt('amount', 0).eq('is_transfer', false);
+    if (filters.direction === 'in') q = q.gt('amount', 0).eq('is_transfer', false);
+    if (filters.direction === 'transfer') q = q.eq('is_transfer', true);
+    const min = Number(filters.min), max = Number(filters.max);
+    if (filters.min && !isNaN(min)) q = q.gte('amount_abs', min);
+    if (filters.max && !isNaN(max)) q = q.lte('amount_abs', max);
+
+    // Category and search are each "any of"; when both apply they're combined in one OR group.
+    const groups: string[] = [];
+    const ids = filters.categories.filter((c) => c !== 'none');
+    if (filters.categories.length) {
+      const parts = [...(ids.length ? [`category_ids.ov.{${ids.join(',')}}`] : []), ...(filters.categories.includes('none') ? ['category_ids.eq.{}'] : [])];
+      groups.push(parts.join(','));
+    }
+    const pattern = searchPattern(query);
+    if (pattern) groups.push(['display_name', 'name', 'notes'].map((c) => `${c}.ilike.${pattern}`).join(','));
+    if (groups.length === 1) q = q.or(groups[0]);
+    if (groups.length === 2) q = q.or(`and(or(${groups[0]}),or(${groups[1]}))`);
+
+    const order: Record<Sort, [string, boolean][]> = {
+      newest: [['date', false], ['id', false]], oldest: [['date', true], ['id', true]],
+      largest: [['amount_abs', false], ['date', false]], smallest: [['amount_abs', true], ['date', false]],
+      merchant: [['sort_name', true], ['date', false]],
+    };
+    for (const [col, asc] of order[filters.sort]) q = q.order(col, { ascending: asc });
+    const { data, error, count } = await q.range(page * PAGE, page * PAGE + PAGE - 1);
+    if (id !== request.current) return; // a newer request replaced this one
+    setLoading(false);
+    if (error) { setError(error.message); return; }
+    setError('');
+    const list = (data ?? []).map((r: any) => ({ ...r, amount: Number(r.amount) })) as Row[];
+    setRows((prev) => (page === 0 ? list : [...prev, ...list]));
+    if (page === 0) setTotal(count ?? null);
+    setHasMore(list.length === PAGE);
+  }, [mode, filters, query]);
+
+  const countToReview = useCallback(async () => {
+    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('reviewed', false);
+    setToReview(count ?? 0);
+  }, []);
+
+  const reload = useCallback(() => { fetchPage(0); countToReview(); }, [fetchPage, countToReview]);
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  useEffect(() => { navigation.setOptions({ tabBarBadge: toReview || undefined }); }, [navigation, toReview]);
+
+  const setReviewed = async (ids: string[], reviewed: boolean) => {
+    if (mode === 'review' && reviewed) setRows((r) => r.filter((x) => !ids.includes(x.id)));
+    else setRows((r) => r.map((x) => (ids.includes(x.id) ? { ...x, reviewed } : x)));
+    setToReview((n) => Math.max(0, n + (reviewed ? -ids.length : ids.length)));
+    if (mode === 'review' && reviewed) setTotal((n) => (n == null ? n : n - ids.length));
+    const { error } = await supabase.from('transactions')
+      .update({ reviewed, reviewed_at: reviewed ? new Date().toISOString() : null }).in('id', ids);
+    if (error) { setError(error.message); reload(); }
+  };
+
+  const byDate = filters.sort === 'newest' || filters.sort === 'oldest';
+  const sections = useMemo(() => (byDate ? groupByDay(rows) : []), [rows, byDate]);
+  const nFilters = activeCount(filters);
+  const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
+
+  const renderRow = ({ item }: { item: Row }) => (
+    <TxnRow t={t} item={item} showDate={!byDate} onToggle={() => setReviewed([item.id], !item.reviewed)} />
+  );
+  const footer = hasMore ? <Button title="Load more" kind="plain" onPress={() => fetchPage(Math.ceil(rows.length / PAGE))} busy={loading} style={{ margin: 16 }} /> : null;
+  const empty = loading ? null : (
+    <Empty text={mode === 'review' && !query && !nFilters ? 'All caught up. New transactions show up here after each sync.' : 'No transactions match.'} />
+  );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+      <TopBar>
+        <View style={[styles.search, { borderColor: t.line, backgroundColor: t.card }]}>
+          <Ionicons name="search" size={16} color={t.muted} />
+          <TextInput value={search} onChangeText={setSearch} placeholder="Search" placeholderTextColor={t.muted}
+            style={[{ flex: 1, color: t.text, paddingVertical: 9, fontSize: 15 }, { outlineStyle: 'none' } as any]} autoCorrect={false} />
+          {!!search && <Pressable onPress={() => setSearch('')} hitSlop={8}><Ionicons name="close-circle" size={16} color={t.muted} /></Pressable>}
+        </View>
+        <IconButton icon="checkmark-done" label={mode === 'review' ? 'Showing to review; show all' : 'Show only to review'}
+          on={mode === 'review'} badge={toReview} onPress={() => setMode(mode === 'review' ? 'all' : 'review')} />
+        <IconButton icon="options-outline" label="Filters and sort" on={nFilters > 0} badge={nFilters} onPress={() => setShowFilters(true)} />
+      </TopBar>
+      <View style={[styles.status, { borderColor: t.line }]}>
+        <Text style={{ color: t.muted, fontSize: 13, flex: 1 }} numberOfLines={1}>
+          {mode === 'review' ? 'To review' : 'All'}{total == null ? '' : ` · ${total.toLocaleString()}`}
+          {filters.sort !== 'newest' ? ` · ${SORTS.find((x) => x.key === filters.sort)!.label.toLowerCase()}` : ''}
+          {nFilters ? ' · filtered' : ''}
+        </Text>
+        {mode === 'review' && rows.length > 1 && (
+          <Pressable onPress={() => setReviewed(rows.map((r) => r.id), true)} hitSlop={8}>
+            <Text style={{ color: t.accent, fontWeight: '600', fontSize: 13 }}>Mark {rows.length} reviewed</Text>
+          </Pressable>
+        )}
+      </View>
+      <FilterSheet visible={showFilters} onClose={() => setShowFilters(false)} t={t} f={filters} set={set}
+        accounts={accounts} cats={cats} reset={() => setFilters(DEFAULTS)} total={total} />
+      {!!error && <Text style={{ color: t.danger, padding: 12 }}>{error}</Text>}
+
+      {byDate ? (
+        <SectionList
+          sections={sections}
+          keyExtractor={(r) => r.id}
+          stickySectionHeadersEnabled
+          refreshControl={<RefreshControl refreshing={loading && !rows.length} onRefresh={reload} />}
+          renderSectionHeader={({ section }) => (
+            <View style={[styles.dayHead, { backgroundColor: t.bg, borderColor: t.line }]}>
+              <Text style={{ color: t.text, fontWeight: '600' }}>{dayHeading(section.date, today())}</Text>
+              <Text style={{ color: t.muted, fontVariant: ['tabular-nums'] }}>{section.total > 0 ? '+' : ''}{formatMoney(section.total)}</Text>
+            </View>
+          )}
+          renderItem={renderRow}
+          ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.line, marginLeft: 52 }} />}
+          ListEmptyComponent={empty}
+          ListFooterComponent={footer}
+        />
+      ) : (
+        <FlatList
+          data={rows}
+          keyExtractor={(r) => r.id}
+          refreshControl={<RefreshControl refreshing={loading && !rows.length} onRefresh={reload} />}
+          renderItem={renderRow}
+          ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.line, marginLeft: 52 }} />}
+          ListEmptyComponent={empty}
+          ListFooterComponent={footer}
+        />
+      )}
+    </View>
+  );
+}
+
+function TxnRow({ t, item, showDate, onToggle }: { t: Theme; item: Row; showDate: boolean; onToggle: () => void }) {
+  const category = item.split_count ? `Split · ${item.split_count} parts` : item.category_name;
+  return (
+    <Pressable onPress={() => router.push({ pathname: '/transaction/[id]', params: { id: item.id } })}
+      style={({ pressed }) => [styles.row, { backgroundColor: pressed ? t.line : t.card }]}>
+      <Pressable accessibilityLabel={item.reviewed ? 'Mark not reviewed' : 'Mark reviewed'} hitSlop={10} onPress={onToggle} style={styles.check}>
+        <Ionicons name={item.reviewed ? 'checkmark-circle' : 'ellipse-outline'} size={24} color={item.reviewed ? t.accent : t.muted} />
+      </Pressable>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{item.display_name}</Text>
+        <Text numberOfLines={1} style={{ fontSize: 13, color: category ? t.text : t.danger }}>
+          {showDate ? <Text style={{ color: t.muted }}>{`${shortDate(item.date)} ${item.date.slice(0, 4)}  ·  `}</Text> : null}
+          {category ?? 'Uncategorised'}
+          {!item.split_count && item.category_source && !item.reviewed ? <Text style={{ color: t.muted }}>{` (${SOURCE_LABEL[item.category_source]})`}</Text> : null}
+          <Text style={{ color: t.muted }}>{`  ·  ${item.account_name}${item.account_mask ? ` ••${item.account_mask}` : ''}`}</Text>
+        </Text>
+        {(!!item.notes || item.tags?.length > 0) && (
+          <Text numberOfLines={1} style={{ color: t.muted, fontSize: 12 }}>
+            {item.tags?.length ? item.tags.map((x) => `#${x}`).join(' ') + (item.notes ? '  ' : '') : ''}{item.notes ?? ''}
+          </Text>
+        )}
+      </View>
+      <Text style={{ color: item.amount > 0 ? t.positive : t.text, fontSize: 16, fontWeight: '600', marginLeft: 8, fontVariant: ['tabular-nums'] }}>
+        {item.amount > 0 ? '+' : ''}{formatMoney(item.amount, item.currency)}
+      </Text>
+    </Pressable>
+  );
+}
+
+function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total }: {
+  visible: boolean; onClose: () => void; t: Theme; f: Filters; set: (p: Partial<Filters>) => void;
+  accounts: { id: string; name: string; mask: string | null }[]; cats: { id: string; name: string; group_name: string }[]; reset: () => void; total: number | null;
+}) {
+  const insets = useSafeAreaInsets();
+  const [picker, setPicker] = useState<null | 'categories' | 'accounts' | 'merchants'>(null);
+  const [merchants, setMerchants] = useState<{ merchant: string; txns: number }[]>([]);
+  useEffect(() => {
+    if (picker === 'merchants' && !merchants.length) {
+      supabase.rpc('merchant_names').then(({ data }) => setMerchants(((data ?? []) as any[]).map((m) => ({ merchant: m.merchant, txns: Number(m.txns) }))));
+    }
+  }, [picker]);
+  const input = [styles.amountInput, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
+  const catName = (id: string) => (id === 'none' ? 'Uncategorised' : cats.find((c) => c.id === id)?.name ?? '');
+  const acctName = (id: string) => accounts.find((a) => a.id === id)?.name ?? '';
+  const summary = (ids: string[], name: (id: string) => string) => (ids.length ? ids.slice(0, 3).map(name).join(', ') + (ids.length > 3 ? ` +${ids.length - 3}` : '') : 'Any');
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>
+        <View style={[styles.sheetHead, { borderColor: t.line }]}>
+          <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: 1 }}>Filters</Text>
+          <Pressable onPress={reset} hitSlop={8}><Text style={{ color: t.accent }}>Reset</Text></Pressable>
+          <Pressable onPress={onClose} style={[styles.doneBtn, { backgroundColor: t.accent }]}>
+            <Text style={{ color: '#fff', fontWeight: '600' }}>{total == null ? 'Done' : `Show ${total.toLocaleString()}`}</Text>
+          </Pressable>
+        </View>
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+          <Label t={t} text="Sort" />
+          <View style={styles.chips}>{SORTS.map((s) => <Chip key={s.key} label={s.label} on={f.sort === s.key} onPress={() => set({ sort: s.key })} />)}</View>
+          <Label t={t} text="Dates" />
+          <View style={styles.chips}>{PRESETS.map((p) => <Chip key={p.key} label={p.label} on={f.preset === p.key} onPress={() => set({ preset: p.key })} />)}</View>
+          <Label t={t} text="Type" />
+          <View style={styles.chips}>
+            {([['any', 'Everything'], ['out', 'Money out'], ['in', 'Money in'], ['transfer', 'Transfers']] as [Direction, string][])
+              .map(([k, l]) => <Chip key={k} label={l} on={f.direction === k} onPress={() => set({ direction: k })} />)}
+          </View>
+          <Label t={t} text="Amount (either direction)" />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TextInput value={f.min} onChangeText={(min) => set({ min })} placeholder="Min $" placeholderTextColor={t.muted} keyboardType="decimal-pad" style={input} />
+            <Text style={{ color: t.muted }}>to</Text>
+            <TextInput value={f.max} onChangeText={(max) => set({ max })} placeholder="Max $" placeholderTextColor={t.muted} keyboardType="decimal-pad" style={input} />
+          </View>
+          <View style={[styles.pickRows, { borderColor: t.line, backgroundColor: t.card }]}>
+            {([
+              ['categories', 'Categories', summary(f.categories, catName)],
+              ['accounts', 'Accounts', summary(f.accounts, acctName)],
+              ['merchants', 'Merchants', summary(f.merchants, (m) => m)],
+            ] as const).map(([key, label, value], i) => (
+              <Pressable key={key} onPress={() => setPicker(key)} style={[styles.pickRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }]}>
+                <Text style={{ color: t.text, fontSize: 15, width: 100 }}>{label}</Text>
+                <Text style={{ color: f[key].length ? t.text : t.muted, flex: 1, textAlign: 'right' }} numberOfLines={1}>{value}</Text>
+                <Ionicons name="chevron-forward" size={18} color={t.muted} />
+              </Pressable>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+      <MultiPicker visible={picker === 'categories'} title="Categories" onClose={() => setPicker(null)}
+        items={[{ id: 'none', label: 'Uncategorised' }, ...cats.map((c) => ({ id: c.id, label: c.name, group: c.group_name }))]}
+        selected={f.categories} onChange={(categories) => set({ categories })} />
+      <MultiPicker visible={picker === 'accounts'} title="Accounts" onClose={() => setPicker(null)}
+        items={accounts.map((a) => ({ id: a.id, label: `${a.name}${a.mask ? ` ••${a.mask}` : ''}` }))}
+        selected={f.accounts} onChange={(accounts) => set({ accounts })} />
+      <MultiPicker visible={picker === 'merchants'} title="Merchants" onClose={() => setPicker(null)}
+        items={merchants.map((m) => ({ id: m.merchant, label: m.merchant, detail: String(m.txns) }))}
+        selected={f.merchants} onChange={(merchants) => set({ merchants })} />
+    </Modal>
+  );
+}
+
+const Label = ({ t, text }: { t: Theme; text: string }) => (
+  <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>{text}</Text>
+);
+
+const styles = StyleSheet.create({
+  status: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  search: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, height: 40 },
+  sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  doneBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8 },
+  pickRows: { borderWidth: 1, borderRadius: 12, marginTop: 4 },
+  pickRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 14 },
+  between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  amountInput: { borderWidth: 1, borderRadius: 8, padding: 8, width: 110 },
+  dayHead: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, borderBottomWidth: StyleSheet.hairlineWidth },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingRight: 16 },
+  check: { width: 52, alignItems: 'center' },
+});

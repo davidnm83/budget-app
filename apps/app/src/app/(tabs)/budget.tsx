@@ -136,22 +136,21 @@ function MonthView(d: Data) {
     add(groups.map((g) => ({ group_name: g, amount: suggestion(`g:${g}`) })).filter((r) => r.amount > 0));
   };
 
-  // Category budgets sit under their group with a subtotal, in Fina's order.
+  // Category budgets sit under their group with a subtotal. Biggest spending first: groups by
+  // what they've spent this month, and the lines inside each group the same way.
   const groupedExpenses = useMemo(() => {
     const groupOf = (l: BudgetLine) => l.groupName ?? d.cats.find((c) => c.id === l.categoryId)?.group ?? 'Other';
-    const sortOf = (l: BudgetLine) => (l.groupName ? -1 : d.cats.find((c) => c.id === l.categoryId)?.sort ?? 0);
-    const order: string[] = [];
     const m = new Map<string, BudgetLine[]>();
-    for (const l of [...view.expenses].sort((a, b) => sortOf(a) - sortOf(b))) {
+    for (const l of view.expenses) {
       const g = groupOf(l);
-      if (!m.has(g)) { m.set(g, []); order.push(g); }
-      m.get(g)!.push(l);
+      (m.get(g) ?? m.set(g, []).get(g)!).push(l);
     }
-    const firstSort = (g: string) => Math.min(...m.get(g)!.map((l) => (l.groupName ? Math.min(...d.cats.filter((c) => c.group === g && !c.hidden).map((c) => c.sort), 1e9) : sortOf(l))));
-    return order.sort((a, b) => firstSort(a) - firstSort(b)).map((group) => {
-      const lines = m.get(group)!;
-      return { group, lines, available: lines.reduce((x, l) => x + l.available, 0), actual: lines.reduce((x, l) => x + l.actual, 0) };
-    });
+    return [...m.entries()].map(([group, lines]) => ({
+      group,
+      lines: [...lines].sort((a, b) => b.actual - a.actual || b.available - a.available || a.label.localeCompare(b.label)),
+      available: lines.reduce((x, l) => x + l.available, 0),
+      actual: lines.reduce((x, l) => x + l.actual, 0),
+    })).sort((a, b) => b.actual - a.actual || b.available - a.available || a.group.localeCompare(b.group));
   }, [view, d.cats]);
 
   // How far through the month we are (for the pace tick), only for the current month.
@@ -208,7 +207,7 @@ function MonthView(d: Data) {
       {view.income.length > 0 && (
         <Card style={{ padding: 0 }}>
           <Text style={[styles.cardHead, { color: t.muted }]}>MONEY IN</Text>
-          {view.income.map((l) => (
+          {[...view.income].sort((a, b) => b.actual - a.actual || b.available - a.available).map((l) => (
             <Pressable key={l.key} onPress={() => setEditing(l)} style={styles.lineRow}>
               <Line t={t} label={l.label} actual={l.actual} available={l.available} pace={pace} income />
             </Pressable>

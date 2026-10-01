@@ -14,12 +14,6 @@ import { signedBalance, type Account } from '@/lib/types';
 const GROUPS: Record<string, string> = { depository: 'Cash', credit: 'Credit cards', loan: 'Loans', investment: 'Investments' };
 const ORDER = ['Cash', 'Credit cards', 'Loans', 'Investments', 'Other'];
 
-function ago(iso: string | null) {
-  if (!iso) return '';
-  const h = (Date.now() - new Date(iso).getTime()) / 36e5;
-  return h < 1 ? 'just now' : h < 24 ? `${Math.round(h)}h ago` : `${Math.round(h / 24)}d ago`;
-}
-
 export default function Accounts() {
   const t = useTheme();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -97,10 +91,6 @@ export default function Accounts() {
               index === 0 && styles.first, index === section.data.length - 1 && styles.last]}>
             <View style={{ flex: 1 }}>
               <Text style={{ color: t.text, fontSize: 15 }} numberOfLines={1}>{item.name}{item.mask ? <Text style={{ color: t.muted }}>{`  ••${item.mask}`}</Text> : null}</Text>
-              <Text style={{ color: t.muted, fontSize: 11 }}>
-                {item.kind === 'manual' ? (item.current_balance == null ? 'Manual · tap to set the balance' : 'Manual') : `Synced ${ago(item.balance_updated_at)}`}
-                {item.plan_include ? ' · in planner' : ''}{item.is_hidden ? ' · hidden' : ''}
-              </Text>
             </View>
             <Text style={{ color: t.text, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] }}>
               {item.current_balance == null ? '—' : formatMoney(signedBalance(item))}
@@ -120,7 +110,7 @@ export default function Accounts() {
 
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 9, marginHorizontal: 12, borderLeftWidth: StyleSheet.hairlineWidth, borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 11, marginHorizontal: 12, borderLeftWidth: StyleSheet.hairlineWidth, borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth },
   first: { borderTopWidth: StyleSheet.hairlineWidth, borderTopLeftRadius: 10, borderTopRightRadius: 10 },
   last: { borderBottomLeftRadius: 10, borderBottomRightRadius: 10 },
   spinner: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },

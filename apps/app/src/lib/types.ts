@@ -3,6 +3,7 @@ export interface Account {
   id: string; name: string; mask: string | null; type: string | null; subtype: string | null; kind: 'plaid' | 'manual';
   current_balance: number | null; available_balance: number | null; balance_updated_at: string | null; is_hidden: boolean; plaid_item_id: string | null;
   official_name?: string | null; plan_include?: boolean; plan_buffer?: number; start_balance?: number | null;
+  credit_limit?: number | null; statement_day?: number | null; due_day?: number | null; apr?: number | null;
 }
 export interface Txn {
   id: string; account_id: string; date: string; amount: number; currency: string; name: string; merchant: string | null;

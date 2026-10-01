@@ -10,6 +10,7 @@ import { useTheme } from '@/lib/theme';
 
 const ITEMS: { icon: keyof typeof Ionicons.glyphMap; label: string; href: string }[] = [
   { icon: 'repeat', label: 'Bills & income', href: '/bills' },
+  { icon: 'bar-chart-outline', label: 'Reports', href: '/reports' },
   { icon: 'settings-outline', label: 'Settings', href: '/settings' },
   { icon: 'document-text-outline', label: 'Import CSV', href: '/import' },
   { icon: 'cloud-download-outline', label: 'Import from Fina', href: '/fina-import' },

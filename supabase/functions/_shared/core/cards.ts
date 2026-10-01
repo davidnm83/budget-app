@@ -1,0 +1,68 @@
+// GENERATED from packages/core/src by `npm run sync-core`. Do not edit here.
+/**
+ * Credit cards: the statement cycle from its closing and due days, how much of the last
+ * statement is still to pay, an interest estimate if it isn't paid in full, and utilisation.
+ */
+import { daysBetween, parseIso, toIso, type IsoDate } from './dates.ts';
+import { round2 } from './money.ts';
+
+function onDay(y: number, m: number, day: number): IsoDate {
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return toIso(new Date(Date.UTC(y, m, Math.min(day, last))));
+}
+
+/** Last and next statement closing dates around `today`, and the payment due date for the last statement. */
+export function cardCycle(today: IsoDate, statementDay: number, dueDay: number) {
+  const t = parseIso(today);
+  let y = t.getUTCFullYear(), m = t.getUTCMonth();
+  let lastClose = onDay(y, m, statementDay);
+  if (lastClose > today) { m -= 1; if (m < 0) { m = 11; y -= 1; } lastClose = onDay(y, m, statementDay); }
+  const lc = parseIso(lastClose);
+  const nextClose = onDay(lc.getUTCFullYear(), lc.getUTCMonth() + 1, statementDay);
+  // The due day comes after the close: same month if the day is later, otherwise next month.
+  let due = onDay(lc.getUTCFullYear(), lc.getUTCMonth(), dueDay);
+  if (due <= lastClose) due = onDay(lc.getUTCFullYear(), lc.getUTCMonth() + 1, dueDay);
+  return { lastClose, nextClose, due, cycleDays: daysBetween(lastClose, nextClose), daysToDue: daysBetween(today, due) };
+}
+
+/** Interest on a balance for some days at an annual rate in percent (simple daily interest). */
+export function cardInterest(owed: number, aprPercent: number, days: number): number {
+  return round2(Math.max(0, owed) * (aprPercent / 100 / 365) * days);
+}
+
+export function utilization(owed: number, limit: number | null | undefined): number | null {
+  return limit && limit > 0 ? Math.max(0, owed) / limit : null;
+}
+
+export interface CardStatus {
+  statementOwed: number;   // what you owed when the last statement closed
+  paidSince: number;       // payments since then
+  leftToPay: number;       // to pay in full by the due date
+  spentThisCycle: number;  // charges since the statement closed
+  interestIfUnpaid: number | null; // one cycle of interest on what's left, if APR is known
+}
+
+/** `owedNow` positive; txns in app sign (charges negative, payments positive). */
+export function cardStatus(owedNow: number, txns: { date: IsoDate; amount: number }[], lastClose: IsoDate, cycleDays: number, apr: number | null): CardStatus {
+  const after = txns.filter((t) => t.date > lastClose);
+  const paidSince = round2(after.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0));
+  const spentThisCycle = round2(-after.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0));
+  const statementOwed = round2(owedNow + paidSince - spentThisCycle);
+  const leftToPay = round2(Math.max(0, statementOwed - paidSince));
+  return { statementOwed, paidSince, leftToPay, spentThisCycle, interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
+}
+
+/** Money in and out per month for the last `months` months (oldest first). */
+export function monthlyFlow(txns: { date: IsoDate; amount: number }[], today: IsoDate, months: number) {
+  const out: { month: IsoDate; in: number; out: number }[] = [];
+  const t = parseIso(today);
+  for (let k = months - 1; k >= 0; k--) {
+    const d = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() - k, 1));
+    const month = toIso(d);
+    const end = toIso(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)));
+    const rows = txns.filter((x) => x.date >= month && x.date <= end);
+    out.push({ month, in: round2(rows.filter((x) => x.amount > 0).reduce((s, x) => s + x.amount, 0)), out: round2(-rows.filter((x) => x.amount < 0).reduce((s, x) => s + x.amount, 0)) });
+  }
+  return out;
+}
+
