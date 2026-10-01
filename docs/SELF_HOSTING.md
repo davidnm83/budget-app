@@ -9,6 +9,34 @@ Each person runs their **own copy**: their own Supabase project (database + serv
 - **A [Supabase](https://supabase.com) account** (free)
 - **A [Plaid](https://dashboard.plaid.com/signup) account on the free Trial plan**, which covers up to 10 bank logins and needs identity verification. The Trial plan uses Plaid's **production** environment, so use your **Production** secret.
 
+## Where do I type these commands?
+
+**Not on the Supabase website.** The `npx supabase …`, `npm …` and `git …` commands run in a **terminal on your own computer**, inside the project folder. `npx supabase` downloads the Supabase command-line tool the first time; answer `y` if it asks.
+
+The Supabase website is only used for:
+
+- creating the project
+- copying keys (Project Settings)
+- the **SQL Editor** (step 5)
+- **Authentication** settings (step 6)
+- **Edge Function logs**
+
+**On Windows:**
+
+1. In File Explorer, open the project folder (e.g. `C:\Projects\budget-app`).
+2. Right-click an empty spot and choose **Open in Terminal**. This opens PowerShell already in the right folder. You can also use **Terminal → New Terminal** in VS Code.
+3. Check Node.js is installed: `node -v`. If it says "not recognized", install it with `winget install OpenJS.NodeJS.LTS`, then close and reopen the terminal.
+
+PowerShell differs from the Mac/Linux examples below in two ways:
+
+- **Line continuation:** a command split over several lines uses a backtick `` ` `` at the end of each line instead of `\`. Or just put it on one line.
+- **No `openssl` command:** generate the random secret in step 3 with:
+  ```powershell
+  -join ((1..32) | ForEach-Object { '{0:x2}' -f [System.Security.Cryptography.RandomNumberGenerator]::GetInt32(256) })
+  ```
+
+If you connected your Supabase project to GitHub in the dashboard, that's fine to leave on. This guide uses the command line, which works either way.
+
 ## 1. Get the code
 
 ```bash
@@ -26,7 +54,7 @@ npm install
 ```bash
 npx supabase login
 npx supabase link --project-ref <your-project-ref>
-npx supabase db push
+npx supabase db push        # asks for the database password from step 2
 ```
 
 This creates the tables, the row-level security rules (each user only sees their own data) and starter categories for every new user.
@@ -39,7 +67,7 @@ Make a long random string for the daily job:
 openssl rand -hex 32   # copy the output; it's your CRON_SECRET
 ```
 
-Then store your Plaid keys and settings as Edge Function secrets. They stay on the server; the app never sees them.
+Then store your Plaid keys and settings as Edge Function secrets. They stay on the server; the app never sees them. On Windows, put it all on one line, with spaces between the pairs and no `\`:
 
 ```bash
 npx supabase secrets set \
