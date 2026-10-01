@@ -32,7 +32,7 @@ PowerShell differs from the Mac/Linux examples below in two ways:
 - **Line continuation:** a command split over several lines uses a backtick `` ` `` at the end of each line instead of `\`. Or just put it on one line.
 - **No `openssl` command:** generate the random secret in step 3 with:
   ```powershell
-  -join ((1..32) | ForEach-Object { '{0:x2}' -f [System.Security.Cryptography.RandomNumberGenerator]::GetInt32(256) })
+  $b = New-Object byte[] 32; [Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes($b); -join ($b | ForEach-Object { $_.ToString('x2') })
   ```
 
 If you connected your Supabase project to GitHub in the dashboard, that's fine to leave on. This guide uses the command line, which works either way.
