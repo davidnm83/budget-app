@@ -3,14 +3,14 @@
 import { addMonths, monthOf, type BudgetCategory, type BudgetRow, type CategoryKind, type Month, type MonthTotals } from '@budget-app/core';
 import { supabase } from './supabase';
 
-export interface Category extends BudgetCategory { hidden: boolean; sort: number }
+export interface Category extends BudgetCategory { hidden: boolean; sort: number; icon: string | null }
 export interface Budget extends BudgetRow { id: string; month: Month }
 export interface CategoryMonth { month: Month; category_id: string | null; kind: CategoryKind; total: number; txns: number }
 
 export async function loadCategories(): Promise<Category[]> {
-  const { data, error } = await supabase.from('categories').select('id, name, group_name, kind, is_hidden, sort').order('sort').order('name');
+  const { data, error } = await supabase.from('categories').select('id, name, group_name, kind, is_hidden, sort, icon').order('sort').order('name');
   if (error) throw new Error(error.message);
-  return (data ?? []).map((c) => ({ id: c.id, name: c.name, group: c.group_name, kind: c.kind, hidden: c.is_hidden, sort: c.sort }));
+  return (data ?? []).map((c) => ({ id: c.id, name: c.name, group: c.group_name, kind: c.kind, hidden: c.is_hidden, sort: c.sort, icon: c.icon ?? null }));
 }
 
 export async function loadBudgets(): Promise<Budget[]> {

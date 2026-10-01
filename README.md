@@ -1,6 +1,6 @@
 # budget-app
 
-A personal budgeting app you host yourself: bank sync through your own Plaid account, a review inbox for new transactions, rules that learn your categories and merchant names, and (coming next) recurring bills and a weekly cash planner. It's meant to replace Mint/Fina-style apps without handing your bank data to a third party.
+A personal budgeting app you host yourself: bank sync through your own Plaid account, a review inbox for new transactions, rules that learn your categories and merchant names, recurring bills, and a weekly cash planner. It's meant to replace Mint/Fina-style apps without handing your bank data to a third party.
 
 Runs on iPhone, Android and the web from one codebase. Everything fits in free tiers.
 
@@ -26,15 +26,24 @@ Runs on iPhone, Android and the web from one codebase. Everything fits in free t
 - **Bills & income.** Schedules (weekly, every 2 weeks, monthly, yearly, with optional end date), this month's due dates matched to the payments automatically, and suggestions found in your history.
 - **Home.** To review, this week (cash, projected end, warnings, what's next), budget pace and net worth at a glance.
 - **Account pages.** Loans: payoff estimate from the last 2 months, payments and interest to date. Credit cards: utilisation, what's left on the statement by the due date, interest estimate. Cash: monthly cash flow and what the planner has coming up.
-- **Layout.** Tabs: Home, Transactions, Planner, Budget, Accounts. Bills, Reports, Settings and the imports are in the menu (top left).
+- **Layout.** Tabs: Home, Transactions, Planner, Budget, Accounts. Bills, Reports, Categories, Settings and the imports are in the menu (top left). The phone's back gesture closes pop-ups instead of leaving the page.
+
+### New in 1.0
+
+- **Budget rows** show spent / budget with a pace marker on the bar, and an emoji per category.
+- **Categories screen.** Add, rename, emoji, change group or type, hide, merge one into another (transactions, rules, bills and budgets move with it), rename groups.
+- **Split editing.** Split any transaction across categories, or undo a split.
+- **Rule back-fill.** When you save a rule, optionally apply it to matching transactions still to review.
+- **Transfers paired.** Money moving between your own accounts is linked both ways and kept out of spending.
+- **Loans.** Payments are copied from the paying account (set the "payment match" text in the loan's Details) and interest is logged from the bank's balance changes after each sync.
+- **Credit card bills.** A bill can follow a card: the statement balance, an estimated minimum, or a fixed amount.
+- **Planner.** Match a planned entry to a transaction by hand, and a 4-week look-ahead strip.
+- **CSV export** of whatever the Transactions filters show.
 
 ## Roadmap
 
-1. **Planner and bills, next steps:** match by hand, credit card payment rules, reminders, 4-week look-ahead
-2. **Custom pages** built from the same blocks as Home and the account pages
-3. **Split editing and category management** (rename, regroup, merge)
-4. **Loans:** payments copied from the paying account, interest from balance changes (logic in `packages/core/src/loans.ts`)
-5. **Net worth history, CSV export**
+1. **Release 2:** reminders, net worth history, custom pages from Home blocks, rule manager, merchant logos
+2. **Later:** savings goals, gig income tracking, subscription audit, tax-time export, backup/restore
 
 ## How it fits together
 

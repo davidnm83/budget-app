@@ -4,11 +4,12 @@ export interface Account {
   current_balance: number | null; available_balance: number | null; balance_updated_at: string | null; is_hidden: boolean; plaid_item_id: string | null;
   official_name?: string | null; plan_include?: boolean; plan_buffer?: number; start_balance?: number | null;
   credit_limit?: number | null; statement_day?: number | null; due_day?: number | null; apr?: number | null;
+  loan_payment_match?: string | null; loan_paying_account_id?: string | null; loan_last_balance?: number | null; loan_last_balance_date?: string | null; icon?: string | null;
 }
 export interface Txn {
   id: string; account_id: string; date: string; amount: number; currency: string; name: string; merchant: string | null;
   category_id: string | null; category_source: 'rule' | 'learned' | 'plaid' | 'manual' | null; reviewed: boolean; notes: string | null; is_transfer: boolean;
-  source?: 'plaid' | 'csv' | 'manual' | 'loan' | 'import'; tags?: string[]; original_date?: string | null; original_amount?: number | null;
+  source?: 'plaid' | 'csv' | 'manual' | 'loan' | 'import'; tags?: string[]; transfer_pair_id?: string | null; original_date?: string | null; original_amount?: number | null;
   transaction_splits?: { id: string; amount: number; notes: string | null; category_id: string | null; categories: { name: string } | null }[];
   accounts?: { name: string; mask: string | null } | null;
   categories?: { name: string } | null;

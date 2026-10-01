@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
+import { useBackToClose } from '@/lib/useBackToClose';
 
 export interface PickItem { id: string; label: string; group?: string; detail?: string }
 
@@ -14,6 +15,7 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [q, setQ] = useState('');
+  useBackToClose(visible, onClose);
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
     const hits = s ? items.filter((i) => i.label.toLowerCase().includes(s) || (i.group ?? '').toLowerCase().includes(s)) : items;

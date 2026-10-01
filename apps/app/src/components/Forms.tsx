@@ -1,18 +1,20 @@
 // Pop-up forms for a recurring bill/income and for a one-off planned entry.
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { parseMoney, round2, toIsoDate, type Frequency, type Recurring } from '@budget-app/core';
+import { addDays, formatMoney, parseMoney, round2, shortDate, toIsoDate, type Frequency, type Recurring } from '@budget-app/core';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MultiPicker } from '@/components/Picker';
 import { Button, Chip, Segmented } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
+import { useBackToClose } from '@/lib/useBackToClose';
 import { useTheme, type Theme } from '@/lib/theme';
 import type { Account } from '@/lib/types';
 
 export function Sheet({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  useBackToClose(true, onClose);
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>
@@ -55,19 +57,23 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
   const [accountId, setAccountId] = useState<string | null>(initial.account_id ?? null);
   const [categoryId, setCategoryId] = useState<string | null>(initial.category_id ?? null);
   const [matchText, setMatchText] = useState(initial.match_text ?? '');
+  const [cardId, setCardId] = useState<string | null>((initial as any).card_account_id ?? null);
+  const [cardRule, setCardRule] = useState<'statement' | 'minimum' | 'custom'>((initial as any).card_rule ?? 'statement');
   const [pickCat, setPickCat] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
 
   const save = async () => {
-    const a = parseMoney(amount);
+    const card = kind === 'bill' && cardId;
+    const a = card && cardRule !== 'custom' ? 0 : parseMoney(amount);
     const s = toIsoDate(start), e = end.trim() ? toIsoDate(end) : null;
     if (!name.trim() || isNaN(a) || !s || e === '') { setError('Fill in a name, an amount and a first due date (YYYY-MM-DD).'); return; }
     setBusy(true);
     const row = {
       name: name.trim(), kind, amount: round2(kind === 'bill' ? -Math.abs(a) : Math.abs(a)), estimated, frequency,
       start_date: s, end_date: e, account_id: accountId, category_id: categoryId, match_text: matchText.trim() || null, active: true,
+      card_account_id: card ? cardId : null, card_rule: card ? cardRule : null,
     };
     const { error } = initial.id ? await supabase.from('recurring').update(row).eq('id', initial.id) : await supabase.from('recurring').insert(row);
     setBusy(false);
@@ -87,13 +93,37 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
       </View>}>
       <Segmented value={kind} onChange={setKind} options={[{ value: 'bill', label: 'Bill' }, { value: 'income', label: 'Income' }]} />
       <Field t={t} label="Name"><TextInput value={name} onChangeText={setName} placeholder="e.g. Phone bill" placeholderTextColor={t.muted} style={input} /></Field>
-      <Field t={t} label="Amount">
+      {kind === 'bill' && accounts.some((a) => a.type === 'credit') && (
+        <Field t={t} label="Credit card payment?" hint={cardId ? 'The amount follows the card: its statement (set the closing and due days on the card’s Details), an estimated minimum, or a fixed amount.' : undefined}>
+          <View style={styles.chips}>
+            <Chip label="No" on={!cardId} onPress={() => setCardId(null)} />
+            {accounts.filter((a) => a.type === 'credit').map((a) => (
+              <Chip key={a.id} label={a.name} on={cardId === a.id} onPress={() => {
+                setCardId(a.id);
+                if (!name.trim()) setName(`${a.name} payment`);
+                if (a.due_day && !initial.id) {
+                  const d = new Date(); const next = new Date(Date.UTC(d.getFullYear(), d.getMonth() + (d.getDate() > a.due_day ? 1 : 0), a.due_day));
+                  setStart(next.toISOString().slice(0, 10));
+                }
+              }} />
+            ))}
+          </View>
+          {cardId && (
+            <View style={styles.chips}>
+              {([['statement', 'Statement balance'], ['minimum', 'Minimum (est.)'], ['custom', 'Fixed amount']] as const).map(([k, l]) => (
+                <Chip key={k} label={l} on={cardRule === k} onPress={() => setCardRule(k)} />
+              ))}
+            </View>
+          )}
+        </Field>
+      )}
+      {!(kind === 'bill' && cardId && cardRule !== 'custom') && <Field t={t} label="Amount">
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={t.muted} style={[input, { flex: 1 }]} />
           <Text style={{ color: t.text }}>Varies</Text>
           <Switch value={estimated} onValueChange={setEstimated} />
         </View>
-      </Field>
+      </Field>}
       <Field t={t} label="How often">
         <View style={styles.chips}>{FREQ.map((f) => <Chip key={f.key} label={f.label} on={frequency === f.key} onPress={() => setFrequency(f.key)} />)}</View>
       </Field>
@@ -126,7 +156,8 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
 /** Add a one-off planned entry, or change one date of a recurring entry (PLN-3, PLN-8, PLN-9). */
 export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
   initial: { id?: string | null; date: string; description: string; amount: number | null; account_id: string | null; to_account_id?: string | null;
-    recurring_id?: string | null; occurrence_date?: string | null };
+    recurring_id?: string | null; occurrence_date?: string | null;
+    matched?: { id: string; date: string; amount: number; name: string } | null; manualMatch?: boolean };
   accounts: Account[]; onClose: () => void; onSaved: () => void;
 }) {
   const t = useTheme();
@@ -138,8 +169,23 @@ export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
   const [toId, setToId] = useState<string | null>(initial.to_account_id ?? null);
   const [error, setError] = useState('');
   const recurring = !!initial.recurring_id;
+  const existing = !!(initial.id || recurring);
+  const [pickMatch, setPickMatch] = useState(false);
+  const [candidates, setCandidates] = useState<{ id: string; date: string; amount: number; display_name: string }[]>([]);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
   useEffect(() => { if (dir !== 'transfer') setToId(null); }, [dir]);
+  // PLN-6: transactions near the date on the same account, to match this entry by hand.
+  useEffect(() => {
+    if (!pickMatch || !initial.account_id) return;
+    supabase.from('transaction_list').select('id, date, amount, display_name').eq('account_id', initial.account_id)
+      .gte('date', addDays(initial.date, -10)).lte('date', addDays(initial.date, 10)).order('date')
+      .then(({ data }) => setCandidates((data ?? []).map((r: any) => ({ ...r, amount: Number(r.amount) }))));
+  }, [pickMatch]);
+  const setMatch = async (txnId: string | null) => {
+    const { error } = await upsert({ description: initial.description, amount: initial.amount ?? 0, date: initial.date, account_id: initial.account_id,
+      to_account_id: initial.to_account_id ?? null, matched_transaction_id: txnId, skipped: false });
+    if (error) setError(error.message); else { onSaved(); onClose(); }
+  };
 
   const upsert = async (patch: Record<string, unknown>) => {
     const row = { ...patch, ...(recurring ? { recurring_id: initial.recurring_id, occurrence_date: initial.occurrence_date } : {}) };
@@ -183,7 +229,21 @@ export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
           <View style={styles.chips}>{accounts.filter((a) => a.id !== accountId).map((a) => <Chip key={a.id} label={a.name} on={toId === a.id} onPress={() => setToId(a.id)} />)}</View>
         </Field>
       )}
+      {existing && (
+        <Field t={t} label="Matched transaction">
+          {initial.matched
+            ? <Text style={{ color: t.text }}>{shortDate(initial.matched.date)} · {initial.matched.name} · {formatMoney(initial.matched.amount)}{initial.manualMatch ? ' (matched by you)' : ' (matched automatically)'}</Text>
+            : <Text style={{ color: t.muted }}>Not matched yet. It matches on its own when a similar transaction posts within 3 days.</Text>}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Button title={initial.matched ? 'Match a different one' : 'Match by hand'} kind="plain" onPress={() => setPickMatch(true)} style={{ flex: 1 }} />
+            {initial.manualMatch && <Button title="Back to automatic" kind="plain" onPress={() => setMatch(null)} style={{ flex: 1 }} />}
+          </View>
+        </Field>
+      )}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+      <MultiPicker visible={pickMatch} title="Transaction" onClose={() => setPickMatch(false)} selected={initial.matched ? [initial.matched.id] : []}
+        items={candidates.map((c) => ({ id: c.id, label: `${shortDate(c.date)} · ${c.display_name}`, detail: formatMoney(c.amount) }))}
+        onChange={(ids) => { setPickMatch(false); if (ids.length) setMatch(ids[ids.length - 1]); }} />
     </Sheet>
   );
 }

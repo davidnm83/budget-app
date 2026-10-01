@@ -4,16 +4,17 @@
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
-  datePresetRange, dayHeading, formatMoney, groupByDay, searchPattern, shortDate, todayIn, type DatePreset,
+  categoryIcon, datePresetRange, dayHeading, formatMoney, groupByDay, searchPattern, shortDate, todayIn, type DatePreset,
 } from '@budget-app/core';
 import { router, useFocusEffect, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Modal, Pressable, RefreshControl, ScrollView, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Modal, Platform, Pressable, RefreshControl, ScrollView, SectionList, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MultiPicker } from '@/components/Picker';
 import { IconButton, TopBar } from '@/components/TopBar';
 import { Button, Chip, Empty } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
+import { useBackToClose } from '@/lib/useBackToClose';
 import { useTheme, type Theme } from '@/lib/theme';
 
 type Mode = 'review' | 'all';
@@ -21,7 +22,7 @@ type Direction = 'any' | 'out' | 'in' | 'transfer';
 type Sort = 'newest' | 'oldest' | 'largest' | 'smallest' | 'merchant';
 
 interface Row {
-  id: string; date: string; amount: number; currency: string; display_name: string; category_name: string | null;
+  id: string; date: string; amount: number; currency: string; display_name: string; category_name: string | null; category_icon: string | null;
   category_source: string | null; account_name: string; account_mask: string | null; reviewed: boolean;
   split_count: number; is_transfer: boolean; notes: string | null; tags: string[];
 }
@@ -79,39 +80,9 @@ export default function Transactions() {
   const fetchPage = useCallback(async (page: number) => {
     const id = ++request.current;
     setLoading(true);
-    let q = supabase.from('transaction_list')
-      .select('id, date, amount, currency, display_name, category_name, category_source, account_name, account_mask, reviewed, split_count, is_transfer, notes, tags', { count: page === 0 ? 'exact' : undefined });
-    if (mode === 'review') q = q.eq('reviewed', false);
-    const { from, to } = datePresetRange(filters.preset, today());
-    if (from) q = q.gte('date', from);
-    if (to) q = q.lte('date', to);
-    if (filters.accounts.length) q = q.in('account_id', filters.accounts);
-    if (filters.merchants.length) q = q.in('display_name', filters.merchants);
-    if (filters.direction === 'out') q = q.lt('amount', 0).eq('is_transfer', false);
-    if (filters.direction === 'in') q = q.gt('amount', 0).eq('is_transfer', false);
-    if (filters.direction === 'transfer') q = q.eq('is_transfer', true);
-    const min = Number(filters.min), max = Number(filters.max);
-    if (filters.min && !isNaN(min)) q = q.gte('amount_abs', min);
-    if (filters.max && !isNaN(max)) q = q.lte('amount_abs', max);
-
-    // Category and search are each "any of"; when both apply they're combined in one OR group.
-    const groups: string[] = [];
-    const ids = filters.categories.filter((c) => c !== 'none');
-    if (filters.categories.length) {
-      const parts = [...(ids.length ? [`category_ids.ov.{${ids.join(',')}}`] : []), ...(filters.categories.includes('none') ? ['category_ids.eq.{}'] : [])];
-      groups.push(parts.join(','));
-    }
-    const pattern = searchPattern(query);
-    if (pattern) groups.push(['display_name', 'name', 'notes'].map((c) => `${c}.ilike.${pattern}`).join(','));
-    if (groups.length === 1) q = q.or(groups[0]);
-    if (groups.length === 2) q = q.or(`and(or(${groups[0]}),or(${groups[1]}))`);
-
-    const order: Record<Sort, [string, boolean][]> = {
-      newest: [['date', false], ['id', false]], oldest: [['date', true], ['id', true]],
-      largest: [['amount_abs', false], ['date', false]], smallest: [['amount_abs', true], ['date', false]],
-      merchant: [['sort_name', true], ['date', false]],
-    };
-    for (const [col, asc] of order[filters.sort]) q = q.order(col, { ascending: asc });
+    const q = filtered(supabase.from('transaction_list')
+      .select('id, date, amount, currency, display_name, category_name, category_icon, category_source, account_name, account_mask, reviewed, split_count, is_transfer, notes, tags', { count: page === 0 ? 'exact' : undefined }),
+      mode, filters, query);
     const { data, error, count } = await q.range(page * PAGE, page * PAGE + PAGE - 1);
     if (id !== request.current) return; // a newer request replaced this one
     setLoading(false);
@@ -181,7 +152,8 @@ export default function Transactions() {
         )}
       </View>
       <FilterSheet visible={showFilters} onClose={() => setShowFilters(false)} t={t} f={filters} set={set}
-        accounts={accounts} cats={cats} reset={() => setFilters(DEFAULTS)} total={total} />
+        accounts={accounts} cats={cats} reset={() => setFilters(DEFAULTS)} total={total}
+        onExport={() => exportCsv(mode, filters, query)} />
       {!!error && <Text style={{ color: t.danger, padding: 12 }}>{error}</Text>}
 
       {byDate ? (
@@ -216,8 +188,67 @@ export default function Transactions() {
   );
 }
 
+/** Applies the review switch, search and filters to a transaction_list query, sorted (shared by the list and the CSV export). */
+function filtered(q: any, mode: Mode, filters: Filters, query: string) {
+  if (mode === 'review') q = q.eq('reviewed', false);
+  const { from, to } = datePresetRange(filters.preset, today());
+  if (from) q = q.gte('date', from);
+  if (to) q = q.lte('date', to);
+  if (filters.accounts.length) q = q.in('account_id', filters.accounts);
+  if (filters.merchants.length) q = q.in('display_name', filters.merchants);
+  if (filters.direction === 'out') q = q.lt('amount', 0).eq('is_transfer', false);
+  if (filters.direction === 'in') q = q.gt('amount', 0).eq('is_transfer', false);
+  if (filters.direction === 'transfer') q = q.eq('is_transfer', true);
+  const min = Number(filters.min), max = Number(filters.max);
+  if (filters.min && !isNaN(min)) q = q.gte('amount_abs', min);
+  if (filters.max && !isNaN(max)) q = q.lte('amount_abs', max);
+  // Category and search are each "any of"; when both apply they're combined in one OR group.
+  const groups: string[] = [];
+  const ids = filters.categories.filter((c) => c !== 'none');
+  if (filters.categories.length) {
+    const parts = [...(ids.length ? [`category_ids.ov.{${ids.join(',')}}`] : []), ...(filters.categories.includes('none') ? ['category_ids.eq.{}'] : [])];
+    groups.push(parts.join(','));
+  }
+  const pattern = searchPattern(query);
+  if (pattern) groups.push(['display_name', 'name', 'notes'].map((c) => `${c}.ilike.${pattern}`).join(','));
+  if (groups.length === 1) q = q.or(groups[0]);
+  if (groups.length === 2) q = q.or(`and(or(${groups[0]}),or(${groups[1]}))`);
+  const order: Record<Sort, [string, boolean][]> = {
+    newest: [['date', false], ['id', false]], oldest: [['date', true], ['id', true]],
+    largest: [['amount_abs', false], ['date', false]], smallest: [['amount_abs', true], ['date', false]],
+    merchant: [['sort_name', true], ['date', false]],
+  };
+  for (const [col, asc] of order[filters.sort]) q = q.order(col, { ascending: asc });
+  return q;
+}
+
+/** EXP-1: every transaction matching the current view as a CSV download (web). */
+async function exportCsv(mode: Mode, filters: Filters, query: string): Promise<number> {
+  const rows: any[] = [];
+  for (let p = 0; p < 50; p++) {
+    const { data, error } = await filtered(supabase.from('transaction_list')
+      .select('date, display_name, name, category_name, category_group, account_name, amount, currency, notes, tags, reviewed, split_count'), mode, filters, query)
+      .range(p * 1000, p * 1000 + 999);
+    if (error) throw new Error(error.message);
+    rows.push(...(data ?? []));
+    if (!data || data.length < 1000) break;
+  }
+  const cell = (v: unknown) => { const x = v == null ? '' : Array.isArray(v) ? v.join(';') : String(v); return /[",\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x; };
+  const head = ['Date', 'Merchant', 'Description', 'Category', 'Group', 'Account', 'Amount', 'Currency', 'Notes', 'Tags', 'Reviewed', 'Split parts'];
+  const csv = [head.join(','), ...rows.map((r) => [r.date, r.display_name, r.name, r.category_name, r.category_group, r.account_name, Number(r.amount).toFixed(2), r.currency, r.notes, r.tags, r.reviewed ? 'yes' : 'no', r.split_count || ''].map(cell).join(','))].join('\n');
+  if (Platform.OS === 'web') {
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `transactions-${today()}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } else {
+    await Share.share({ message: csv, title: 'transactions.csv' });
+  }
+  return rows.length;
+}
+
 function TxnRow({ t, item, showDate, onToggle }: { t: Theme; item: Row; showDate: boolean; onToggle: () => void }) {
-  const category = item.split_count ? `Split · ${item.split_count} parts` : item.category_name;
+  const category = item.split_count ? `✂️ Split · ${item.split_count} parts` : item.category_name ? `${categoryIcon(item.category_name, item.category_icon)} ${item.category_name}` : null;
   return (
     <Pressable onPress={() => router.push({ pathname: '/transaction/[id]', params: { id: item.id } })}
       style={({ pressed }) => [styles.row, { backgroundColor: pressed ? t.line : t.card }]}>
@@ -245,12 +276,15 @@ function TxnRow({ t, item, showDate, onToggle }: { t: Theme; item: Row; showDate
   );
 }
 
-function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total }: {
+function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total, onExport }: {
   visible: boolean; onClose: () => void; t: Theme; f: Filters; set: (p: Partial<Filters>) => void;
   accounts: { id: string; name: string; mask: string | null }[]; cats: { id: string; name: string; group_name: string }[]; reset: () => void; total: number | null;
+  onExport: () => Promise<number>;
 }) {
+  const [exporting, setExporting] = useState('');
   const insets = useSafeAreaInsets();
   const [picker, setPicker] = useState<null | 'categories' | 'accounts' | 'merchants'>(null);
+  useBackToClose(visible, onClose);
   const [merchants, setMerchants] = useState<{ merchant: string; txns: number }[]>([]);
   useEffect(() => {
     if (picker === 'merchants' && !merchants.length) {
@@ -301,6 +335,12 @@ function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total
               </Pressable>
             ))}
           </View>
+          <Button title="Export these to CSV" kind="plain" busy={exporting === '…'} onPress={async () => {
+            setExporting('…');
+            try { const n = await onExport(); setExporting(`Exported ${n.toLocaleString()} transactions.`); }
+            catch (e) { setExporting(e instanceof Error ? e.message : String(e)); }
+          }} />
+          {!!exporting && exporting !== '…' && <Text style={{ color: t.muted, fontSize: 13 }}>{exporting}</Text>}
         </ScrollView>
       </View>
       <MultiPicker visible={picker === 'categories'} title="Categories" onClose={() => setPicker(null)}

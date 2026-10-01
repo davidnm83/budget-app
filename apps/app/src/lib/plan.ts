@@ -1,7 +1,7 @@
 // Data for Bills and the Planner: recurring bills/income, one-off planned entries, the
 // accounts the plan covers, and posted transactions to match against.
 import {
-  addDays, balanceAt, buildWeek, expandPlan, todayIn, weekStart as mondayOf,
+  addDays, balanceAt, buildWeek, cardCycle, cardStatus, expandPlan, round2, todayIn, weekStart as mondayOf,
   type PlanEntry, type PostedTxn, type Recurring, type WeekView,
 } from '@budget-app/core';
 import { supabase } from './supabase';
@@ -22,7 +22,40 @@ async function fetchAll<T>(make: (from: number, to: number) => PromiseLike<{ dat
 export async function loadRecurring(): Promise<Recurring[]> {
   const { data, error } = await supabase.from('recurring').select('*').order('name');
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r: any) => ({ ...r, amount: Number(r.amount) }));
+  return resolveCardBills((data ?? []).map((r: any) => ({ ...r, amount: Number(r.amount) })));
+}
+
+/**
+ * Credit card bills (BIL-3): the amount follows the card instead of a fixed number.
+ *   statement — what's left on the last statement (or, once that's paid, what you owe now)
+ *   minimum   — an estimate: 3% of that, at least $10
+ *   custom    — the amount you entered
+ */
+async function resolveCardBills(list: (Recurring & { card_account_id?: string | null; card_rule?: string | null })[]): Promise<Recurring[]> {
+  const cards = [...new Set(list.filter((r) => r.card_account_id && r.card_rule && r.card_rule !== 'custom').map((r) => r.card_account_id!))];
+  if (!cards.length) return list;
+  const now = today();
+  const [{ data: accts }, { data: txns }] = await Promise.all([
+    supabase.from('account_balances').select('id, type, balance, statement_day, due_day').in('id', cards),
+    supabase.from('transactions').select('account_id, date, amount').in('account_id', cards).gte('date', addDays(now, -70)),
+  ]);
+  const due = new Map<string, number>();
+  for (const a of (accts ?? []) as any[]) {
+    const owed = Math.max(0, Number(a.balance ?? 0)); // cards: amount owing is positive in balance
+    let amount = owed;
+    if (a.statement_day && a.due_day) {
+      const c = cardCycle(now, a.statement_day, a.due_day);
+      const st = cardStatus(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null);
+      amount = st.leftToPay > 0 ? st.leftToPay : owed;
+    }
+    due.set(a.id, round2(amount));
+  }
+  return list.map((r) => {
+    if (!r.card_account_id || !r.card_rule || r.card_rule === 'custom' || !due.has(r.card_account_id)) return r;
+    const full = due.get(r.card_account_id)!;
+    const amount = r.card_rule === 'minimum' ? Math.min(full, Math.max(10, round2(full * 0.03))) : full;
+    return { ...r, amount: -amount, estimated: true };
+  });
 }
 
 export async function loadEntries(from: string, to: string): Promise<PlanEntry[]> {
@@ -46,7 +79,10 @@ export async function loadAccounts(): Promise<Account[]> {
   return (data ?? []).map((a: any) => ({ ...a, current_balance: a.balance, balance_updated_at: a.balance_as_of, plan_buffer: Number(a.plan_buffer ?? 0) }));
 }
 
-export interface PlannerData { view: WeekView; accounts: Account[]; recurring: Recurring[]; entries: PlanEntry[] }
+export interface PlannerData {
+  view: WeekView; accounts: Account[]; recurring: Recurring[]; entries: PlanEntry[];
+  ahead: { week: string; end: number; warning: WeekView['warnings'][number] | null }[];
+}
 
 /**
  * One week of the plan. Start balances: for this week and past weeks, today's balance minus
@@ -65,19 +101,30 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
     loadRecurring(), loadEntries(addDays(from, -31), addDays(to, 31)), loadPosted(ids, addDays(from, -4), addDays(to > now ? to : now, 4)),
   ]);
 
-  const start: Record<string, number> = {};
-  for (const a of planAccounts) start[a.id] = balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), week <= thisWeek ? week : thisWeek);
-  for (let w = thisWeek; w < week; w = addDays(w, 7)) {
-    const v = buildWeek({
-      weekStart: w, today: now, planned: expandPlan(recurring, entries, w, addDays(w, 6)), actuals: posted,
-      accounts: planAccounts.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })),
-    });
-    Object.assign(start, v.endBalanceByAccount);
-  }
+  const balanceOn = (d: string) => Object.fromEntries(planAccounts.map((a) => [a.id, balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), d)]));
   const shown = only ? planAccounts.filter((a) => a.id === only) : planAccounts;
+  const shownIds = new Set(shown.map((a) => a.id));
+  const accountsFor = (bal: Record<string, number>) => planAccounts.map((a) => ({ id: a.id, name: a.name, startBalance: bal[a.id], buffer: Number(a.plan_buffer ?? 0) }));
+
+  // Roll forward from this week: each week starts at the projected end of the one before.
+  // Along the way, the 4-week look-ahead (PLN-11): this week and the next 3.
+  const starts = new Map<string, Record<string, number>>();
+  const ahead: PlannerData['ahead'] = [];
+  let roll = balanceOn(thisWeek);
+  const last = week > addDays(thisWeek, 21) ? week : addDays(thisWeek, 21);
+  for (let w = thisWeek; w <= last; w = addDays(w, 7)) {
+    starts.set(w, roll);
+    const v = buildWeek({ weekStart: w, today: now, planned: expandPlan(recurring, entries, w, addDays(w, 6)), actuals: posted, accounts: accountsFor(roll) });
+    if (ahead.length < 4) {
+      ahead.push({ week: w, end: Math.round(shown.reduce((s2, a) => s2 + v.endBalanceByAccount[a.id], 0) * 100) / 100, warning: v.warnings.find((x) => shownIds.has(x.accountId)) ?? null });
+    }
+    roll = v.endBalanceByAccount;
+  }
+  // Past weeks start from the real balance back then.
+  const start = week < thisWeek ? balanceOn(week) : starts.get(week)!;
   const view = buildWeek({
     weekStart: week, today: now, planned: expandPlan(recurring, entries, week, addDays(week, 6)), actuals: posted,
     accounts: shown.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })),
   });
-  return { view, accounts: all, recurring, entries };
+  return { view, accounts: all, recurring, entries, ahead };
 }

@@ -7,7 +7,7 @@
 // The overview is built from small blocks so they can be reused on custom pages later.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
-  addDays, balanceHistory, cardCycle, cardStatus, expandPlan, formatMoney, loanSummary, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatus, expandPlan, formatMoney, loanSummary, monthName,
   monthlyFlow, shortDate, todayIn, utilization,
 } from '@budget-app/core';
 import { router } from 'expo-router';
@@ -20,6 +20,7 @@ import { loadEntries, loadRecurring } from '@/lib/plan';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
+import { useBackToClose } from '@/lib/useBackToClose';
 
 const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
@@ -45,6 +46,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
   const [tab, setTab] = useState<'overview' | 'details' | 'txns'>('overview');
   const [history, setHistory] = useState<Txn[] | null>(null);
   const [list, setList] = useState<{ id: string; date: string; amount: number; display_name: string; category_name: string | null }[]>([]);
+  useBackToClose(!!account, onClose);
 
   useEffect(() => {
     if (!account) return;
@@ -313,6 +315,9 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
   const [mergeTarget, setMergeTarget] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [payMatch, setPayMatch] = useState(account.loan_payment_match ?? '');
+  const [payFrom, setPayFrom] = useState<string | null>(account.loan_paying_account_id ?? null);
+  const [icon, setIcon] = useState(account.icon ?? '');
   const owed = account.type === 'credit' || account.type === 'loan';
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
 
@@ -346,10 +351,11 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
-      <Field t={t} label="Display name">
+      <Field t={t} label="Icon and display name">
         <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TextInput value={icon} onChangeText={(v) => setIcon(v.trim().slice(0, 8))} placeholder={accountIcon(account.type, null)} style={[input, { width: 56, textAlign: 'center', fontSize: 20 }]} />
           <TextInput value={name} onChangeText={setName} style={[input, { flex: 1 }]} />
-          <Button title="Save" kind="plain" disabled={!name.trim() || name === account.name} onPress={() => save({ name: name.trim() }, 'Name saved.')} />
+          <Button title="Save" kind="plain" disabled={!name.trim() || (name === account.name && icon === (account.icon ?? ''))} onPress={() => save({ name: name.trim(), icon: icon || null }, 'Saved.')} />
         </View>
         {!!account.official_name && account.official_name !== account.name && <Text style={{ color: t.muted, fontSize: 12 }}>The bank calls it {account.official_name}</Text>}
       </Field>
@@ -367,6 +373,24 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
             <Button title="Update" kind="plain" disabled={!balance.trim()} onPress={saveBalance} />
           </View>
           <Text style={{ color: t.muted, fontSize: 12 }}>After this, new transactions keep the balance current on their own.</Text>
+        </Field>
+      )}
+
+      {account.type === 'loan' && (
+        <Field t={t} label="Payments and interest">
+          <Text style={{ color: t.muted, fontSize: 12 }}>
+            Payments to this loan are copied from the account that pays it: debits whose description contains the text below.
+            {account.kind === 'plaid' ? ' Interest is logged when the bank’s balance drops after a payment.' : ' (Interest is logged automatically for connected loans only.)'}
+          </Text>
+          <TextInput value={payMatch} onChangeText={setPayMatch} autoCapitalize="characters" placeholder="e.g. TD ON-LINE LOANS" placeholderTextColor={t.muted} style={input} />
+          <View style={styles.chips}>
+            <Chip label="Any account" on={!payFrom} onPress={() => setPayFrom(null)} />
+            {accounts.filter((a) => a.type === 'depository').map((a) => <Chip key={a.id} label={a.name} on={payFrom === a.id} onPress={() => setPayFrom(a.id)} />)}
+          </View>
+          <Button title="Save" kind="plain" onPress={() => save({ loan_payment_match: payMatch.trim() || null, loan_paying_account_id: payFrom }, 'Saved. Payments are copied on the next sync.')} />
+          {account.loan_last_balance_date && (
+            <Text style={{ color: t.muted, fontSize: 12 }}>Interest last worked out on {shortDate(account.loan_last_balance_date)} at {formatMoney(Number(account.loan_last_balance))} owing.</Text>
+          )}
         </Field>
       )}
 

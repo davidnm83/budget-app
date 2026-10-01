@@ -1,6 +1,8 @@
 // Run: deno test supabase/functions/_shared/sync.test.ts
 // Exercises syncItem() against a fake Plaid API and an in-memory stand-in for the database.
 import { syncItem } from './sync.ts';
+import { processLoans } from './loans.ts';
+import { pairRecentTransfers } from './transfers.ts';
 
 function assertEquals(a: unknown, b: unknown, msg = '') {
   if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg}\n  expected ${JSON.stringify(b)}\n  got      ${JSON.stringify(a)}`);
@@ -41,6 +43,7 @@ function fakeDb(tables: Record<string, Row[]>) {
       eq: (c: string, v: any) => { filters.push((r) => r[c] === v); return q; },
       is: (c: string, v: any) => { filters.push((r) => (r[c] ?? null) === v); return q; },
       gte: (c: string, v: any) => { filters.push((r) => r[c] >= v); return q; },
+      lt: (c: string, v: any) => { filters.push((r) => r[c] < v); return q; },
       lte: (c: string, v: any) => { filters.push((r) => r[c] <= v); return q; },
       in: (c: string, v: any[]) => { filters.push((r) => v.includes(r[c])); return q; },
       not: (c: string, _o: string, _v: any) => { filters.push((r) => r[c] != null); return q; },
@@ -195,4 +198,50 @@ Deno.test('syncItem marks connections that need a new sign-in', async () => {
   assertEquals(r.status, 'login_required');
   assertEquals(tables.plaid_items[0].status, 'login_required');
   assertEquals(tables.sync_runs.length, 1);
+});
+
+Deno.test('loans: payments copied from chequing once, interest logged from the balance change', async () => {
+  const user = 'u1';
+  const tables: Record<string, Row[]> = {
+    accounts: [
+      { id: 'loan', user_id: user, type: 'loan', kind: 'plaid', name: 'Car loan', current_balance: 10000, loan_payment_match: 'TD ON-LINE LOANS',
+        loan_paying_account_id: null, loan_last_balance: 10350, loan_last_balance_date: '2026-09-01' },
+      { id: 'chq', user_id: user, type: 'depository', kind: 'plaid', name: 'Chequing' },
+    ],
+    transactions: [
+      { id: 'p1', user_id: user, account_id: 'chq', date: '2026-09-10', amount: -200, name: 'TD ON-LINE LOANS 123', merchant: null },
+      { id: 'p2', user_id: user, account_id: 'chq', date: '2026-09-24', amount: -200, name: 'TD ON-LINE LOANS 456', merchant: null },
+      { id: 'x', user_id: user, account_id: 'chq', date: '2026-09-24', amount: -12, name: 'COFFEE', merchant: null },
+      // already on the loan from the Fina import (same amount, 1 day apart) → not copied again
+      { id: 'old', user_id: user, account_id: 'loan', date: '2026-09-11', amount: 200, name: 'LOAN PAYMENT' },
+    ],
+    categories: [{ id: 'tr', user_id: user, name: 'Transfer', kind: 'transfer' }],
+  };
+  const r = await processLoans(fakeDb(tables), user, '2026-09-30');
+  assertEquals(r[0].payments, 1);
+  const copied = tables.transactions.filter((t) => t.import_id === 'loanpay:p2');
+  assertEquals([copied.length, copied[0].amount, copied[0].is_transfer], [1, 200, true]);
+  assertEquals(tables.transactions.find((t) => t.id === 'p2')!.is_transfer, true);
+  // 10000 − 10350 + 400 paid = 50 interest (under 35% of payments) → logged
+  assertEquals(r[0].interest, 50);
+  const int = tables.transactions.find((t) => String(t.import_id).startsWith('loanint:'))!;
+  assertEquals([int.amount, int.name], [-50, 'Interest Accrued Sep 2 - Sep 30']);
+  assertEquals([tables.accounts[0].loan_last_balance, tables.accounts[0].loan_last_balance_date], [10000, '2026-09-30']);
+  // running again copies nothing new
+  const again = await processLoans(fakeDb(tables), user, '2026-09-30');
+  assertEquals(again[0].payments, 0);
+});
+
+Deno.test('transfers: card payment paired with the payment received on the card', async () => {
+  const user = 'u1';
+  const tables: Record<string, Row[]> = {
+    transactions: [
+      { id: 'out', user_id: user, account_id: 'chq', date: '2026-09-10', amount: -500, is_transfer: false, category_id: 'cc', transfer_pair_id: null },
+      { id: 'in', user_id: user, account_id: 'card', date: '2026-09-11', amount: 500, is_transfer: false, category_id: null, transfer_pair_id: null },
+    ],
+    categories: [{ id: 'cc', user_id: user, name: 'Credit card payment', kind: 'transfer' }],
+  };
+  assertEquals(await pairRecentTransfers(fakeDb(tables), user, '2026-09-30'), 1);
+  const [o, i] = tables.transactions;
+  assertEquals([o.transfer_pair_id, i.transfer_pair_id, o.is_transfer, i.is_transfer, i.category_id], ['in', 'out', true, true, 'cc']);
 });

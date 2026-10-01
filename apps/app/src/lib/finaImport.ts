@@ -12,6 +12,7 @@ import {
   type FinaAccount, type FinaExport, type FinaRow,
 } from '@budget-app/core';
 import { supabase } from './supabase';
+import { pairAllTransfers } from './transfers';
 
 export type AccountChoice = { kind: 'existing'; accountId: string } | { kind: 'new' } | { kind: 'skip' };
 
@@ -32,6 +33,7 @@ export interface FinaImportResult {
   categoriesHidden: number;
   accountsCreated: number;
   merchantRules: number;
+  transfersPaired?: number;
 }
 
 const STARTER = new Set(['paycheque', 'gig income', 'refunds', 'other income', 'groceries', 'restaurants', 'gas', 'car insurance',
@@ -227,6 +229,9 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
     if (hide.length) check(await supabase.from('categories').update({ is_hidden: true }).in('id', hide));
     result.categoriesHidden = hide.length;
   }
+  // ── 9. pair both sides of transfers between your accounts ──
+  progress('Pairing transfers between your accounts…');
+  try { result.transfersPaired = await pairAllTransfers(); } catch { /* best-effort */ }
   return result;
 }
 

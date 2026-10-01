@@ -7,10 +7,12 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
+import { useBackToClose } from '@/lib/useBackToClose';
 
 const ITEMS: { icon: keyof typeof Ionicons.glyphMap; label: string; href: string }[] = [
   { icon: 'repeat', label: 'Bills & income', href: '/bills' },
   { icon: 'bar-chart-outline', label: 'Reports', href: '/reports' },
+  { icon: 'pricetags-outline', label: 'Categories', href: '/categories' },
   { icon: 'settings-outline', label: 'Settings', href: '/settings' },
   { icon: 'document-text-outline', label: 'Import CSV', href: '/import' },
   { icon: 'cloud-download-outline', label: 'Import from Fina', href: '/fina-import' },
@@ -20,7 +22,9 @@ export function TopBar({ children, title }: { children?: ReactNode; title?: stri
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
-  const go = (href: string) => { setOpen(false); router.push(href as any); };
+  useBackToClose(open, () => setOpen(false));
+  // Close the menu (and its history entry) first, then open the page.
+  const go = (href: string) => { setOpen(false); setTimeout(() => router.push(href as any), 50); };
   return (
     <View style={[styles.bar, { paddingTop: insets.top + 8, backgroundColor: t.bg }]}>
       <Pressable onPress={() => setOpen(true)} accessibilityLabel="Menu" hitSlop={8} style={[styles.iconBtn, { borderColor: t.line, backgroundColor: t.card }]}>

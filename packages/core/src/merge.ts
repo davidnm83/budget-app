@@ -68,3 +68,35 @@ export function sameAccount(a: { mask: string | null; type: string | null }, b: 
   const last4 = (m: string | null) => (m ?? '').replace(/\D/g, '').slice(-4);
   return !!last4(a.mask) && last4(a.mask).length === 4 && last4(a.mask) === last4(b.mask) && (a.type ?? '') === (b.type ?? '');
 }
+
+/**
+ * Pairs the two sides of transfers between your own accounts (TXN-8): money out of one account
+ * and the same amount into another within `toleranceDays`. At least one side must already look
+ * like a transfer (flagged, or in a transfer category); the closest date wins.
+ */
+export function pairTransfers(
+  rows: { id: string; accountId: string; date: IsoDate; amount: number; transfer: boolean }[],
+  toleranceDays = 3,
+): [string, string][] {
+  const used = new Set<string>();
+  const pairs: [string, string][] = [];
+  const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+  for (const r of sorted.filter((x) => x.transfer && x.amount < 0)) {
+    if (used.has(r.id)) continue;
+    let best: (typeof rows)[number] | null = null;
+    for (const o of sorted) {
+      if (used.has(o.id) || o.id === r.id || o.accountId === r.accountId) continue;
+      if (Math.abs(o.amount + r.amount) > 0.005) continue;
+      const d = Math.abs(daysBetween(r.date, o.date));
+      if (d > toleranceDays) continue;
+      if (!best || d < Math.abs(daysBetween(r.date, best.date)) || (d === Math.abs(daysBetween(r.date, best.date)) && o.transfer && !best.transfer)) best = o;
+    }
+    if (best) { used.add(r.id); used.add(best.id); pairs.push([r.id, best.id]); }
+  }
+  // Money in flagged as a transfer whose other side wasn't flagged.
+  for (const r of sorted.filter((x) => x.transfer && x.amount > 0 && !used.has(x.id))) {
+    const o = sorted.find((x) => !used.has(x.id) && x.accountId !== r.accountId && Math.abs(x.amount + r.amount) <= 0.005 && Math.abs(daysBetween(r.date, x.date)) <= toleranceDays);
+    if (o) { used.add(r.id); used.add(o.id); pairs.push([o.id, r.id]); }
+  }
+  return pairs;
+}

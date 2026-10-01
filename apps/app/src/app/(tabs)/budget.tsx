@@ -2,7 +2,7 @@
 // comparisons with other months or years, and a year view of budget vs actual by month.
 import {
   actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
-  suggestBudget, todayIn, type BudgetLine, type Month,
+  categoryIcon, groupIcon, suggestBudget, todayIn, type BudgetLine, type Month,
 } from '@budget-app/core';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -159,6 +159,7 @@ function MonthView(d: Data) {
   const pastMonths = d.summaries.filter((s) => s.month < current && s.month !== month);
   const tot = view.totals;
   const toggle = (g: string) => setCollapsed((c) => { const n = new Set(c); n.has(g) ? n.delete(g) : n.add(g); return n; });
+  const catIcon = (id: string | null) => { const c = d.cats.find((x) => x.id === id); return c ? categoryIcon(c.name, c.icon) : '•'; };
 
   return (
     <>
@@ -183,19 +184,18 @@ function MonthView(d: Data) {
 
       {groupedExpenses.length > 0 && (
         <Card style={{ padding: 0 }}>
-          <ColumnHead t={t} />
           {groupedExpenses.map((g) => {
             const open = !collapsed.has(g.group);
             const single = g.lines.length === 1 && g.lines[0].groupName;
             return (
               <View key={g.group}>
                 <Pressable onPress={() => (single ? setEditing(g.lines[0]) : toggle(g.group))} style={[styles.groupRow, { backgroundColor: t.bg, borderColor: t.line }]}>
-                  {!single && <Ionicons name={open ? 'chevron-down' : 'chevron-forward'} size={14} color={t.muted} />}
-                  <Line t={t} label={g.group} actual={g.actual} available={g.available} pace={pace} bold />
+                  <Ionicons name={single ? 'ellipse' : open ? 'chevron-down' : 'chevron-forward'} size={single ? 4 : 14} color={t.muted} />
+                  <Line t={t} icon={groupIcon(g.group)} label={g.group} actual={g.actual} available={g.available} pace={pace} bold />
                 </Pressable>
                 {!single && open && g.lines.map((l) => (
                   <Pressable key={l.key} onPress={() => setEditing(l)} style={({ pressed }) => [styles.lineRow, pressed && { backgroundColor: t.line }]}>
-                    <Line t={t} label={l.label + (l.groupName ? ' (whole group)' : '')} actual={l.actual} available={l.available} pace={pace} carry={l.carryIn} />
+                    <Line t={t} icon={l.groupName ? groupIcon(l.groupName) : catIcon(l.categoryId)} label={l.label + (l.groupName ? ' (whole group)' : '')} actual={l.actual} available={l.available} pace={pace} carry={l.carryIn} />
                   </Pressable>
                 ))}
               </View>
@@ -209,7 +209,7 @@ function MonthView(d: Data) {
           <Text style={[styles.cardHead, { color: t.muted }]}>MONEY IN</Text>
           {[...view.income].sort((a, b) => b.actual - a.actual || b.available - a.available).map((l) => (
             <Pressable key={l.key} onPress={() => setEditing(l)} style={styles.lineRow}>
-              <Line t={t} label={l.label} actual={l.actual} available={l.available} pace={pace} income />
+              <Line t={t} icon={catIcon(l.categoryId)} label={l.label} actual={l.actual} available={l.available} pace={pace} income />
             </Pressable>
           ))}
         </Card>
@@ -220,8 +220,9 @@ function MonthView(d: Data) {
           <Text style={[styles.cardHead, { color: t.muted }]}>NOT BUDGETED</Text>
           {view.unbudgeted.map((l) => (
             <View key={l.key} style={[styles.lineRow, { gap: 8 }]}>
+              <Text style={styles.icon}>{catIcon(l.categoryId)}</Text>
               <Pressable style={{ flex: 1 }} onPress={() => drill(d, l, month, monthEnd(month))}>
-                <Text style={{ color: t.text, fontSize: 13 }} numberOfLines={1}>{l.label}</Text>
+                <Text style={{ color: t.text, fontSize: 14 }} numberOfLines={1}>{l.label}</Text>
               </Pressable>
               <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{l.kind === 'income' ? '+' : ''}{formatMoney(l.actual)}</Text>
               {l.categoryId ? (
@@ -243,43 +244,35 @@ function MonthView(d: Data) {
   );
 }
 
-function ColumnHead({ t }: { t: Theme }) {
-  return (
-    <View style={[styles.lineRow, { paddingVertical: 6 }]}>
-      <Text style={[styles.colLabel, { color: t.muted }]}>CATEGORY</Text>
-      <Text style={[styles.colBar, { color: t.muted, fontSize: 10 }]}>│ = pace</Text>
-      <Text style={[styles.colNum, { color: t.muted, fontSize: 10 }]}>SPENT / BUDGET</Text>
-      <Text style={[styles.colLeft, { color: t.muted, fontSize: 10 }]}>LEFT</Text>
-    </View>
-  );
-}
-
-/** One budget line: label · bar (with pace tick) · spent / budget · left (or over). */
-function Line({ t, label, actual, available, pace, bold, income, carry }: {
-  t: Theme; label: string; actual: number; available: number; pace: number; bold?: boolean; income?: boolean; carry?: number;
+/**
+ * One budget line, two rows: icon · name · spent / budget, then the bar underneath with a tick
+ * at the month's pace. Colour says it all: green on track, orange ahead of pace, red over.
+ */
+function Line({ t, icon, label, actual, available, pace, bold, income, carry }: {
+  t: Theme; icon: string; label: string; actual: number; available: number; pace: number; bold?: boolean; income?: boolean; carry?: number;
 }) {
-  const left = income ? actual - available : available - actual;
-  const over = !income && left < 0;
+  const over = !income && actual > available + 0.005;
   const ahead = !income && available > 0 && pace > 0 && pace < 1 && actual / available > pace + 0.1 && !over;
   const fill = available > 0 ? Math.min(1, actual / available) : actual > 0 ? 1 : 0;
+  const color = over ? t.danger : income ? t.series1 : ahead ? t.series2 : t.accent;
   return (
-    <>
-      <Text style={[styles.colLabel, { color: t.text, fontWeight: bold ? '700' : '400', fontSize: bold ? 14 : 13 }]} numberOfLines={1}>
-        {label}{carry ? <Text style={{ color: t.muted, fontSize: 11 }}>{` ${carry > 0 ? '+' : '−'}${money0(Math.abs(carry))}`}</Text> : null}
-      </Text>
-      <View style={styles.colBar}>
-        <View style={{ height: bold ? 8 : 6, borderRadius: 4, backgroundColor: t.track, overflow: 'hidden' }}>
-          <View style={{ width: `${fill * 100}%`, height: '100%', borderRadius: 4, backgroundColor: over ? t.danger : income ? t.series1 : ahead ? t.series2 : t.accent }} />
-        </View>
-        {pace > 0 && pace < 1 && !income && <View style={{ position: 'absolute', left: `${pace * 100}%`, top: -2, bottom: -2, width: 1.5, backgroundColor: t.text, opacity: 0.45 }} />}
+    <View style={{ flex: 1, gap: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={styles.icon}>{icon}</Text>
+        <Text style={{ flex: 1, color: t.text, fontWeight: bold ? '700' : '400', fontSize: bold ? 15 : 14 }} numberOfLines={1}>
+          {label}{carry ? <Text style={{ color: t.muted, fontSize: 11 }}>{`  ${carry > 0 ? '+' : '−'}${money0(Math.abs(carry))} rolled over`}</Text> : null}
+        </Text>
+        <Text style={{ color: over ? t.danger : t.text, fontWeight: bold || over ? '700' : '500', fontSize: 13, fontVariant: ['tabular-nums'] }}>
+          {money0(actual)}<Text style={{ color: t.muted, fontWeight: '400' }}>{` / ${money0(available)}`}</Text>
+        </Text>
       </View>
-      <Text style={[styles.colNum, { color: t.text, fontWeight: bold ? '600' : '400' }]} numberOfLines={1}>
-        {money0(actual)}<Text style={{ color: t.muted }}>{` / ${money0(available)}`}</Text>
-      </Text>
-      <Text style={[styles.colLeft, { color: over ? t.danger : t.muted, fontWeight: over ? '700' : '400' }]} numberOfLines={1}>
-        {over ? `−${money0(-left)}` : money0(left)}
-      </Text>
-    </>
+      <View style={{ marginLeft: 30 }}>
+        <View style={{ height: bold ? 6 : 5, borderRadius: 3, backgroundColor: t.track, overflow: 'hidden' }}>
+          <View style={{ width: `${fill * 100}%`, height: '100%', borderRadius: 3, backgroundColor: color }} />
+        </View>
+        {pace > 0 && pace < 1 && !income && <View style={{ position: 'absolute', left: `${pace * 100}%`, top: -2, bottom: -2, width: 1.5, backgroundColor: t.text, opacity: 0.4 }} />}
+      </View>
+    </View>
   );
 }
 
@@ -543,13 +536,10 @@ const styles = StyleSheet.create({
   page: { paddingHorizontal: 12, paddingTop: 4, gap: 8, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   tile: { flexGrow: 1, flexBasis: '22%', minWidth: 78, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
-  groupRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth },
-  lineRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 30, paddingRight: 10, paddingVertical: 6 },
+  groupRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth },
+  lineRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 30, paddingRight: 12, paddingVertical: 7 },
+  icon: { width: 22, fontSize: 16, textAlign: 'center' },
   cardHead: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4 },
-  colLabel: { flex: 1.6 },
-  colBar: { flex: 1.2, justifyContent: 'center' },
-  colNum: { width: 104, textAlign: 'right', fontSize: 12, fontVariant: ['tabular-nums'] },
-  colLeft: { width: 52, textAlign: 'right', fontSize: 12, fontVariant: ['tabular-nums'] },
   h: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },

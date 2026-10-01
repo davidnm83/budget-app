@@ -26,3 +26,18 @@ describe('merging a manual account into a bank-connected one', () => {
     expect(sameAccount({ mask: null, type: 'credit' }, { mask: null, type: 'credit' })).toBe(false);
   });
 });
+
+import { pairTransfers } from '../src/index.ts';
+describe('pairing transfers', () => {
+  it('pairs a card payment from chequing with the payment received on the card', () => {
+    const p = pairTransfers([
+      { id: 'out', accountId: 'chq', date: '2026-09-10', amount: -500, transfer: true },
+      { id: 'in', accountId: 'card', date: '2026-09-12', amount: 500, transfer: false },
+      { id: 'noise', accountId: 'chq', date: '2026-09-11', amount: 500, transfer: false },   // same account: no
+      { id: 'late', accountId: 'sav', date: '2026-09-20', amount: 500, transfer: false },    // too far
+      { id: 'in2', accountId: 'sav', date: '2026-09-15', amount: 75, transfer: true },
+      { id: 'out2', accountId: 'chq', date: '2026-09-15', amount: -75, transfer: false },
+    ]);
+    expect(p).toEqual([['out', 'in'], ['out2', 'in2']]);
+  });
+});
