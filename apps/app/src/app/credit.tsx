@@ -1,6 +1,7 @@
 // Credit cards (VIEW-1): every card's balance, limit and utilisation, what's left on each
 // statement and the interest it would cost if unpaid, plus total card debt and utilisation over
 // the past year. Tap a card for its full page.
+import { PAGE_MAX } from '@/lib/layout';
 import { addDays, balanceHistory, cardCycle, cardStatus, formatMoney, monthEnd, monthName, shortDate, utilization } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
@@ -130,7 +131,7 @@ export default function Credit() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 12, gap: 10, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  page: { padding: 12, gap: 10, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   card: { gap: 5, paddingHorizontal: 12, paddingVertical: 10 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },

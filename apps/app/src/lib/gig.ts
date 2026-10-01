@@ -17,7 +17,7 @@ const n = (v: any) => (v == null ? null : Number(v));
 
 export async function loadShifts(from?: string): Promise<ShiftRow[]> {
   let q = supabase.from('gig_shifts')
-    .select('*, parts:gig_shift_parts(platform, earnings, tips, active_minutes, deliveries)')
+    .select('*, parts:gig_shift_parts(platform, earnings, tips, active_minutes, deliveries, cashed_out, cashout_fee)')
     .order('date', { ascending: false }).order('start_time', { ascending: false }).limit(5000);
   if (from) q = q.gte('date', from);
   const { data, error } = await q;
@@ -28,6 +28,7 @@ export async function loadShifts(from?: string): Promise<ShiftRow[]> {
     fuelCost: n(r.fuel_cost), fuelPrice: n(r.fuel_price), fuelEfficiency: n(r.fuel_efficiency),
     parts: ((r.parts ?? []) as any[]).map((p): ShiftPart => ({
       platform: p.platform, earnings: Number(p.earnings), tips: n(p.tips), activeMinutes: p.active_minutes, deliveries: p.deliveries,
+      cashedOut: !!p.cashed_out, cashoutFee: n(p.cashout_fee),
     })),
   }));
 }
@@ -76,6 +77,7 @@ export async function saveShift(id: string | undefined, row: Record<string, unkn
   }
   const ins = await supabase.from('gig_shift_parts').insert(parts.map((p) => ({
     shift_id: shiftId, platform: p.platform, earnings: p.earnings, tips: p.tips ?? null, active_minutes: p.activeMinutes ?? null, deliveries: p.deliveries ?? null,
+    cashed_out: !!p.cashedOut, cashout_fee: p.cashedOut ? p.cashoutFee ?? null : null,
   })));
   if (ins.error) throw new Error(ins.error.message);
 }

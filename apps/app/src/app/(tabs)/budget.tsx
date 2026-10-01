@@ -1,5 +1,6 @@
 // Budget tab (BUD-1, 2, 4, 5, 6): this month's budget, past months in a collapsed archive by year,
 // comparisons with other months or years, and a year view of budget vs actual by month.
+import { PAGE_MAX } from '@/lib/layout';
 import {
   actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
   categoryIcon, gigFuelByMonth, groupIcon, shortDate, suggestBudget, todayIn, type BudgetLine, type Month,
@@ -679,7 +680,7 @@ function YearView(d: Data) {
 }
 
 const styles = StyleSheet.create({
-  page: { paddingHorizontal: 12, paddingTop: 4, gap: 8, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  page: { paddingHorizontal: 12, paddingTop: 4, gap: 8, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   tile: { flexGrow: 1, flexBasis: '22%', minWidth: 78, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
   groupRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth },

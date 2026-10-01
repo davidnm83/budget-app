@@ -6,6 +6,7 @@
 //   • Transactions — the latest 100.
 // The overview is built from small blocks so they can be reused on custom pages later.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { ModalFrame } from '@/components/ModalFrame';
 import {
   accountIcon, addDays, balanceHistory, cardCycle, cardStatus, expandPlan, formatMoney, loanSummary, monthEnd, monthName,
   monthlyFlow, shortDate, todayIn, utilization,
@@ -73,8 +74,8 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
 
   if (!account) return null;
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>
+    <ModalFrame onClose={onClose} width={720}>
+      <View style={{ flex: 1 }}>
         <View style={[styles.head, { borderColor: t.line }]}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }} numberOfLines={1}>{account.name}{account.mask ? ` ••${account.mask}` : ''}</Text>
@@ -128,7 +129,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
           />
         )}
       </View>
-    </Modal>
+    </ModalFrame>
   );
 }
 

@@ -93,6 +93,10 @@ export interface ShiftPart {
   /** Time on that app's orders. With several apps on at once these can overlap. */
   activeMinutes?: number | null;
   deliveries?: number | null;
+  /** Cashed out right after the shift (instant pay) instead of waiting for the weekly payout. */
+  cashedOut?: boolean | null;
+  /** Fee for that cash-out; the app's usual instant fee when not set. */
+  cashoutFee?: number | null;
 }
 
 /**
@@ -258,21 +262,24 @@ export function gigPlanned(shifts: Shift[], rules: PayoutRule[], from: IsoDate, 
     const name = platformByKey(r.platform).name;
     const base = { accountId: r.accountId, categoryId: null, estimated: true, matchText: r.matchText ?? DEFAULT_MATCH[r.platform] ?? null,
       recurringId: null, occurrenceDate: null, entryId: null, transfer: false as const, matchedTxnId: null };
-    if (r.mode === 'instant') {
-      for (const s of shifts) {
-        if (s.date < from || s.date > to) continue;
-        const earned = partsOf(s).filter((p) => p.platform === r.platform).reduce((x, p) => x + p.earnings, 0);
-        if (earned > 0) out.push({ ...base, key: `gig:${r.platform}:${s.date}:${s.start ?? ''}`, date: s.date, description: `${name} instant pay`, amount: round2(earned - r.instantFee) });
-      }
-      continue;
+    const mine = (s: Shift) => partsOf(s).filter((p) => p.platform === r.platform);
+    // Instant pay: every shift for an "instant" app, and any shift cashed out early on a weekly app (GIG-10).
+    for (const s of shifts) {
+      if (s.date < from || s.date > to) continue;
+      const parts = mine(s).filter((p) => r.mode === 'instant' || p.cashedOut);
+      const earned = parts.reduce((x, p) => x + p.earnings, 0);
+      const fee = parts.length ? Math.max(...parts.map((p) => p.cashoutFee ?? r.instantFee)) : 0;
+      if (earned > 0) out.push({ ...base, key: `gig:${r.platform}:${s.date}:${s.start ?? ''}`, date: s.date, description: `${name} instant pay`, amount: round2(earned - fee) });
     }
-    // Weekly: every work week whose payout day falls in the range.
+    if (r.mode === 'instant') continue;
+    // Weekly: every work week whose payout day falls in the range, less what was already cashed out.
     for (let w = weekStart(addDays(from, -14)); w <= to; w = addDays(w, 7)) {
       const date = weeklyPayoutDate(w, r.weekday);
       if (date < from || date > to) continue;
-      const logged = round2(shifts.filter((s) => s.date >= w && s.date <= addDays(w, 6))
-        .reduce((x, s) => x + partsOf(s).filter((p) => p.platform === r.platform).reduce((y, p) => y + p.earnings, 0), 0));
-      const avg = averages?.[r.platform] ?? 0;
+      const week = shifts.filter((s) => s.date >= w && s.date <= addDays(w, 6));
+      const logged = round2(week.reduce((x, s) => x + mine(s).filter((p) => !p.cashedOut).reduce((y, p) => y + p.earnings, 0), 0));
+      const cashed = week.reduce((x, s) => x + mine(s).filter((p) => p.cashedOut).reduce((y, p) => y + p.earnings, 0), 0);
+      const avg = Math.max(0, (averages?.[r.platform] ?? 0) - cashed);
       const amount = w >= thisWeek && avg > logged ? round2(avg) : logged;
       if (amount > 0) out.push({ ...base, key: `gig:${r.platform}:${w}`, date, amount,
         description: `${name} pay${w >= thisWeek && avg > logged ? ' (est.)' : ''}` });

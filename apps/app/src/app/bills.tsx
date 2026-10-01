@@ -1,5 +1,6 @@
 // Bills & income (BIL): this month's due dates, paid or upcoming, matched to transactions
 // automatically; the list of schedules; and suggestions spotted in your history.
+import { PAGE_MAX } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   addDays, addMonths, daysBetween, detectRecurring, formatMoney, matchDues, monthEnd, monthName, monthOf, normalizeDescription,
@@ -205,7 +206,7 @@ function Tile({ t, label, value, strong }: { t: Theme; label: string; value: str
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, gap: 10, paddingBottom: 96, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  page: { padding: 16, gap: 10, paddingBottom: 96, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   h: { fontSize: 12, fontWeight: '600', marginTop: 6, letterSpacing: 0.5, textTransform: 'uppercase' },
   tiles: { flexDirection: 'row', gap: 8 },
   tile: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, padding: 10, gap: 2 },

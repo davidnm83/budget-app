@@ -1,5 +1,6 @@
 // Planner tab (PLN): Monday-to-Sunday week of planned bills, income and one-offs against what
 // actually posted, with a running balance and a warning before an account dips below its buffer.
+import { PAGE_MAX } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { addDays, formatMoney, shortDate, weekStart as mondayOf, type WeekRow } from '@budget-app/core';
 import { router, useFocusEffect } from 'expo-router';
@@ -166,7 +167,7 @@ function Tile({ t, label, value, strong, warn, sub }: { t: Theme; label: string;
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 12, gap: 10, paddingBottom: 40, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  page: { padding: 12, gap: 10, paddingBottom: 40, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   ahead: { flexDirection: 'row', gap: 2, padding: 3, borderRadius: 10 },
   aheadCell: { flex: 1, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 5, alignItems: 'center' },

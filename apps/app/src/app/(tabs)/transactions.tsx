@@ -3,6 +3,8 @@
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { PAGE_MAX } from '@/lib/layout';
+import { ModalFrame } from '@/components/ModalFrame';
 import {
   categoryIcon, datePresetRange, dayHeading, formatMoney, groupByDay, searchPattern, shortDate, todayIn, type DatePreset,
 } from '@budget-app/core';
@@ -160,7 +162,7 @@ export default function Transactions() {
       {!!error && <Text style={{ color: t.danger, padding: 12 }}>{error}</Text>}
 
       {byDate ? (
-        <SectionList
+        <SectionList style={COLUMN}
           sections={sections}
           keyExtractor={(r) => r.id}
           stickySectionHeadersEnabled
@@ -177,7 +179,7 @@ export default function Transactions() {
           ListFooterComponent={footer}
         />
       ) : (
-        <FlatList
+        <FlatList style={COLUMN}
           data={rows}
           keyExtractor={(r) => r.id}
           refreshControl={<RefreshControl refreshing={loading && !rows.length} onRefresh={reload} />}
@@ -300,8 +302,8 @@ function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total
   const summary = (ids: string[], name: (id: string) => string) => (ids.length ? ids.slice(0, 3).map(name).join(', ') + (ids.length > 3 ? ` +${ids.length - 3}` : '') : 'Any');
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>
+    <ModalFrame visible={visible} onClose={onClose}>
+      <View style={{ flex: 1 }}>
         <View style={[styles.sheetHead, { borderColor: t.line }]}>
           <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: 1 }}>Filters</Text>
           <Pressable onPress={reset} hitSlop={8}><Text style={{ color: t.accent }}>Reset</Text></Pressable>
@@ -355,7 +357,7 @@ function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total
       <MultiPicker visible={picker === 'merchants'} title="Merchants" onClose={() => setPicker(null)}
         items={merchants.map((m) => ({ id: m.merchant, label: m.merchant, detail: String(m.txns) }))}
         selected={f.merchants} onChange={(merchants) => set({ merchants })} />
-    </Modal>
+    </ModalFrame>
   );
 }
 
@@ -363,8 +365,9 @@ const Label = ({ t, text }: { t: Theme; text: string }) => (
   <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>{text}</Text>
 );
 
+const COLUMN = { width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' } as const;
 const styles = StyleSheet.create({
-  status: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  status: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   search: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, height: 40 },
   sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   doneBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8 },

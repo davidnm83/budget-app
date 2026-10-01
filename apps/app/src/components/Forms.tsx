@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateField } from './DateField';
+import { ModalFrame } from '@/components/ModalFrame';
 import { MultiPicker } from '@/components/Picker';
 import { Button, Chip, Segmented } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
@@ -17,16 +18,16 @@ export function Sheet({ title, onClose, children, footer, scroll = true }: { tit
   const insets = useSafeAreaInsets();
   useBackToClose(true, onClose);
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>
+    <ModalFrame onClose={onClose} fit={scroll}>
+      <>
         <View style={[styles.head, { borderColor: t.line }]}>
           <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: 1 }}>{title}</Text>
           <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="Close"><Ionicons name="close" size={26} color={t.text} /></Pressable>
         </View>
-        {scroll ? <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">{children}</ScrollView> : <View style={{ flex: 1 }}>{children}</View>}
+        {scroll ? <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">{children}</ScrollView> : <View style={{ flex: 1 }}>{children}</View>}
         {footer ? <View style={[styles.footer, { borderColor: t.line, paddingBottom: insets.bottom + 12 }]}>{footer}</View> : null}
-      </View>
-    </Modal>
+      </>
+    </ModalFrame>
   );
 }
 

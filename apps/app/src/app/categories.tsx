@@ -1,5 +1,6 @@
 // Categories (TXN-7): your list, grouped. Add, rename, pick an emoji, move to another group,
 // change the type, hide, or merge one into another. Tap a group name to rename the group.
+import { PAGE_MAX } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { categoryIcon, groupIcon } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
@@ -185,7 +186,7 @@ function GroupEditor({ name, icon: initialIcon, onClose, onSaved }: { name: stri
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 12, gap: 12, paddingBottom: 96, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  page: { padding: 12, gap: 12, paddingBottom: 96, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   groupHead: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
   icon: { width: 24, fontSize: 18, textAlign: 'center' },

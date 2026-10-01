@@ -1,6 +1,7 @@
 // Accounts tab: every account grouped by type, with net worth at the top. Tap one for its
 // details (name, balance, history, planner settings, merge) in a pop-up.
 import { accountIcon, formatMoney } from '@budget-app/core';
+import { PAGE_MAX } from '@/lib/layout';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
@@ -73,7 +74,7 @@ export default function Accounts() {
           : <IconButton icon="sync" label="Sync now" onPress={syncNow} />}
       </TopBar>
       {!!msg && <Text style={{ color: t.muted, paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 }}>{msg}</Text>}
-      <SectionList
+      <SectionList style={COLUMN}
         sections={sections}
         keyExtractor={(a) => a.id}
         stickySectionHeadersEnabled={false}
@@ -109,6 +110,7 @@ export default function Accounts() {
   );
 }
 
+const COLUMN = { width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' } as const;
 const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 11, marginHorizontal: 12, borderLeftWidth: StyleSheet.hairlineWidth, borderRightWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth },

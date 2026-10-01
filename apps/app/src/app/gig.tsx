@@ -2,6 +2,7 @@
 // app, with a weekly target. Shifts: each shift ("dash") with its time, km and gas, and per app
 // the earnings, active time and orders; $/hour, $/active hour, % active, $/km, after gas.
 // Settings: gas (L/100 km × $/L), and when each app pays out, which feeds the planner.
+import { PAGE_MAX } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   addDays, costPerKmFrom, formatDuration, monthEnd, formatMoney, fuelCostFor, GIG_PLATFORMS, partsOf, platformByKey, shiftStats, shortDate,
@@ -95,7 +96,7 @@ export default function Gig() {
         </Pressable>
       )}
       {txnSheet}
-      {editing && <ShiftForm initial={editing} settings={settings} onClose={() => setEditing(null)} onSaved={load} />}
+      {editing && <ShiftForm initial={editing} settings={settings} rules={rules} onClose={() => setEditing(null)} onSaved={load} />}
       {showSettings && (
         <SettingsForm initial={settings} rules={rules} accounts={accounts} suggestedCpk={costPerKmFrom(gas90, km90)} gas90={gas90} km90={km90}
           usedApps={[...new Set([...shifts.flatMap((s) => partsOf(s).map((p) => p.platform)), ...sum.platforms.map((p) => p.key)])]}
@@ -316,14 +317,15 @@ function ShiftLine({ t, s, cpk, onPress }: { t: Theme; s: ShiftRow; cpk: number 
 }
 
 // ───────────────────────── log a shift ─────────────────────────
-interface PartDraft { platform: string; earnings: string; tips: string; h: string; m: string; orders: string }
+interface PartDraft { platform: string; earnings: string; tips: string; h: string; m: string; orders: string; cashed: boolean; fee: string }
 const toDraft = (p: ShiftPart): PartDraft => ({
   platform: p.platform, earnings: p.earnings ? String(p.earnings) : '', tips: p.tips != null ? String(p.tips) : '',
   h: p.activeMinutes ? String(Math.floor(p.activeMinutes / 60)) : '', m: p.activeMinutes ? String(p.activeMinutes % 60) : '',
   orders: p.deliveries != null ? String(p.deliveries) : '',
+  cashed: !!p.cashedOut, fee: p.cashoutFee != null ? String(p.cashoutFee) : '',
 });
 
-function ShiftForm({ initial, settings, onClose, onSaved }: { initial: Partial<ShiftRow>; settings: GigSettings; onClose: () => void; onSaved: () => void }) {
+function ShiftForm({ initial, settings, rules, onClose, onSaved }: { initial: Partial<ShiftRow>; settings: GigSettings; rules: PayoutRule[]; onClose: () => void; onSaved: () => void }) {
   const t = useTheme();
   const [date, setDate] = useState(initial.date ?? today());
   const [start, setStart] = useState(initial.start ?? '');
@@ -341,11 +343,12 @@ function ShiftForm({ initial, settings, onClose, onSaved }: { initial: Partial<S
 
   const togglePlatform = (key: string) => setParts((ps) => ps.some((p) => p.platform === key)
     ? (ps.length > 1 ? ps.filter((p) => p.platform !== key) : ps)
-    : [...ps, { platform: key, earnings: '', tips: '', h: '', m: '', orders: '' }]);
+    : [...ps, { platform: key, earnings: '', tips: '', h: '', m: '', orders: '', cashed: false, fee: '' }]);
   const setPart = (key: string, patch: Partial<PartDraft>) => setParts((ps) => ps.map((p) => (p.platform === key ? { ...p, ...patch } : p)));
   const toParts = (): ShiftPart[] => parts.map((p) => {
     const mins = (num(p.h) ?? 0) * 60 + (num(p.m) ?? 0);
-    return { platform: p.platform, earnings: num(p.earnings) ?? 0, tips: num(p.tips), activeMinutes: mins > 0 ? Math.round(mins) : null, deliveries: num(p.orders) };
+    return { platform: p.platform, earnings: num(p.earnings) ?? 0, tips: num(p.tips), activeMinutes: mins > 0 ? Math.round(mins) : null, deliveries: num(p.orders),
+      cashedOut: p.cashed, cashoutFee: p.cashed ? num(p.fee) ?? rules.find((r) => r.platform === p.platform)?.instantFee ?? 0 : null };
   });
 
   // Gas: km × L/100 km × $/L. An imported shift that recorded its own gas cost keeps it until you change the inputs.
@@ -409,6 +412,14 @@ function ShiftForm({ initial, settings, onClose, onSaved }: { initial: Partial<S
               <View style={{ flex: 1 }}><Field t={t} label="+ minutes"><TextInput value={p.m} onChangeText={(v) => setPart(p.platform, { m: v })} keyboardType="number-pad" placeholder="0" placeholderTextColor={t.muted} style={input} /></Field></View>
               <View style={{ flex: 1 }}><Field t={t} label="Orders"><TextInput value={p.orders} onChangeText={(v) => setPart(p.platform, { orders: v })} keyboardType="number-pad" placeholder="0" placeholderTextColor={t.muted} style={input} /></Field></View>
             </View>
+            {rules.find((r) => r.platform === p.platform)?.mode !== 'instant' && (
+              <View style={[styles.between, { gap: 10 }]}>
+                <Text style={{ color: t.text, flex: 1 }}>Cashed out early (instant pay)</Text>
+                {p.cashed && <TextInput value={p.fee} onChangeText={(v) => setPart(p.platform, { fee: v })} keyboardType="decimal-pad"
+                  placeholder={`fee $${(rules.find((r) => r.platform === p.platform)?.instantFee ?? 0).toFixed(2)}`} placeholderTextColor={t.muted} style={[input, { width: 110 }]} />}
+                <Switch value={p.cashed} onValueChange={(v) => setPart(p.platform, { cashed: v })} />
+              </View>
+            )}
           </View>
         );
       })}
@@ -500,7 +511,7 @@ function SettingsForm({ initial, rules, accounts, usedApps, suggestedCpk, gas90,
 
       <Text style={[styles.h, { color: t.muted }]}>Payouts in the planner</Text>
       <Text style={{ color: t.muted, fontSize: 12 }}>
-        Weekly: the week's logged earnings (Monday to Sunday) show as income on the day it usually lands the week after. Instant: each shift's pay shows that day, less the fee. The real deposit replaces it when it posts.
+        Weekly: the week's logged earnings (Monday to Sunday) show as income on the day it usually lands the week after; a shift marked “cashed out early” shows that day instead, less its fee. Instant: each shift's pay shows that day, less the fee. The real deposit replaces it when it posts.
       </Text>
       {apps.map((a) => {
         const p = platformByKey(a); const d = drafts[a];
@@ -514,8 +525,8 @@ function SettingsForm({ initial, rules, accounts, usedApps, suggestedCpk, gas90,
                 <View style={styles.chips}>{DAYS.map((day, i) => <Chip key={day} label={day} on={d.weekday === i} onPress={() => setDraft(a, { weekday: i })} />)}</View>
               </Field>
             )}
-            {d.mode === 'instant' && (
-              <Field t={t} label="Fee per cash-out $"><TextInput value={d.fee} onChangeText={(v) => setDraft(a, { fee: v })} keyboardType="decimal-pad" placeholder="e.g. 1.99" placeholderTextColor={t.muted} style={input} /></Field>
+            {d.mode !== 'off' && (
+              <Field t={t} label={d.mode === 'instant' ? 'Fee per cash-out $' : 'Fee when you cash out early $'}><TextInput value={d.fee} onChangeText={(v) => setDraft(a, { fee: v })} keyboardType="decimal-pad" placeholder="e.g. 1.99" placeholderTextColor={t.muted} style={input} /></Field>
             )}
             {d.mode !== 'off' && (
               <Field t={t} label="Paid into">
@@ -551,7 +562,7 @@ const PLATFORM_COLORS: Record<string, string> = { doordash: '#e5533d', uber: '#3
 const CHART_H = 150;
 
 const styles = StyleSheet.create({
-  page: { padding: 12, gap: 10, paddingBottom: 96, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  page: { padding: 12, gap: 10, paddingBottom: 96, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   tile: { flexGrow: 1, flexBasis: '30%', minWidth: 96, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
   h: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },

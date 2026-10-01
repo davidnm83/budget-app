@@ -1,6 +1,7 @@
 // A pop-up list to pick several items, with a search box. Used for the category, account and
 // merchant filters.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { ModalFrame } from '@/components/ModalFrame';
 import { useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,8 +25,8 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
   }, [items, q, selected]);
   const toggle = (id: string) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>
+    <ModalFrame visible={visible} onClose={onClose}>
+      <View style={{ flex: 1 }}>
         <View style={[styles.head, { borderColor: t.line }]}>
           <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: 1 }}>{title}{selected.length ? ` · ${selected.length}` : ''}</Text>
           {!!selected.length && <Pressable onPress={() => onChange([])} hitSlop={8}><Text style={{ color: t.accent }}>Clear</Text></Pressable>}
@@ -55,7 +56,7 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
           }}
         />
       </View>
-    </Modal>
+    </ModalFrame>
   );
 }
 

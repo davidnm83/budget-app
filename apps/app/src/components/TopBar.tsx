@@ -3,10 +3,12 @@
 // imports, settings, sign out) at the bottom.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router } from 'expo-router';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
+import { PAGE_MAX } from '@/lib/layout';
+import { loadPrefs, type Page } from '@/lib/prefs';
 import { useTheme } from '@/lib/theme';
 import { afterClose, useBackToClose } from '@/lib/useBackToClose';
 
@@ -31,6 +33,8 @@ export function TopBar({ children, title }: { children?: ReactNode; title?: stri
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
+  const [pages, setPages] = useState<Page[]>([]);
+  useEffect(() => { if (open) loadPrefs().then((p) => setPages(p.pages ?? [])).catch(() => {}); }, [open]);
   useBackToClose(open, () => setOpen(false));
   // Close the menu (and its history entry) first, then open the page.
   const go = (href: string) => { setOpen(false); afterClose(() => router.push(href as any)); };
@@ -52,6 +56,16 @@ export function TopBar({ children, title }: { children?: ReactNode; title?: stri
                 <Text style={{ color: t.text, fontSize: 16 }}>{i.label}</Text>
               </Pressable>
             ))}
+            {pages.map((p) => (
+              <Pressable key={p.id} onPress={() => go(`/page/${p.id}`)} style={({ pressed }) => [styles.item, pressed && { backgroundColor: t.line }]}>
+                <Text style={{ fontSize: 18, width: 20, textAlign: 'center' }}>{p.icon}</Text>
+                <Text style={{ color: t.text, fontSize: 16 }} numberOfLines={1}>{p.name}</Text>
+              </Pressable>
+            ))}
+            <Pressable onPress={() => go('/page/new')} style={({ pressed }) => [styles.item, pressed && { backgroundColor: t.line }]}>
+              <Ionicons name="add-circle-outline" size={20} color={t.accent} />
+              <Text style={{ color: t.accent, fontSize: 16 }}>New page</Text>
+            </Pressable>
             <View style={{ flex: 1 }} />
             <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.line, marginVertical: 6 }} />
             {SETUP.map((i) => (
@@ -88,7 +102,7 @@ export function IconButton({ icon, onPress, on, badge, label }: { icon: keyof ty
 }
 
 const styles = StyleSheet.create({
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
+  bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingBottom: 8, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   iconBtn: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   badge: { position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', flexDirection: 'row' },

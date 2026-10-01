@@ -1,4 +1,5 @@
 // One-time move from Fina: choose the "raw" export, check where each Fina account goes, import.
+import { PAGE_MAX } from '@/lib/layout';
 import { parseFinaExport, shortDate, type FinaExport } from '@budget-app/core';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -162,7 +163,7 @@ export default function FinaImport() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, gap: 12, paddingBottom: 48, maxWidth: 720, width: '100%', alignSelf: 'center' },
+  page: { padding: 16, gap: 12, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   h: { fontSize: 16, fontWeight: '600' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: 10 },
   chip: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },

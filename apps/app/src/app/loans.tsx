@@ -1,5 +1,6 @@
 // Loans (car loan, student loan): balance, payoff estimate, interest and payments to date, the
 // balance over the past year, and the payments and interest entries themselves.
+import { PAGE_MAX } from '@/lib/layout';
 import { addDays, balanceHistory, formatMoney, isInterestRow, shortDate } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
@@ -89,7 +90,7 @@ function List({ t, title, rows }: { t: Theme; title: string; rows: { date: strin
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 12, gap: 12, paddingBottom: 48, maxWidth: 760, width: '100%', alignSelf: 'center' },
+  page: { padding: 12, gap: 12, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   head: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
 });
