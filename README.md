@@ -14,15 +14,15 @@ Runs on iPhone, Android and the web from one codebase. Everything fits in free t
 - **Rules from edits.** When you change a category, "Always use this category for …" makes it a rule.
 - **Merchant cleanup.** Rules turn `RETAIL PURCHASE 0010… RCSS 1077` into `Superstore`.
 - **Accounts.** Cash, credit cards and loans, with balances.
+- **CSV import** for banks Plaid can't reach (Rogers, PC Financial, American Express, or any CSV with date, description and amount). Rows the account already has are skipped. Web app only for now.
 - **Privacy.** Bank tokens are encrypted in Supabase Vault and never reach the app, and row-level security covers every table.
 
 ## Roadmap
 
-1. **CSV import** for banks Plaid can't reach (Rogers and PC Financial formats are already in `packages/core`)
-2. **Recurring bills and income**, matched to transactions automatically
-3. **Weekly planner:** planned debits and income per account, projected balance, low-balance warnings
-4. **Loans:** payments copied from the paying account, interest from balance changes (logic in `packages/core/src/loans.ts`)
-5. **Monthly budgets, reports, net worth**
+1. **Recurring bills and income**, matched to transactions automatically
+2. **Weekly planner:** planned debits and income per account, projected balance, low-balance warnings
+3. **Loans:** payments copied from the paying account, interest from balance changes (logic in `packages/core/src/loans.ts`)
+4. **Monthly budgets, reports, net worth**
 
 ## How it fits together
 
