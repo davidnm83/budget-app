@@ -95,6 +95,8 @@ export interface Shift {
   /** Time spent on deliveries, if the app reports it; otherwise start→end is used. */
   activeMinutes?: number | null;
   deliveries?: number | null; earnings: number; tips?: number | null; km?: number | null;
+  /** What the gas for this shift cost, when known; otherwise km × cost per km. */
+  fuelCost?: number | null;
 }
 
 export interface ShiftStats {
@@ -114,7 +116,7 @@ export function shiftStats(s: Shift, costPerKm: number | null): ShiftStats {
   const span = s.start && s.end ? minutesBetween(s.start, s.end) : null;
   const minutes = span ?? (s.activeMinutes || null);
   const hours = minutes ? minutes / 60 : null;
-  const carCost = s.km && costPerKm ? round2(s.km * costPerKm) : null;
+  const carCost = s.fuelCost != null ? round2(s.fuelCost) : s.km && costPerKm ? round2(s.km * costPerKm) : null;
   const net = round2(s.earnings - (carCost ?? 0));
   return {
     hours: hours != null ? round2(hours) : null,

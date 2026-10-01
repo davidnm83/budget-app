@@ -43,7 +43,7 @@ export default function Gig() {
       gigIds.length
         ? supabase.from('transaction_lines').select('date, amount, merchant').in('category_id', gigIds).gte('date', from).gt('amount', 0).limit(5000)
         : Promise.resolve({ data: [], error: null }),
-      supabase.from('gig_shifts').select('*').gte('date', addDays(now, -400)).order('date', { ascending: false }).limit(2000),
+      supabase.from('gig_shifts').select('*').order('date', { ascending: false }).order('start_time', { ascending: false }).limit(5000),
       supabase.from('gig_settings').select('cost_per_km, weekly_target').maybeSingle(),
       supabase.from('transaction_list').select('amount, category_name').ilike('category_name', 'gas').gte('date', addDays(now, -90)).lt('amount', 0).limit(1000),
     ]);
@@ -52,6 +52,7 @@ export default function Gig() {
     setShifts(((s.data ?? []) as any[]).map((r) => ({
       id: r.id, date: r.date, platform: r.platform, start: r.start_time, end: r.end_time, activeMinutes: r.active_minutes,
       deliveries: r.deliveries, earnings: Number(r.earnings), tips: r.tips != null ? Number(r.tips) : null, km: r.km != null ? Number(r.km) : null, notes: r.notes,
+      fuelCost: r.fuel_cost != null ? Number(r.fuel_cost) : null,
     })));
     setSettings({ cost_per_km: st.data?.cost_per_km != null ? Number(st.data.cost_per_km) : null, weekly_target: st.data?.weekly_target != null ? Number(st.data.weekly_target) : null });
     setGas90(-((gas.data ?? []) as any[]).reduce((x, r) => x + Number(r.amount), 0));
@@ -185,6 +186,12 @@ function Shifts({ t, shifts, cpk, onEdit, onSettings }: { t: Theme; shifts: Shif
     return [...m.entries()];
   }, [shifts]);
   const last30 = totalShifts(shifts.filter((s) => s.date >= addDays(today(), -30)), cpk);
+  const [shown, setShown] = useState(6);
+  const months = useMemo(() => {
+    const m = new Map<string, ShiftRow[]>();
+    for (const s of shifts) { const k = s.date.slice(0, 7); (m.get(k) ?? m.set(k, []).get(k)!).push(s); }
+    return [...m.entries()].map(([month, list]) => ({ month, ...totalShifts(list, cpk) }));
+  }, [shifts, cpk]);
   return (
     <>
       <View style={styles.tiles}>
@@ -197,7 +204,28 @@ function Shifts({ t, shifts, cpk, onEdit, onSettings }: { t: Theme; shifts: Shif
         <Pressable onPress={onSettings}><Text style={{ color: t.accent, fontSize: 13 }}>Set your car cost per km to see earnings after gas →</Text></Pressable>
       )}
       {!shifts.length && <Card><Text style={{ color: t.muted }}>No shifts yet. Tap + after a shift to log its hours, earnings and km.</Text></Card>}
-      {weeks.map(([w, list]) => {
+      {months.length > 1 && (
+        <Card style={{ padding: 0 }}>
+          <Text style={[styles.h, { color: t.muted, paddingHorizontal: 12, paddingTop: 10 }]}>By month</Text>
+          <View style={[styles.mRow, { borderColor: t.line }]}>
+            {['Month', 'Shifts', 'Hours', 'Earned', '$/h', '$/km', 'After gas'].map((h, i) => (
+              <Text key={h} style={[styles.mCell, { color: t.muted, fontSize: 11 }, i === 0 && { textAlign: 'left', flex: 1.1 }]}>{h}</Text>
+            ))}
+          </View>
+          {months.slice(0, 18).map((m) => (
+            <View key={m.month} style={[styles.mRow, { borderColor: t.line }]}>
+              <Text style={[styles.mCell, { color: t.text, textAlign: 'left', flex: 1.1 }]}>{monthLabel(m.month)}</Text>
+              <Text style={[styles.mCell, { color: t.text }]}>{m.shifts}</Text>
+              <Text style={[styles.mCell, { color: t.text }]}>{Math.round(m.hours)}</Text>
+              <Text style={[styles.mCell, { color: t.text }]}>{money0(m.earnings)}</Text>
+              <Text style={[styles.mCell, { color: t.text }]}>{m.perHour != null ? m.perHour.toFixed(0) : '–'}</Text>
+              <Text style={[styles.mCell, { color: t.text }]}>{m.perKm != null ? m.perKm.toFixed(2) : '–'}</Text>
+              <Text style={[styles.mCell, { color: t.text, fontWeight: '700' }]}>{money0(m.net)}</Text>
+            </View>
+          ))}
+        </Card>
+      )}
+      {weeks.slice(0, shown).map(([w, list]) => {
         const tot = totalShifts(list, cpk);
         return (
           <Card key={w} style={{ padding: 0 }}>
@@ -215,7 +243,7 @@ function Shifts({ t, shifts, cpk, onEdit, onSettings }: { t: Theme; shifts: Shif
                   <View style={{ flex: 1 }}>
                     <Text style={{ color: t.text }}>{shortDate(s.date)} · {p.name}{s.start && s.end ? ` · ${s.start}–${s.end}` : ''}</Text>
                     <Text style={{ color: t.muted, fontSize: 12 }}>
-                      {[st.hours != null && `${st.hours} h`, s.km && `${s.km} km`, s.deliveries && `${s.deliveries} orders`, st.perHour != null && `${formatMoney(st.perHour)}/h`, st.perKm != null && `${formatMoney(st.perKm)}/km`].filter(Boolean).join(' · ')}
+                      {[st.hours != null && `${st.hours} h`, s.km && `${s.km} km`, s.deliveries && `${s.deliveries} order${s.deliveries === 1 ? "" : "s"}`, st.perHour != null && `${formatMoney(st.perHour)}/h`, st.perKm != null && `${formatMoney(st.perKm)}/km`].filter(Boolean).join(' · ')}
                     </Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
@@ -228,6 +256,7 @@ function Shifts({ t, shifts, cpk, onEdit, onSettings }: { t: Theme; shifts: Shif
           </Card>
         );
       })}
+      {weeks.length > shown && <Button title={`Show older weeks (${weeks.length - shown} more)`} kind="plain" onPress={() => setShown(shown + 12)} />}
     </>
   );
 }
@@ -244,11 +273,12 @@ function ShiftForm({ initial, cpk, onClose, onSaved }: { initial: Partial<ShiftR
   const [tips, setTips] = useState(initial.tips != null ? String(initial.tips) : '');
   const [km, setKm] = useState(initial.km != null ? String(initial.km) : '');
   const [notes, setNotes] = useState(initial.notes ?? '');
+  const [fuel, setFuel] = useState(initial.fuelCost != null ? String(initial.fuelCost) : '');
   const [error, setError] = useState('');
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
   const num = (s: string) => (s.trim() === '' ? null : Number(s.replace(/[$,\s]/g, '')));
   const time = (s: string) => { const m = /^(\d{1,2})[:.]?(\d{2})$/.exec(s.trim()); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null; };
-  const preview = shiftStats({ date, platform, start: time(start), end: time(end), activeMinutes: num(active), deliveries: num(deliveries), earnings: num(earnings) ?? 0, km: num(km) }, cpk);
+  const preview = shiftStats({ date, platform, start: time(start), end: time(end), activeMinutes: num(active), deliveries: num(deliveries), earnings: num(earnings) ?? 0, km: num(km), fuelCost: num(fuel) }, cpk);
 
   const save = async () => {
     const e = num(earnings);
@@ -256,7 +286,7 @@ function ShiftForm({ initial, cpk, onClose, onSaved }: { initial: Partial<ShiftR
     if ((start && !time(start)) || (end && !time(end))) { setError('Times look like 17:30.'); return; }
     const row = {
       date, platform, start_time: time(start), end_time: time(end), active_minutes: num(active), deliveries: num(deliveries),
-      earnings: e, tips: num(tips), km: num(km), notes: notes.trim() || null,
+      earnings: e, tips: num(tips), km: num(km), notes: notes.trim() || null, fuel_cost: num(fuel),
     };
     const { error } = initial.id ? await supabase.from('gig_shifts').update(row).eq('id', initial.id) : await supabase.from('gig_shifts').insert(row);
     if (error) setError(error.message); else { onSaved(); onClose(); }
@@ -290,6 +320,7 @@ function ShiftForm({ initial, cpk, onClose, onSaved }: { initial: Partial<ShiftR
       </View>
       <View style={styles.row2}>
         <View style={{ flex: 1 }}><Field t={t} label="Km driven"><TextInput value={km} onChangeText={setKm} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={t.muted} style={input} /></Field></View>
+        <View style={{ flex: 1 }}><Field t={t} label="Gas cost"><TextInput value={fuel} onChangeText={setFuel} keyboardType="decimal-pad" placeholder={cpk ? 'est.' : 'opt.'} placeholderTextColor={t.muted} style={input} /></Field></View>
         <View style={{ flex: 1 }}><Field t={t} label="Orders"><TextInput value={deliveries} onChangeText={setDeliveries} keyboardType="number-pad" placeholder="opt." placeholderTextColor={t.muted} style={input} /></Field></View>
       </View>
       <Field t={t} label="Notes"><TextInput value={notes} onChangeText={setNotes} placeholder="zone, weather, promos…" placeholderTextColor={t.muted} style={input} /></Field>

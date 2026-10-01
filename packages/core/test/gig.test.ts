@@ -38,6 +38,8 @@ describe('gig work', () => {
     expect(st).toEqual({ hours: 3.5, perHour: 20, perKm: 1.4, perDelivery: 10, carCost: 6, net: 64, netPerHour: 18.29 });
     // No times: active minutes are used instead.
     expect(shiftStats({ date: '2026-09-30', platform: 'uber', activeMinutes: 90, earnings: 30 }, null).perHour).toBe(20);
+    // A recorded gas cost wins over km × cost per km.
+    expect(shiftStats({ date: '2026-09-30', platform: 'doordash', earnings: 50, km: 20, fuelCost: 3.6 }, 0.17).net).toBe(46.4);
   });
 
   it('totals shifts and estimates car cost per km', () => {
