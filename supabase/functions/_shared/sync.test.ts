@@ -39,6 +39,9 @@ function fakeDb(tables: Record<string, Row[]>) {
       update: (p: any) => { op = 'update'; payload = p; return q; },
       delete: () => { op = 'delete'; return q; },
       eq: (c: string, v: any) => { filters.push((r) => r[c] === v); return q; },
+      is: (c: string, v: any) => { filters.push((r) => (r[c] ?? null) === v); return q; },
+      gte: (c: string, v: any) => { filters.push((r) => r[c] >= v); return q; },
+      lte: (c: string, v: any) => { filters.push((r) => r[c] <= v); return q; },
       in: (c: string, v: any[]) => { filters.push((r) => v.includes(r[c])); return q; },
       not: (c: string, _o: string, _v: any) => { filters.push((r) => r[c] != null); return q; },
       order: (col: string, o: { ascending: boolean }) => { order = { col, asc: o.ascending }; return q; },
@@ -123,6 +126,35 @@ Deno.test('syncItem writes posted transactions with merchant + category, keeps e
   assertEquals([byId('t1').amount, byId('t1').category_id, byId('t1').merchant, byId('t1').reviewed], [-26.95, 'cat-gym', 'My Name', true]);
   assertEquals(tables.transactions.some((t) => t.plaid_transaction_id === 't3'), false);
   assertEquals([tables.accounts[0].name, tables.accounts[0].current_balance], ['Renamed by me', 474.05]);
+});
+
+Deno.test('syncItem links bank rows to imported ones and keeps your edited date/amount', async () => {
+  Deno.env.set('PLAID_ENV', 'sandbox');
+  const user = 'u1';
+  const tables: Record<string, Row[]> = {
+    accounts: [{ id: 'acc', user_id: user, plaid_account_id: 'pa1', name: 'Card' }],
+    transactions: [
+      // from a Fina import: reviewed and categorised, no Plaid id
+      { id: 'imp', user_id: user, account_id: 'acc', plaid_transaction_id: null, date: '2026-09-02', amount: -40, category_id: 'cat-x', reviewed: true, source: 'import' },
+    ],
+    merchant_rules: [], category_rules: [], categories: [],
+    plaid_items: [{ id: 'item-row', user_id: user, item_id: 'item-1', institution_name: 'Bank', access_token_secret_id: 's', cursor: null }],
+    sync_runs: [],
+  };
+  fakePlaid([
+    { from: '', res: { added: [tx('b1', 'pa1', '2026-09-03', 40, 'SHOP'), tx('b2', 'pa1', '2026-09-05', 12, 'OTHER')], modified: [], removed: [], next_cursor: 'c1', has_more: false } },
+    { from: 'c1', res: { added: [], modified: [tx('b2', 'pa1', '2026-09-06', 13, 'OTHER')], removed: [], next_cursor: 'c2', has_more: false } },
+  ], [{ account_id: 'pa1', name: 'Card', balances: { current: 1 } }]);
+  const db = fakeDb(tables);
+  const r1 = await syncItem(db, tables.plaid_items[0] as any);
+  assertEquals([r1.added, r1.updated], [1, 1]);
+  const imp = tables.transactions.find((t) => t.id === 'imp')!;
+  assertEquals([imp.plaid_transaction_id, imp.category_id, imp.reviewed, imp.date], ['b1', 'cat-x', true, '2026-09-02']);
+  // you change b2's amount; then the bank corrects it
+  const b2 = tables.transactions.find((t) => t.plaid_transaction_id === 'b2')!;
+  Object.assign(b2, { amount: -12.5, original_amount: -12 });
+  await syncItem(db, tables.plaid_items[0] as any);
+  assertEquals([b2.amount, b2.original_amount, b2.date], [-12.5, -13, '2026-09-06']);
 });
 
 Deno.test('syncItem marks connections that need a new sign-in', async () => {

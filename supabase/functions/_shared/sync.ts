@@ -3,13 +3,16 @@
  *   • pages through /transactions/sync from the saved cursor
  *   • writes POSTED transactions only (pending ones arrive later as posted)
  *   • new rows get a cleaned merchant and a suggested category, unreviewed
- *   • changed rows only get the bank's fields updated; your edits are kept
+ *   • changed rows only get the bank's fields updated; your edits are kept (if you changed the
+ *     date or amount, the bank's new value goes to original_date / original_amount instead)
+ *   • a bank transaction that's already in the app from a CSV or Fina import (same account and
+ *     amount, within 3 days) is linked to that row instead of being added twice
  *   • refreshes account balances, then saves the cursor
  */
 import type { Admin } from './supabase.ts';
 import { plaid, PlaidError, RELINK_CODES } from './plaid.ts';
 import {
-  fromPlaidAmount, isTransferCategory, merchantFor, plaidCategoryToName, suggestCategory,
+  addDays, fromPlaidAmount, isTransferCategory, matchHistory, merchantFor, plaidCategoryToName, suggestCategory,
   type CategoryRule, type MerchantRule,
 } from './core/index.ts';
 
@@ -107,13 +110,14 @@ async function loadUserRules(admin: Admin, userId: string) {
   const [m, c, cats] = await Promise.all([
     admin.from('merchant_rules').select('match, merchant').eq('user_id', userId),
     admin.from('category_rules').select('match_text, category_id, account_id, min_amount, max_amount').eq('user_id', userId),
-    admin.from('categories').select('id, name, kind').eq('user_id', userId),
+    admin.from('categories').select('id, name, kind, is_hidden').eq('user_id', userId),
   ]);
   const merchantRules: MerchantRule[] = (m.data ?? []) as MerchantRule[];
   const categoryRules: CategoryRule[] = (c.data ?? []).map((r: any) => ({
     matchText: r.match_text, categoryId: r.category_id, accountId: r.account_id, minAmount: r.min_amount, maxAmount: r.max_amount,
   }));
-  const byName = new Map<string, { id: string; kind: string }>((cats.data ?? []).map((r: any) => [r.name, { id: r.id, kind: r.kind }]));
+  // Plaid's category only maps onto categories you still use (not hidden ones).
+  const byName = new Map<string, { id: string; kind: string }>((cats.data ?? []).filter((r: any) => !r.is_hidden).map((r: any) => [r.name, { id: r.id, kind: r.kind }]));
   const kindById = new Map<string, string>((cats.data ?? []).map((r: any) => [r.id, r.kind]));
   return { merchantRules, categoryRules, byName, kindById };
 }
@@ -143,16 +147,39 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
     const accounts = await upsertAccounts(admin, item, token); // also refreshes balances
     const { posted, removed, cursor } = await pullChanges(token, item.cursor);
 
-    // Which of these do we already have?
+    // Which of these do we already have? (and did you edit their date or amount?)
     const ids = posted.map((t) => t.transaction_id);
-    const existing = new Set<string>();
+    const existing = new Map<string, { original_date: string | null; original_amount: number | null }>();
     for (let i = 0; i < ids.length; i += 500) {
-      const { data } = await admin.from('transactions').select('plaid_transaction_id').in('plaid_transaction_id', ids.slice(i, i + 500));
-      for (const r of data ?? []) existing.add(r.plaid_transaction_id);
+      const { data } = await admin.from('transactions').select('plaid_transaction_id, original_date, original_amount').in('plaid_transaction_id', ids.slice(i, i + 500));
+      for (const r of data ?? []) existing.set(r.plaid_transaction_id, r);
     }
 
     const rules = await loadUserRules(admin, item.user_id);
-    const fresh = posted.filter((t) => !existing.has(t.transaction_id) && accounts.has(t.account_id));
+    let fresh = posted.filter((t) => !existing.has(t.transaction_id) && accounts.has(t.account_id));
+
+    // Already in the app from a CSV or Fina import? Link it instead of adding a second copy.
+    if (fresh.length) {
+      const dates = fresh.map((t) => t.date).sort();
+      const { data: unlinked } = await admin.from('transactions').select('id, account_id, date, amount')
+        .eq('user_id', item.user_id).is('plaid_transaction_id', null)
+        .in('account_id', [...new Set(fresh.map((t) => accounts.get(t.account_id)!))])
+        .gte('date', addDays(dates[0], -3)).lte('date', addDays(dates[dates.length - 1], 3));
+      if (unlinked?.length) {
+        const m = matchHistory(
+          fresh.map((t, index) => ({ index, accountId: accounts.get(t.account_id)!, date: t.date, amount: fromPlaidAmount(t.amount), groupKey: t.transaction_id })),
+          unlinked.map((u: any) => ({ id: u.id, accountId: u.account_id, date: u.date, amount: Number(u.amount) })),
+        );
+        for (const [index, id] of m.single) {
+          const t = fresh[index];
+          await admin.from('transactions').update({
+            plaid_transaction_id: t.transaction_id, authorized_date: t.authorized_date, plaid_category: t.personal_finance_category?.detailed ?? null,
+          }).eq('id', id);
+          result.updated++;
+        }
+        fresh = fresh.filter((_, i) => !m.single.has(i));
+      }
+    }
     const withMerchant = fresh.map((t) => {
       const name = t.original_description || t.name || '';
       const merchant = merchantFor(rules.merchantRules, name) || t.merchant_name || t.counterparties?.[0]?.name || '';
@@ -195,10 +222,14 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
     }
     result.added = inserts.length;
 
-    // Bank corrected something we already have: update its bank fields only.
+    // Bank corrected something we already have: update its bank fields only. If you changed the
+    // date or amount yourself, yours stays and the bank's value is kept beside it.
     for (const t of posted.filter((x) => existing.has(x.transaction_id))) {
+      const mine = existing.get(t.transaction_id)!;
       await admin.from('transactions').update({
-        date: t.date, authorized_date: t.authorized_date, amount: fromPlaidAmount(t.amount),
+        authorized_date: t.authorized_date,
+        ...(mine.original_date ? { original_date: t.date } : { date: t.date }),
+        ...(mine.original_amount != null ? { original_amount: fromPlaidAmount(t.amount) } : { amount: fromPlaidAmount(t.amount) }),
       }).eq('plaid_transaction_id', t.transaction_id);
       result.updated++;
     }

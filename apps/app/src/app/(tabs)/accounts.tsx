@@ -1,7 +1,7 @@
 import { formatMoney } from '@budget-app/core';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, SectionList, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button, Empty } from '@/components/ui';
 import { callFunction, supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
@@ -18,6 +18,21 @@ export default function Accounts() {
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState('');
+  const [editing, setEditing] = useState<string | null>(null);
+  const [balance, setBalance] = useState('');
+
+  // Manual accounts (CSV or Fina) have no bank feed: tap one to type its balance.
+  const saveBalance = async (a: Account) => {
+    const v = Number(balance.replace(/[$,\s]/g, ''));
+    if (balance.trim() && !isNaN(v)) {
+      // Cards and loans are stored as the amount owing (positive), like Plaid does.
+      const stored = a.type === 'credit' || a.type === 'loan' ? Math.abs(v) : v;
+      const { error } = await supabase.from('accounts').update({ current_balance: stored, balance_updated_at: new Date().toISOString() }).eq('id', a.id);
+      if (error) setMsg(error.message);
+    }
+    setEditing(null);
+    load();
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -71,8 +86,17 @@ export default function Accounts() {
             <Text style={{ color: t.muted }}>{formatMoney(section.total)}</Text>
           </View>
         )}
-        renderItem={({ item }) => (
-          <View style={[styles.row, { backgroundColor: t.card, borderColor: t.line }]}>
+        renderItem={({ item }) => editing === item.id ? (
+          <View style={[styles.row, { backgroundColor: t.card, borderColor: t.line, gap: 8 }]}>
+            <Text style={{ color: t.text, flex: 1 }} numberOfLines={1}>{item.name}</Text>
+            <TextInput autoFocus value={balance} onChangeText={setBalance} keyboardType="decimal-pad" onSubmitEditing={() => saveBalance(item)}
+              placeholder={item.type === 'credit' || item.type === 'loan' ? 'Amount owing' : 'Balance'} placeholderTextColor={t.muted}
+              style={{ color: t.text, borderWidth: 1, borderColor: t.line, borderRadius: 8, padding: 8, width: 130 }} />
+            <Button title="Save" onPress={() => saveBalance(item)} />
+          </View>
+        ) : (
+          <Pressable disabled={item.kind !== 'manual'} onPress={() => { setEditing(item.id); setBalance(item.current_balance == null ? '' : String(item.current_balance)); }}
+            style={[styles.row, { backgroundColor: t.card, borderColor: t.line }]}>
             <View style={{ flex: 1 }}>
               <Text style={{ color: t.text, fontSize: 16 }} numberOfLines={1}>{item.name}{item.mask ? ` ••${item.mask}` : ''}</Text>
               <Text style={{ color: t.muted, fontSize: 12 }}>
@@ -80,9 +104,9 @@ export default function Accounts() {
               </Text>
             </View>
             <Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>
-              {item.current_balance == null ? '—' : formatMoney(signed(item))}
+              {item.current_balance == null ? (item.kind === 'manual' ? 'Set balance' : '—') : formatMoney(signed(item))}
             </Text>
-          </View>
+          </Pressable>
         )}
       />
     </View>

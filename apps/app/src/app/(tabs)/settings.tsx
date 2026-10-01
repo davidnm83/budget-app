@@ -1,4 +1,4 @@
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import PlaidLinkButton from '@/components/PlaidLinkButton';
@@ -59,6 +59,12 @@ export default function Settings() {
         <Text style={{ color: t.muted, fontSize: 13 }}>New transactions sync every morning at about 5 AM, or use Sync now on the Accounts tab.</Text>
       </Card>
       {!!msg && <Text style={{ color: t.muted, marginTop: 12 }}>{msg}</Text>}
+
+      <Text style={[styles.h, { color: t.text }]}>Move over from Fina</Text>
+      <Card style={{ gap: 12 }}>
+        <Text style={{ color: t.muted }}>Bring in your Fina history with its categories, notes and splits. Safe to run again with a newer export.</Text>
+        <Button title="Import history from Fina" kind="plain" onPress={() => router.push('/fina-import')} />
+      </Card>
 
       <Text style={[styles.h, { color: t.text }]}>Account</Text>
       <Card style={{ gap: 12 }}>

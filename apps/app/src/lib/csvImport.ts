@@ -38,7 +38,7 @@ export async function importRows(account: { id: string; type: string | null }, r
     matchText: r.match_text, categoryId: r.category_id, accountId: r.account_id, minAmount: r.min_amount, maxAmount: r.max_amount,
   }));
   const kindById = new Map((cats.data ?? []).map((r: any) => [r.id as string, r.kind as string]));
-  const cardPaymentId = (cats.data ?? []).find((r: any) => r.name === 'Credit Card Payment')?.id ?? null;
+  const cardPaymentId = (cats.data ?? []).find((r: any) => r.kind === 'transfer' && /^credit card payment$/i.test(r.name))?.id ?? null;
 
   const withMerchant = rows.map((r) => ({ r, merchant: merchantFor(merchantRules, r.name) || guessMerchant(r.name) }));
 

@@ -19,6 +19,8 @@ function RootStack() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="transaction/[id]" options={{ title: 'Transaction', presentation: 'modal' }} />
         <Stack.Screen name="import" options={{ title: 'Import CSV' }} />
+        <Stack.Screen name="fina-import" options={{ title: 'Import from Fina' }} />
+        <Stack.Screen name="report" options={{ title: 'Report' }} />
       </Stack.Protected>
     </Stack>
   );

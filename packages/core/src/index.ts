@@ -4,3 +4,5 @@ export * from './merchants.ts';
 export * from './categorize.ts';
 export * from './csv.ts';
 export * from './loans.ts';
+export * from './fina.ts';
+export * from './budget.ts';

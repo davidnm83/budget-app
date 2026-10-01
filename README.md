@@ -13,7 +13,11 @@ Runs on iPhone, Android and the web from one codebase. Everything fits in free t
 - **Auto-categorisation.** Your rules first, then the category you used last time for that merchant, then Plaid's category. The inbox shows where each category came from.
 - **Rules from edits.** When you change a category, "Always use this category for …" makes it a rule.
 - **Merchant cleanup.** Rules turn `RETAIL PURCHASE 0010… RCSS 1077` into `Superstore`.
-- **Accounts.** Cash, credit cards and loans, with balances.
+- **Budgets.** Monthly budgets per category or group, with rollover, a collapsed archive of past months by year, comparisons (last month, same month last year, any month, year to date) and a year view.
+- **Reports.** Spending by category with drill-down to transactions, cash flow by month with money in by source, and spending by merchant.
+- **Import from Fina.** Brings over your history with categories, notes and splits, and fills in transactions the app already synced instead of duplicating them. Safe to run again.
+- **Notes, tags and edits.** Change a transaction's date or amount; bank transactions keep the bank's original value beside yours.
+- **Accounts.** Cash, credit cards and loans, with balances. Tap a manual account to set its balance.
 - **CSV import** for banks Plaid can't reach (Rogers, PC Financial, American Express, or any CSV with date, description and amount). Rows the account already has are skipped. Web app only for now.
 - **Privacy.** Bank tokens are encrypted in Supabase Vault and never reach the app, and row-level security covers every table.
 
@@ -21,8 +25,9 @@ Runs on iPhone, Android and the web from one codebase. Everything fits in free t
 
 1. **Recurring bills and income**, matched to transactions automatically
 2. **Weekly planner:** planned debits and income per account, projected balance, low-balance warnings
-3. **Loans:** payments copied from the paying account, interest from balance changes (logic in `packages/core/src/loans.ts`)
-4. **Monthly budgets, reports, net worth**
+3. **Split editing and category management** (rename, regroup, merge)
+4. **Loans:** payments copied from the paying account, interest from balance changes (logic in `packages/core/src/loans.ts`)
+5. **Net worth history, CSV export**
 
 ## How it fits together
 
