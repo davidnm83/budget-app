@@ -321,22 +321,26 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
   const owed = account.type === 'credit' || account.type === 'loan';
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
 
-  const save = async (patch: Record<string, unknown>, note = 'Saved.') => {
+  // `key` names the button that saved, so it can show "Saved ✓" for a moment.
+  const [flash, setFlash] = useState<string | null>(null);
+  const done = (key: string) => { setFlash(key); setTimeout(() => setFlash((f) => (f === key ? null : f)), 2500); };
+  const save = async (patch: Record<string, unknown>, note = 'Saved.', key = 'other') => {
     const { error } = await supabase.from('accounts').update(patch).eq('id', account.id);
     setMsg(error ? error.message : note);
-    if (!error) onChanged();
+    if (!error) { done(key); onChanged(); }
   };
+  const label = (key: string, title: string) => (flash === key ? 'Saved ✓' : title);
   const saveBalance = async () => {
     const v = Number(balance.replace(/[$,\s]/g, ''));
     if (!balance.trim() || isNaN(v)) return;
     const { error } = await supabase.rpc('set_balance_today', { p_account: account.id, p_balance: owed ? -Math.abs(v) : v });
     setMsg(error ? error.message : 'Balance updated.'); setBalance('');
-    if (!error) onChanged();
+    if (!error) { done('balance'); onChanged(); }
   };
   const saveCard = () => {
     const num = (s: string) => (s.trim() ? Number(s.replace(/[$,%\s]/g, '')) : null);
     const day = (s: string) => { const n = num(s); return n && n >= 1 && n <= 31 ? Math.round(n) : null; };
-    save({ credit_limit: num(card.credit_limit), statement_day: day(card.statement_day), due_day: day(card.due_day), apr: num(card.apr) }, 'Card details saved.');
+    save({ credit_limit: num(card.credit_limit), statement_day: day(card.statement_day), due_day: day(card.due_day), apr: num(card.apr) }, 'Card details saved.', 'card');
   };
   const merge = async () => {
     if (!mergeTarget) return;
@@ -355,7 +359,7 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <TextInput value={icon} onChangeText={(v) => setIcon(v.trim().slice(0, 8))} placeholder={accountIcon(account.type, null)} style={[input, { width: 56, textAlign: 'center', fontSize: 20 }]} />
           <TextInput value={name} onChangeText={setName} style={[input, { flex: 1 }]} />
-          <Button title="Save" kind="plain" disabled={!name.trim() || (name === account.name && icon === (account.icon ?? ''))} onPress={() => save({ name: name.trim(), icon: icon || null }, 'Saved.')} />
+          <Button title={label('name', 'Save')} kind="plain" disabled={flash !== 'name' && (!name.trim() || (name === account.name && icon === (account.icon ?? '')))} onPress={() => save({ name: name.trim(), icon: icon || null }, 'Saved.', 'name')} />
         </View>
         {!!account.official_name && account.official_name !== account.name && <Text style={{ color: t.muted, fontSize: 12 }}>The bank calls it {account.official_name}</Text>}
       </Field>
@@ -370,7 +374,7 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <TextInput value={balance} onChangeText={setBalance} keyboardType="decimal-pad" placeholder={account.current_balance == null ? '' : String(Math.abs(Number(account.current_balance)))}
               placeholderTextColor={t.muted} onSubmitEditing={saveBalance} style={[input, { flex: 1 }]} />
-            <Button title="Update" kind="plain" disabled={!balance.trim()} onPress={saveBalance} />
+            <Button title={label('balance', 'Update')} kind="plain" disabled={flash !== 'balance' && !balance.trim()} onPress={saveBalance} />
           </View>
           <Text style={{ color: t.muted, fontSize: 12 }}>After this, new transactions keep the balance current on their own.</Text>
         </Field>
@@ -387,7 +391,7 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
             <Chip label="Any account" on={!payFrom} onPress={() => setPayFrom(null)} />
             {accounts.filter((a) => a.type === 'depository').map((a) => <Chip key={a.id} label={a.name} on={payFrom === a.id} onPress={() => setPayFrom(a.id)} />)}
           </View>
-          <Button title="Save" kind="plain" onPress={() => save({ loan_payment_match: payMatch.trim() || null, loan_paying_account_id: payFrom }, 'Saved. Payments are copied on the next sync.')} />
+          <Button title={label('loan', 'Save')} kind="plain" onPress={() => save({ loan_payment_match: payMatch.trim() || null, loan_paying_account_id: payFrom }, 'Saved. Payments are copied on the next sync.', 'loan')} />
           {account.loan_last_balance_date && (
             <Text style={{ color: t.muted, fontSize: 12 }}>Interest last worked out on {shortDate(account.loan_last_balance_date)} at {formatMoney(Number(account.loan_last_balance))} owing.</Text>
           )}
@@ -402,7 +406,7 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
             <Small t={t} label="Statement closes on day" value={card.statement_day} onChange={(v) => setCard({ ...card, statement_day: v })} />
             <Small t={t} label="Payment due on day" value={card.due_day} onChange={(v) => setCard({ ...card, due_day: v })} />
           </View>
-          <Button title="Save card details" kind="plain" onPress={saveCard} />
+          <Button title={label('card', 'Save card details')} kind="plain" onPress={saveCard} />
           <Text style={{ color: t.muted, fontSize: 12 }}>The limit fills in from the bank when it reports one. Days are days of the month (e.g. 20 and 10).</Text>
         </Field>
       )}

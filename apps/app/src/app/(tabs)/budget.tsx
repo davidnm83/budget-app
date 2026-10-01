@@ -15,6 +15,7 @@ import {
   loadBudgets, loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, totalsFor,
   type Budget, type Category, type CategoryMonth, type MonthSummary,
 } from '@/lib/reports';
+import { loadGroupIcons } from '@/lib/categories';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 
@@ -29,16 +30,17 @@ export default function BudgetTab() {
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [rows, setRows] = useState<CategoryMonth[]>([]);
   const [summaries, setSummaries] = useState<MonthSummary[]>([]);
+  const [groupIcons, setGroupIcons] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [c, b, s] = await Promise.all([loadCategories(), loadBudgets(), loadMonthSummaries()]);
+      const [c, b, s, gi] = await Promise.all([loadCategories(), loadBudgets(), loadMonthSummaries(), loadGroupIcons()]);
       const now = thisMonth();
       const first = [...s.map((x) => x.month), ...b.map((x) => x.month), addMonths(now, -12)].sort()[0];
-      setCats(c); setBudgets(b); setSummaries(s);
+      setCats(c); setBudgets(b); setSummaries(s); setGroupIcons(gi);
       setRows(await loadCategoryMonths(first, now > month ? now : month));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -48,7 +50,7 @@ export default function BudgetTab() {
   }, [month]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const data = { t, cats, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
+  const data = { t, cats, groupIcons, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
     <TopBar>
@@ -69,7 +71,7 @@ export default function BudgetTab() {
 }
 
 interface Data {
-  t: Theme; cats: Category[]; budgets: Budget[]; rows: CategoryMonth[]; summaries: MonthSummary[];
+  t: Theme; cats: Category[]; groupIcons: Record<string, string>; budgets: Budget[]; rows: CategoryMonth[]; summaries: MonthSummary[];
   month: Month; setMonth: (m: Month) => void; reload: () => void; setError: (e: string) => void; setView: (v: View_) => void;
 }
 
@@ -191,11 +193,11 @@ function MonthView(d: Data) {
               <View key={g.group}>
                 <Pressable onPress={() => (single ? setEditing(g.lines[0]) : toggle(g.group))} style={[styles.groupRow, { backgroundColor: t.bg, borderColor: t.line }]}>
                   <Ionicons name={single ? 'ellipse' : open ? 'chevron-down' : 'chevron-forward'} size={single ? 4 : 14} color={t.muted} />
-                  <Line t={t} icon={groupIcon(g.group)} label={g.group} actual={g.actual} available={g.available} pace={pace} bold />
+                  <Line t={t} icon={groupIcon(g.group, d.groupIcons[g.group])} label={g.group} actual={g.actual} available={g.available} pace={pace} bold />
                 </Pressable>
                 {!single && open && g.lines.map((l) => (
                   <Pressable key={l.key} onPress={() => setEditing(l)} style={({ pressed }) => [styles.lineRow, pressed && { backgroundColor: t.line }]}>
-                    <Line t={t} icon={l.groupName ? groupIcon(l.groupName) : catIcon(l.categoryId)} label={l.label + (l.groupName ? ' (whole group)' : '')} actual={l.actual} available={l.available} pace={pace} carry={l.carryIn} />
+                    <Line t={t} icon={l.groupName ? groupIcon(l.groupName, d.groupIcons[l.groupName]) : catIcon(l.categoryId)} label={l.label + (l.groupName ? ' (whole group)' : '')} actual={l.actual} available={l.available} pace={pace} carry={l.carryIn} />
                   </Pressable>
                 ))}
               </View>

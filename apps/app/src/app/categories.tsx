@@ -8,7 +8,7 @@ import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from
 import { Field, Sheet } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
 import { Button, Card, Chip, Segmented } from '@/components/ui';
-import { EMOJI, mergeCategories, renameGroup } from '@/lib/categories';
+import { EMOJI, loadGroupIcons, mergeCategories, renameGroup, setGroupIcon } from '@/lib/categories';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
 
@@ -22,12 +22,14 @@ export default function Categories() {
   const [showHidden, setShowHidden] = useState(false);
   const [editing, setEditing] = useState<Partial<Cat> | null>(null);
   const [group, setGroup] = useState<string | null>(null);
+  const [groupIcons, setGroupIcons] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.from('categories').select('id, name, group_name, kind, is_hidden, sort, icon').order('sort').order('name');
     if (error) { setError(error.message); return; }
     setCats((data ?? []) as Cat[]);
+    setGroupIcons(await loadGroupIcons());
     const { data: used } = await supabase.rpc('report_category_months', { p_from: '1900-01-01', p_to: '2999-12-31' });
     const m = new Map<string, number>();
     for (const r of (used ?? []) as any[]) if (r.category_id) m.set(r.category_id, (m.get(r.category_id) ?? 0) + Number(r.txns));
@@ -38,7 +40,9 @@ export default function Categories() {
   const groups = useMemo(() => {
     const m = new Map<string, Cat[]>();
     for (const c of cats.filter((x) => showHidden || !x.is_hidden)) (m.get(c.group_name) ?? m.set(c.group_name, []).get(c.group_name)!).push(c);
-    return [...m.entries()];
+    // Groups A–Z; categories inside a group A–Z too.
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b))
+      .map(([g, list]) => [g, [...list].sort((x, y) => x.name.localeCompare(y.name))] as [string, Cat[]]);
   }, [cats, showHidden]);
   const hidden = cats.filter((c) => c.is_hidden).length;
 
@@ -46,11 +50,11 @@ export default function Categories() {
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <ScrollView contentContainerStyle={styles.page}>
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-        <Text style={{ color: t.muted, fontSize: 13 }}>Tap a category to edit it, or a group name to rename the group. Hidden categories stay on old transactions.</Text>
+        <Text style={{ color: t.muted, fontSize: 13 }}>Tap a category to edit it, or a group name to rename the group or change its emoji. Hidden categories stay on old transactions.</Text>
         {groups.map(([g, list]) => (
           <View key={g} style={{ gap: 6 }}>
             <Pressable onPress={() => setGroup(g)} style={styles.groupHead}>
-              <Text style={{ fontSize: 15 }}>{groupIcon(g)}</Text>
+              <Text style={{ fontSize: 15 }}>{groupIcon(g, groupIcons[g])}</Text>
               <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, flex: 1 }}>{g.toUpperCase()}</Text>
               <Ionicons name="pencil" size={13} color={t.muted} />
             </Pressable>
@@ -75,7 +79,7 @@ export default function Categories() {
         <Ionicons name="add" size={28} color="#fff" />
       </Pressable>
       {editing && <CategoryEditor initial={editing} cats={cats} count={editing.id ? counts.get(editing.id) ?? 0 : 0} onClose={() => setEditing(null)} onSaved={load} />}
-      {group && <GroupEditor name={group} onClose={() => setGroup(null)} onSaved={load} />}
+      {group && <GroupEditor name={group} icon={groupIcons[group] ?? ''} onClose={() => setGroup(null)} onSaved={load} />}
     </View>
   );
 }
@@ -149,17 +153,31 @@ function CategoryEditor({ initial, cats, count, onClose, onSaved }: { initial: P
   );
 }
 
-function GroupEditor({ name, onClose, onSaved }: { name: string; onClose: () => void; onSaved: () => void }) {
+function GroupEditor({ name, icon: initialIcon, onClose, onSaved }: { name: string; icon: string; onClose: () => void; onSaved: () => void }) {
   const t = useTheme();
   const [value, setValue] = useState(name);
+  const [icon, setIcon] = useState(initialIcon);
   const [error, setError] = useState('');
+  const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
   const save = async () => {
-    try { await renameGroup(name, value); onSaved(); onClose(); }
+    try {
+      if (icon !== initialIcon) await setGroupIcon(name, icon.trim() || null);
+      await renameGroup(name, value);
+      onSaved(); onClose();
+    }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   return (
-    <Sheet title="Rename group" onClose={onClose} footer={<Button title="Save" onPress={save} />}>
-      <Field t={t} label="Group name"><TextInput value={value} onChangeText={setValue} style={[styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }]} /></Field>
+    <Sheet title="Edit group" onClose={onClose} footer={<Button title="Save" onPress={save} />}>
+      <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
+        <Field t={t} label="Icon"><TextInput value={icon} onChangeText={(v) => setIcon(v.trim().slice(0, 8))} placeholder={groupIcon(name)} style={[input, { width: 64, fontSize: 22, textAlign: 'center' }]} /></Field>
+        <View style={{ flex: 1 }}><Field t={t} label="Group name"><TextInput value={value} onChangeText={setValue} style={input} /></Field></View>
+      </View>
+      <View style={styles.emojis}>
+        {EMOJI.map((e) => (
+          <Pressable key={e} onPress={() => setIcon(e)} style={[styles.emoji, icon === e && { backgroundColor: t.accent }]}><Text style={{ fontSize: 20 }}>{e}</Text></Pressable>
+        ))}
+      </View>
       <Text style={{ color: t.muted, fontSize: 12 }}>Renaming to an existing group's name combines the two.</Text>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
     </Sheet>

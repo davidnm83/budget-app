@@ -25,7 +25,7 @@ export default function Bills() {
   const [month, setMonth] = useState(monthOf(today()));
   const [bills, setBills] = useState<Recurring[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [cats, setCats] = useState<{ id: string; name: string; group_name: string }[]>([]);
+  const [cats, setCats] = useState<{ id: string; name: string; group_name: string; icon: string | null }[]>([]);
   const [dues, setDues] = useState<Due[]>([]);
   const [suggestions, setSuggestions] = useState<RecurringSuggestion[] | null>(null);
   const [editing, setEditing] = useState<Partial<Recurring> | null>(null);
@@ -37,7 +37,7 @@ export default function Bills() {
     try {
       const [b, a, c] = await Promise.all([
         loadRecurring(), loadAccounts(),
-        supabase.from('categories').select('id, name, group_name').eq('is_hidden', false).order('sort').then((r) => r.data ?? []),
+        supabase.from('categories').select('id, name, group_name, icon').eq('is_hidden', false).order('sort').then((r) => r.data ?? []),
       ]);
       setBills(b); setAccounts(a); setCats(c);
       // This month's due dates, each matched to the transaction that paid it (BIL-5).

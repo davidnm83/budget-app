@@ -66,7 +66,7 @@ export default function Transactions() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [accounts, setAccounts] = useState<{ id: string; name: string; mask: string | null }[]>([]);
-  const [cats, setCats] = useState<{ id: string; name: string; group_name: string }[]>([]);
+  const [cats, setCats] = useState<{ id: string; name: string; group_name: string; icon: string | null }[]>([]);
   const request = useRef(0);
 
   // Search waits until you pause typing.
@@ -74,7 +74,7 @@ export default function Transactions() {
 
   useEffect(() => {
     supabase.from('accounts').select('id, name, mask').eq('is_hidden', false).order('name').then(({ data }) => setAccounts(data ?? []));
-    supabase.from('categories').select('id, name, group_name').eq('is_hidden', false).order('sort').order('name').then(({ data }) => setCats(data ?? []));
+    supabase.from('categories').select('id, name, group_name, icon').eq('is_hidden', false).order('sort').order('name').then(({ data }) => setCats(data ?? []));
   }, []);
 
   const fetchPage = useCallback(async (page: number) => {
@@ -278,7 +278,7 @@ function TxnRow({ t, item, showDate, onToggle }: { t: Theme; item: Row; showDate
 
 function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total, onExport }: {
   visible: boolean; onClose: () => void; t: Theme; f: Filters; set: (p: Partial<Filters>) => void;
-  accounts: { id: string; name: string; mask: string | null }[]; cats: { id: string; name: string; group_name: string }[]; reset: () => void; total: number | null;
+  accounts: { id: string; name: string; mask: string | null }[]; cats: { id: string; name: string; group_name: string; icon: string | null }[]; reset: () => void; total: number | null;
   onExport: () => Promise<number>;
 }) {
   const [exporting, setExporting] = useState('');
@@ -344,7 +344,7 @@ function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total
         </ScrollView>
       </View>
       <MultiPicker visible={picker === 'categories'} title="Categories" onClose={() => setPicker(null)}
-        items={[{ id: 'none', label: 'Uncategorised' }, ...cats.map((c) => ({ id: c.id, label: c.name, group: c.group_name }))]}
+        items={[{ id: 'none', label: 'Uncategorised' }, ...cats.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))]}
         selected={f.categories} onChange={(categories) => set({ categories })} />
       <MultiPicker visible={picker === 'accounts'} title="Accounts" onClose={() => setPicker(null)}
         items={accounts.map((a) => ({ id: a.id, label: `${a.name}${a.mask ? ` ••${a.mask}` : ''}` }))}

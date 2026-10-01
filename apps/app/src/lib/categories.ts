@@ -33,6 +33,20 @@ export async function renameGroup(from: string, to: string) {
   if (!to.trim() || from === to) return;
   check(await supabase.from('categories').update({ group_name: to.trim() }).eq('group_name', from));
   check(await supabase.from('budgets').update({ group_name: to.trim() }).eq('group_name', from));
+  // Carry the group's emoji over unless the new name already has one.
+  const icons = await loadGroupIcons();
+  if (icons[from] && !icons[to.trim()]) check(await supabase.from('category_groups').upsert({ name: to.trim(), icon: icons[from] }));
+  check(await supabase.from('category_groups').delete().eq('name', from));
+}
+
+/** Emoji chosen per group, by group name. */
+export async function loadGroupIcons(): Promise<Record<string, string>> {
+  const { data } = await supabase.from('category_groups').select('name, icon');
+  return Object.fromEntries((data ?? []).filter((g: any) => g.icon).map((g: any) => [g.name, g.icon]));
+}
+
+export async function setGroupIcon(name: string, icon: string | null) {
+  check(await supabase.from('category_groups').upsert({ name, icon }));
 }
 
 /** A small palette to pick from; any emoji can also be typed. */

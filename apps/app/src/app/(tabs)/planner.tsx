@@ -81,15 +81,19 @@ export default function Planner() {
               <Tile t={t} label="Money in" value={money0(v.summary.actualIn)} sub={`of ${money0(v.summary.plannedIn)} planned`} />
               <Tile t={t} label="Money out" value={money0(v.summary.actualOut)} sub={`of ${money0(v.summary.plannedOut)} planned`} />
             </View>
-            <View style={styles.ahead}>
-              {data!.ahead.map((a) => (
-                <Pressable key={a.week} onPress={() => setWeek(a.week)}
-                  style={[styles.aheadCell, { borderColor: a.week === week ? t.accent : a.warning ? t.danger : t.line, backgroundColor: t.card }]}>
-                  <Text style={{ color: t.muted, fontSize: 10 }}>{a.week === thisWeek ? 'THIS WEEK' : `WK OF ${shortDate(a.week).toUpperCase()}`}</Text>
-                  <Text style={{ color: a.warning || a.end < 0 ? t.danger : t.text, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{money0(a.end)}</Text>
-                  {a.warning && <Text style={{ color: t.danger, fontSize: 10 }} numberOfLines={1}>⚠ {shortDate(a.warning.date)}</Text>}
-                </Pressable>
-              ))}
+            {/* The look-ahead reads as week tabs: a tinted strip, the open week filled in. */}
+            <View style={[styles.ahead, { backgroundColor: t.line }]}>
+              {data!.ahead.map((a) => {
+                const on = a.week === week;
+                const bad = !!a.warning || a.end < 0;
+                return (
+                  <Pressable key={a.week} onPress={() => setWeek(a.week)} accessibilityRole="tab" accessibilityState={{ selected: on }}
+                    style={[styles.aheadCell, on && { backgroundColor: t.accent }]}>
+                    <Text style={{ color: on ? '#ffffffcc' : t.muted, fontSize: 10, fontWeight: '600' }}>{a.week === thisWeek ? 'THIS WEEK' : `WK OF ${shortDate(a.week).toUpperCase()}`}</Text>
+                    <Text style={{ color: on ? '#fff' : bad ? t.danger : t.text, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{bad && !on ? '⚠ ' : ''}{money0(a.end)}</Text>
+                  </Pressable>
+                );
+              })}
             </View>
             {v.warnings.map((w) => (
               <View key={w.accountId} style={[styles.warn, { borderColor: t.danger }]}>
@@ -163,8 +167,8 @@ function Tile({ t, label, value, strong, warn, sub }: { t: Theme; label: string;
 const styles = StyleSheet.create({
   page: { padding: 12, gap: 10, paddingBottom: 40, maxWidth: 760, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  ahead: { flexDirection: 'row', gap: 6 },
-  aheadCell: { flex: 1, borderWidth: 1, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 4 },
+  ahead: { flexDirection: 'row', gap: 2, padding: 3, borderRadius: 10 },
+  aheadCell: { flex: 1, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 5, alignItems: 'center' },
   tile: { flexGrow: 1, flexBasis: '22%', minWidth: 80, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
   warn: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: 1, borderRadius: 10, padding: 10 },
   day: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7 },

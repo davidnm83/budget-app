@@ -3,6 +3,7 @@
  * Matched on the lowercased name; anything unknown gets a neutral dot.
  */
 const CATEGORY: Record<string, string> = {
+  'gig work': '🛵',
   // income
   paycheck: '💼', paycheque: '💼', 'gig income': '🛵', 'repayment from others': '🔁', 'other income': '💵', refunds: '↩️',
   'money from family': '👪', 'tax returns & benefits': '🏛️', cashback: '🪙', 'interest income': '📈', sales: '🏷️', 'student loans': '🎓',
@@ -41,8 +42,8 @@ export function categoryIcon(name: string, icon?: string | null): string {
   return icon || CATEGORY[name.trim().toLowerCase()] || '•';
 }
 
-export function groupIcon(name: string): string {
-  return GROUP[name.trim().toLowerCase()] || CATEGORY[name.trim().toLowerCase()] || '•';
+export function groupIcon(name: string, icon?: string | null): string {
+  return icon || GROUP[name.trim().toLowerCase()] || CATEGORY[name.trim().toLowerCase()] || '•';
 }
 
 export function accountIcon(type: string | null, icon?: string | null): string {

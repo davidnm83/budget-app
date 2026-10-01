@@ -1,6 +1,6 @@
 // Pop-up forms for a recurring bill/income and for a one-off planned entry.
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { addDays, formatMoney, parseMoney, round2, shortDate, toIsoDate, type Frequency, type Recurring } from '@budget-app/core';
+import { addDays, categoryIcon, formatMoney, parseMoney, round2, shortDate, toIsoDate, type Frequency, type Recurring } from '@budget-app/core';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -43,7 +43,7 @@ const FREQ: { key: Frequency; label: string }[] = [
 
 /** Add or edit a recurring bill or income (BIL-1, 8, 9). `initial` without an id = new (e.g. a suggestion). */
 export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
-  initial: Partial<Recurring>; accounts: Account[]; categories: { id: string; name: string; group_name: string }[];
+  initial: Partial<Recurring>; accounts: Account[]; categories: { id: string; name: string; group_name: string; icon?: string | null }[];
   onClose: () => void; onSaved: () => void;
 }) {
   const t = useTheme();
@@ -138,7 +138,7 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
       </Field>
       <Field t={t} label="Category">
         <Pressable onPress={() => setPickCat(true)} style={[styles.input, styles.pick, { borderColor: t.line, backgroundColor: t.card }]}>
-          <Text style={{ color: categoryId ? t.text : t.muted, flex: 1 }}>{categories.find((c) => c.id === categoryId)?.name ?? 'Choose'}</Text>
+          <Text style={{ color: categoryId ? t.text : t.muted, flex: 1 }}>{(() => { const c = categories.find((x) => x.id === categoryId); return c ? `${categoryIcon(c.name, c.icon)}  ${c.name}` : 'Choose'; })()}</Text>
           <Ionicons name="chevron-forward" size={18} color={t.muted} />
         </Pressable>
       </Field>
@@ -147,7 +147,7 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
       </Field>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <MultiPicker visible={pickCat} title="Category" onClose={() => setPickCat(false)}
-        items={categories.map((c) => ({ id: c.id, label: c.name, group: c.group_name }))}
+        items={categories.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))}
         selected={categoryId ? [categoryId] : []} onChange={(ids) => { setCategoryId(ids[ids.length - 1] ?? null); setPickCat(false); }} />
     </Sheet>
   );
