@@ -4,7 +4,9 @@
 // Bank transactions keep the bank's original date and amount beside your changes (TXN-12).
 import { categoryIcon, formatMoney, normalizeDescription, parseMoney, round2, searchPattern, shortDate, toIsoDate } from '@budget-app/core';
 import { router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { SLIDE } from '@/lib/motion';
+import { peekCategories, peekTxn, storeCategories } from '@/lib/txnCache';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SinglePicker } from '@/components/Picker';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -20,14 +22,19 @@ import type { Category, Txn } from '@/lib/types';
  */
 export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: () => void; onOpen?: (id: string) => void }) {
   const t = useTheme();
-  const [txn, setTxn] = useState<Txn | null>(null);
-  const [cats, setCats] = useState<Category[]>([]);
-  const [merchant, setMerchant] = useState('');
-  const [categoryId, setCategoryId] = useState<string | null>(null);
-  const [notes, setNotes] = useState('');
-  const [tags, setTags] = useState('');
-  const [date, setDate] = useState('');
-  const [amount, setAmount] = useState('');
+  // Paint from the list row that was tapped (when there is one) while the full record loads;
+  // saving waits for the full record.
+  const seed = useMemo(() => peekTxn(id), [id]);
+  const [txn, setTxn] = useState<Txn | null>(seed as Txn | null);
+  const [ready, setReady] = useState(false);
+  const [cats, setCats] = useState<Category[]>(peekCategories);
+  const [merchant, setMerchant] = useState(seed?.merchant ?? '');
+  const [categoryId, setCategoryId] = useState<string | null>(seed?.category_id ?? null);
+  const [notes, setNotes] = useState(seed?.notes ?? '');
+  const [tags, setTags] = useState((seed?.tags ?? []).join(', '));
+  const [date, setDate] = useState(seed?.date ?? '');
+  const [amount, setAmount] = useState(seed ? Number(seed.amount).toFixed(2) : '');
+  const picked = useRef(false); // a category chosen before the full record arrived is kept
   const [makeRule, setMakeRule] = useState(false);
   const [backfill, setBackfill] = useState(true);
   const [matching, setMatching] = useState<number | null>(null);
@@ -47,9 +54,9 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
         supabase.from('categories').select('id, name, group_name, kind, sort, icon').eq('is_hidden', false).order('sort'),
       ]);
       if (tx) {
-        setTxn(tx as Txn);
+        setTxn(tx as Txn); setReady(true);
         setMerchant(tx.merchant ?? '');
-        setCategoryId(tx.category_id);
+        if (!picked.current) setCategoryId(tx.category_id);
         setNotes(tx.notes ?? '');
         setTags((tx.tags ?? []).join(', '));
         setDate(tx.date);
@@ -61,17 +68,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
         const sp = (tx.transaction_splits ?? []) as any[];
         setParts(sp.length ? sp.map((p) => ({ category_id: p.category_id, amount: Number(p.amount).toFixed(2), notes: p.notes ?? '' })) : null);
       }
-      setCats((c ?? []) as Category[]);
-      // Suggestions: what this merchant got before, then the categories you've used most recently.
-      if (tx) {
-        const who = tx.merchant || tx.name;
-        const [same, recent] = await Promise.all([
-          supabase.from('transactions').select('category_id').or(`merchant.eq."${String(who).replace(/"/g, '')}",name.eq."${String(tx.name).replace(/"/g, '')}"`).not('category_id', 'is', null).neq('id', tx.id).order('date', { ascending: false }).limit(10),
-          supabase.from('transactions').select('category_id').eq('category_source', 'manual').not('category_id', 'is', null).order('date', { ascending: false }).limit(60),
-        ]);
-        const ids = [...(same.data ?? []), ...(recent.data ?? [])].map((r: any) => r.category_id as string);
-        setSuggested([...new Set(ids)].filter((x) => (c ?? []).some((k: any) => k.id === x)).slice(0, 5));
-      }
+      setCats((c ?? []) as Category[]); storeCategories((c ?? []) as Category[]);
     })();
   }, [id]);
 
@@ -80,6 +77,17 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     for (const c of cats) (m.get(c.group_name) ?? m.set(c.group_name, []).get(c.group_name)!).push(c);
     return [...m.entries()];
   }, [cats]);
+
+  // Suggestions: what this merchant got before, then the categories you've used most recently.
+  const who = txn ? txn.merchant || txn.name : '';
+  useEffect(() => {
+    if (!txn) return;
+    const q = (v: string) => `"${String(v).replace(/"/g, '')}"`;
+    Promise.all([
+      supabase.from('transactions').select('category_id').or(`merchant.eq.${q(who)},name.eq.${q(txn.name)}`).not('category_id', 'is', null).neq('id', txn.id).order('date', { ascending: false }).limit(10),
+      supabase.from('transactions').select('category_id').eq('category_source', 'manual').not('category_id', 'is', null).order('date', { ascending: false }).limit(60),
+    ]).then(([same, recent]) => setSuggested([...new Set([...(same.data ?? []), ...(recent.data ?? [])].map((r: any) => r.category_id as string))].slice(0, 8)));
+  }, [txn?.id, who]);
 
   // How many unreviewed transactions a new rule would also catch.
   const ruleText = txn ? (merchant.trim() || normalizeDescription(txn.name)) : '';
@@ -93,6 +101,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
 
   if (!txn) return <View style={{ flex: 1, backgroundColor: t.bg }} />;
   const split = !!parts && parts.length > 0;
+  const shownSuggested = suggested.filter((x) => cats.some((c) => c.id === x)).slice(0, 5);
   const total = round2(parseMoney(amount));
   const partsSum = round2((parts ?? []).reduce((s2, p) => s2 + (parseMoney(p.amount) || 0), 0));
   const remaining = round2(total - partsSum);
@@ -172,7 +181,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
 
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.bg }];
   return (
-    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={[styles.page, SLIDE]} keyboardShouldPersistTaps="handled">
       <Card style={{ gap: 4 }}>
         <Text style={{ color: t.text, fontSize: 28, fontWeight: '700' }}>{formatMoney(Number(txn.amount), txn.currency)}</Text>
         <Text style={{ color: t.muted }}>{shortDate(txn.date)} · {txn.accounts?.name}</Text>
@@ -247,10 +256,10 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
           <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={1}>{(cats.find((c) => c.id === categoryId) as any)?.group_name ?? ''}</Text>
           <Ionicons name="chevron-forward" size={18} color={t.muted} />
         </Pressable>
-        {suggested.filter((x) => x !== categoryId).length > 0 && (
+        {shownSuggested.filter((x) => x !== categoryId).length > 0 && (
           <View style={[styles.chips, { paddingHorizontal: 10, paddingBottom: 10 }]}>
-            {suggested.filter((x) => x !== categoryId).slice(0, 4).map((cid) => (
-              <Pressable key={cid} onPress={() => setCategoryId(cid)} style={[styles.chip, { borderColor: t.line }]}>
+            {shownSuggested.filter((x) => x !== categoryId).slice(0, 4).map((cid) => (
+              <Pressable key={cid} onPress={() => { picked.current = true; setCategoryId(cid); }} style={[styles.chip, { borderColor: t.line }]}>
                 <Text style={{ color: t.text, fontSize: 13 }}>{catName(cid)}</Text>
               </Pressable>
             ))}
@@ -276,11 +285,11 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       <TextInput style={input} value={tags} onChangeText={setTags} placeholder="e.g. trip, reimbursable" placeholderTextColor={t.muted} autoCapitalize="none" />
 
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-      <Button title="Save and mark reviewed" onPress={save} busy={busy} style={{ marginTop: 16 }} />
+      <Button title="Save and mark reviewed" onPress={save} busy={busy || !ready} style={{ marginTop: 16 }} />
       <SinglePicker visible={picking || pickFor != null} title="Category" onClose={() => { setPicking(false); setPickFor(null); }}
-        selected={pickFor != null ? parts?.[pickFor]?.category_id ?? null : categoryId} suggested={suggested}
+        selected={pickFor != null ? parts?.[pickFor]?.category_id ?? null : categoryId} suggested={shownSuggested}
         items={cats.map((c: any) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))}
-        onPick={(cid) => { if (pickFor != null) setPart(pickFor, { category_id: cid }); else setCategoryId(cid); setPicking(false); setPickFor(null); }} />
+        onPick={(cid) => { if (pickFor != null) setPart(pickFor, { category_id: cid }); else { picked.current = true; setCategoryId(cid); } setPicking(false); setPickFor(null); }} />
     </ScrollView>
   );
 }

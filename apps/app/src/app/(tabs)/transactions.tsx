@@ -3,6 +3,7 @@
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { seedTxn } from '@/lib/txnCache';
 import { PAGE_MAX, useWide } from '@/lib/layout';
 import { TransactionEditor } from '@/components/TransactionEditor';
 import { ModalFrame } from '@/components/ModalFrame';
@@ -90,7 +91,7 @@ export default function Transactions() {
     const id = ++request.current;
     setLoading(true);
     const q = filtered(supabase.from('transaction_list')
-      .select('id, date, amount, currency, display_name, category_name, category_icon, category_source, account_name, account_mask, reviewed, split_count, is_transfer, notes, tags', { count: page === 0 ? 'exact' : undefined }),
+      .select('id, date, amount, currency, name, merchant, category_id, account_id, display_name, category_name, category_icon, category_source, account_name, account_mask, reviewed, split_count, is_transfer, notes, tags', { count: page === 0 ? 'exact' : undefined }),
       mode, filters, query);
     const { data, error, count } = await q.range(page * PAGE, page * PAGE + PAGE - 1);
     if (id !== request.current) return; // a newer request replaced this one
@@ -145,7 +146,7 @@ export default function Transactions() {
 
   const renderRow = ({ item }: { item: Row }) => (
     <TxnRow t={t} item={item} showDate={!byDate} onToggle={() => setReviewed([item.id], !item.reviewed)} selected={sel === item.id}
-      onOpen={() => (wide ? setSel(item.id) : router.push({ pathname: '/transaction/[id]', params: { id: item.id } }))} />
+      onOpen={() => { seedTxn(item); if (wide) setSel(item.id); else router.push({ pathname: '/transaction/[id]', params: { id: item.id } }); }} />
   );
   const footer = hasMore ? <Button title="Load more" kind="plain" onPress={() => fetchPage(Math.ceil(rows.length / PAGE))} busy={loading} style={{ margin: 16 }} /> : null;
   const empty = loading ? null : (

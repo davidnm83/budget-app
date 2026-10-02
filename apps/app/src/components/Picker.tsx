@@ -5,6 +5,7 @@ import { ModalFrame } from '@/components/ModalFrame';
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWide } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
 import { useBackToClose } from '@/lib/useBackToClose';
 
@@ -14,6 +15,7 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
   visible: boolean; title: string; items: PickItem[]; selected: string[]; onChange: (ids: string[]) => void; onClose: () => void;
 }) {
   const t = useTheme();
+  const wide = useWide(); // phones: don't pop the keyboard just for opening the list
   const insets = useSafeAreaInsets();
   const [q, setQ] = useState('');
   const [first, setFirst] = useState<string[]>(selected);
@@ -37,7 +39,7 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
         </View>
         <View style={[styles.search, { borderColor: t.line, backgroundColor: t.card }]}>
           <Ionicons name="search" size={16} color={t.muted} />
-          <TextInput value={q} onChangeText={setQ} placeholder={`Search ${title.toLowerCase()}`} placeholderTextColor={t.muted} autoFocus
+          <TextInput value={q} onChangeText={setQ} placeholder={`Search ${title.toLowerCase()}`} placeholderTextColor={t.muted} autoFocus={wide}
             style={[{ flex: 1, color: t.text, paddingVertical: 9, fontSize: 15 }, { outlineStyle: 'none' } as any]} />
         </View>
         <FlatList
@@ -68,6 +70,7 @@ export function SinglePicker({ visible, title, items, selected, suggested = [], 
   visible: boolean; title: string; items: PickItem[]; selected: string | null; suggested?: string[]; onPick: (id: string) => void; onClose: () => void;
 }) {
   const t = useTheme();
+  const wide = useWide();
   const [q, setQ] = useState('');
   useEffect(() => { if (visible) setQ(''); }, [visible]);
   useBackToClose(visible, onClose);
@@ -91,7 +94,7 @@ export function SinglePicker({ visible, title, items, selected, suggested = [], 
         </View>
         <View style={[styles.search, { borderColor: t.line, backgroundColor: t.card }]}>
           <Ionicons name="search" size={16} color={t.muted} />
-          <TextInput value={q} onChangeText={setQ} placeholder={`Search ${title.toLowerCase()}`} placeholderTextColor={t.muted} autoFocus
+          <TextInput value={q} onChangeText={setQ} placeholder={`Search ${title.toLowerCase()}`} placeholderTextColor={t.muted} autoFocus={wide}
             onSubmitEditing={() => { if (q.trim() && first) onPick(first.id); }}
             style={[{ flex: 1, color: t.text, paddingVertical: 9, fontSize: 15 }, { outlineStyle: 'none' } as any]} />
         </View>
