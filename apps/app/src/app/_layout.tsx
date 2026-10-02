@@ -62,7 +62,7 @@ function useNoAutofill() {
       if (el.tagName === 'INPUT' && (el.getAttribute('type') ?? 'text') === 'text') el.setAttribute('type', 'search');
     };
     const css = document.createElement('style');
-    css.textContent = 'input[type=search]{-webkit-appearance:none;appearance:none}input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-search-decoration{-webkit-appearance:none;display:none}';
+    css.textContent = '@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}input[type=search]{-webkit-appearance:none;appearance:none}input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-search-decoration{-webkit-appearance:none;display:none}';
     document.head.appendChild(css);
     const mark = (root: ParentNode) => root.querySelectorAll?.('input, textarea').forEach(fix);
     mark(document);

@@ -14,8 +14,10 @@ import { afterClose } from '@/lib/useBackToClose';
 const HOME_ONLY = ['review', 'week', 'budget', 'networth'];
 const isChart = (e: string) => keyOf(e) === 'chart';
 
-export function WidgetBoard({ entries, onChange, place, refresh, editing, onEditing, special, extra }: {
-  entries: string[]; onChange: (next: string[]) => void; place: 'home' | 'page'; refresh: number;
+export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing, onEditing, special, extra }: {
+  entries: string[]; onChange: (next: string[]) => void; place: 'home' | 'page' | 'budget' | 'report'; refresh: number;
+  /** The month the page is showing, for widgets that follow it. */
+  anchor?: string;
   editing: boolean; onEditing: (v: boolean) => void;
   /** Widgets the page draws itself from data it already has (Overview's four). */
   special?: (key: string) => ReactNode | undefined;
@@ -28,7 +30,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, editing, onEdit
   const [settings, setSettings] = useState<{ index: number | null; key: string; cfg: WidgetCfg } | null>(null);
   const [drag, setDrag] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
-  const avail = WIDGETS.filter((w) => (place === 'home' ? w.home : !HOME_ONLY.includes(w.key)));
+  const avail = WIDGETS.filter((w) => (place === 'home' ? w.home : place === 'budget' ? w.budget : !HOME_ONLY.includes(w.key)));
   const known = entries.map((e, i) => ({ e, i })).filter(({ e }) => WIDGETS.some((w) => w.key === keyOf(e)));
 
   const move = (from: number, to: number) => {
@@ -56,7 +58,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, editing, onEdit
           </>
         ) : (
           <Pressable onPress={() => onEditing(true)} style={styles.pill} accessibilityLabel="Edit layout">
-            <Ionicons name="options-outline" size={16} color={t.accent} /><Text style={{ color: t.accent }}>Edit layout</Text>
+            <Ionicons name="options-outline" size={16} color={t.accent} /><Text style={{ color: t.accent }}>{known.length ? (place === 'budget' ? 'Edit widgets' : 'Edit layout') : 'Add widgets'}</Text>
           </Pressable>
         )}
       </View>
@@ -86,13 +88,13 @@ export function WidgetBoard({ entries, onChange, place, refresh, editing, onEdit
                 </View>
               )}
               <View style={[{ flexGrow: 1 }, editing && { opacity: drag === i ? 0.4 : 1 }]} pointerEvents={editing ? 'none' : 'auto'}>
-                {special?.(k) ?? <Widget k={e} refresh={refresh} />}
+                {special?.(k) ?? <Widget k={e} refresh={refresh} anchor={anchor} />}
               </View>
             </Cell>
           );
         })}
       </View>
-      {!known.length && <Text style={{ color: t.muted, textAlign: 'center', padding: 24 }}>No widgets here yet.</Text>}
+      {!known.length && place !== 'budget' && <Text style={{ color: t.muted, textAlign: 'center', padding: 24 }}>No widgets here yet.</Text>}
       {bar}
       {adding && (
         <Sheet title="Add a widget" onClose={() => setAdding(false)}>

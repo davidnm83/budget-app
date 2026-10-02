@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
+import { GROW, SPIN } from '@/lib/motion';
 import type { Theme } from '@/lib/theme';
 
 export interface Series { name: string; values: number[] }
@@ -81,7 +82,7 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, children
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ height }} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
-            {w > 0 && children(w, height, min, max, sel)}
+            {w > 0 && <View style={GROW}>{children(w, height, min, max, sel)}</View>}
             <View style={[StyleSheet.absoluteFill, { flexDirection: 'row' }]}>
               {labels.map((l, i) => (
                 <Pressable key={i} style={{ flex: 1 }} accessibilityLabel={`${l}: ${series.map((s) => `${s.name} ${format(s.values[i] ?? 0)}`).join(', ')}`}
@@ -192,7 +193,7 @@ export function Donut({ t, slices, format, note, size = 132 }: { t: Theme; slice
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
       <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-        <Svg width={size} height={size} style={StyleSheet.absoluteFill as any}>
+        <Svg width={size} height={size} style={[StyleSheet.absoluteFill, SPIN] as any}>
           {parts.map((p, i) => {
             const len = (p.value / total) * C, off = acc; acc += len;
             // A 2px gap in the surface colour separates neighbours.
@@ -201,7 +202,7 @@ export function Donut({ t, slices, format, note, size = 132 }: { t: Theme; slice
           })}
         </Svg>
         <Text style={{ color: t.text, fontWeight: '700', fontSize: 15, fontVariant: ['tabular-nums'] }}>{format(sel == null ? total : parts[sel].value)}</Text>
-        <Text style={{ color: t.muted, fontSize: 10, maxWidth: size * 0.55, textAlign: 'center' }} numberOfLines={1}>{sel == null ? note ?? 'total' : parts[sel].label}</Text>
+        <Text style={{ color: t.muted, fontSize: 10, maxWidth: size * 0.56, textAlign: 'center', lineHeight: 11 }} numberOfLines={2}>{sel == null ? note ?? 'total' : parts[sel].label}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 170, gap: 2 }}>
         {parts.map((p, i) => (

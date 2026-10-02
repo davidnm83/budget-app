@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { EASE, RISE } from '@/lib/motion';
 import { useTheme } from '@/lib/theme';
 
 export function Button({ title, onPress, kind = 'primary', disabled, busy, style }: {
@@ -24,7 +25,7 @@ export const LIFT = { boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 1px 6px rgba(0,0
 
 export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
   const t = useTheme();
-  return <View style={[styles.card, LIFT, { backgroundColor: t.card, borderColor: t.line }, style]}>{children}</View>;
+  return <View style={[styles.card, LIFT, RISE, { backgroundColor: t.card, borderColor: t.line }, style]}>{children}</View>;
 }
 
 export function Empty({ text }: { text: string }) {
@@ -49,7 +50,7 @@ export function Bar({ value, max, color, overColor, height = 8 }: { value: numbe
   const over = max > 0 && value > max;
   return (
     <View style={{ height, borderRadius: 4, backgroundColor: t.track, overflow: 'hidden' }}>
-      <View style={{ width: `${pct * 100}%`, height, borderRadius: 4, backgroundColor: over && overColor ? overColor : color }} />
+      <View style={[{ width: `${pct * 100}%`, height, borderRadius: 4, backgroundColor: over && overColor ? overColor : color }, EASE, { transitionDuration: '350ms' } as any]} />
     </View>
   );
 }
@@ -63,7 +64,7 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
         const on = o.value === value;
         return (
           <Pressable key={o.value} onPress={() => onChange(o.value)} accessibilityRole="button" accessibilityState={{ selected: on }}
-            style={[styles.segItem, on && { backgroundColor: t.accent }]}>
+            style={[styles.segItem, EASE, { backgroundColor: on ? t.accent : 'transparent' }]}>
             <Text style={{ color: on ? '#fff' : t.text, fontWeight: on ? '600' : '400', fontSize: 14 }}>{o.label}</Text>
           </Pressable>
         );
@@ -76,7 +77,7 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
 export function Chip({ label, on, onPress }: { label: string; on?: boolean; onPress: () => void }) {
   const t = useTheme();
   return (
-    <Pressable onPress={onPress} style={[styles.chip, { borderColor: on ? t.accent : t.line, backgroundColor: on ? t.accent : 'transparent' }]}>
+    <Pressable onPress={onPress} style={[styles.chip, EASE, { borderColor: on ? t.accent : t.line, backgroundColor: on ? t.accent : 'transparent' }]}>
       <Text style={{ color: on ? '#fff' : t.text, fontSize: 13 }}>{label}</Text>
     </Pressable>
   );

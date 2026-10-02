@@ -1,6 +1,6 @@
 // What a chart widget can show. Each source turns the account's data into the same shape, so
 // any view (bars, line, pie, list, table, tiles) can draw it and a tap can open what's behind it.
-import { addDays, addMonths, balanceHistory, categoryIcon, formatMoney, monthEnd, platformByKey, shortDate, totalsByPlatform } from '@budget-app/core';
+import { addDays, addMonths, balanceHistory, daysBetween, categoryIcon, formatMoney, monthEnd, platformByKey, shortDate, totalsByPlatform } from '@budget-app/core';
 import type { TxnQuery } from '@/components/TxnSheet';
 import { loadTxnsFor } from './accountTxns';
 import { loadShifts } from './gig';
@@ -44,11 +44,13 @@ export function cfgCategories(cfg: ChartCfg, cats: Category[]): Category[] {
   return [];
 }
 
-export async function loadChart(cfg: ChartCfg): Promise<ChartData> {
+/** `anchor` is the month a page is showing (Budget); periods then end at that month, not this one. */
+export async function loadChart(cfg: ChartCfg, anchor?: string): Promise<ChartData> {
   const n = cfg.months ?? 6;
-  const cur = thisMonth(), first = addMonths(cur, -(n - 1)), now = today();
+  const past = !!anchor && anchor < thisMonth();
+  const cur = anchor ?? thisMonth(), first = addMonths(cur, -(n - 1)), now = today();
   const months = Array.from({ length: n }, (_, i) => addMonths(first, i));
-  const period = n === 1 ? 'this month' : `last ${n} months`;
+  const period = past ? (n === 1 ? monthShort(cur) : `${n} months to ${monthShort(cur)}`) : n === 1 ? 'this month' : `last ${n} months`;
   const base = { labels: months.map(monthShort), period, from: first, to: monthEnd(cur) };
   const source = cfg.source ?? 'spending';
 
@@ -69,7 +71,7 @@ export async function loadChart(cfg: ChartCfg): Promise<ChartData> {
       breakdown: [...by.entries()].filter(([, v]) => v > 0.5).sort((a, b) => b[1] - a[1])
         .map(([id, value]) => { const c = byId.get(id)!; return { label: `${categoryIcon(c.name, c.icon)} ${c.name}`, value, query: { categoryIds: [id], noTransfers: true } }; }),
       tiles: [
-        { label: 'This month', value: money0(values[n - 1]) },
+        { label: past ? monthShort(cur) : 'This month', value: money0(values[n - 1]) },
         { label: `Average · ${prior.length || 1} mo`, value: money0(avg(prior.length ? prior : values)), sub: 'per month' },
         { label: `Total · ${n} mo`, value: money0(values.reduce((s, v) => s + v, 0)) },
       ],
@@ -87,7 +89,7 @@ export async function loadChart(cfg: ChartCfg): Promise<ChartData> {
       series: [{ name: 'Money in', values: income }, { name: 'Money out', values: spending }],
       breakdown: [],
       tiles: [
-        { label: 'Net this month', value: `${net[n - 1] < 0 ? '−' : '+'}${money0(Math.abs(net[n - 1]))}`, sub: `${money0(income[n - 1])} in · ${money0(spending[n - 1])} out` },
+        { label: past ? `Net · ${monthShort(cur)}` : 'Net this month', value: `${net[n - 1] < 0 ? '−' : '+'}${money0(Math.abs(net[n - 1]))}`, sub: `${money0(income[n - 1])} in · ${money0(spending[n - 1])} out` },
         { label: `Average net · ${n} mo`, value: `${avg(net) < 0 ? '−' : '+'}${money0(Math.abs(avg(net)))}`, sub: 'per month' },
       ],
       drill: (i) => ({ from: months[i], to: monthEnd(months[i]), noTransfers: true }),
@@ -102,7 +104,7 @@ export async function loadChart(cfg: ChartCfg): Promise<ChartData> {
       series: [{ name: 'Earnings', values }],
       breakdown: totalsByPlatform(shifts).filter((p) => p.earnings > 0).map((p) => { const g = platformByKey(p.platform); return { label: `${g.icon} ${g.name}`, value: p.earnings }; }),
       tiles: [
-        { label: 'This month', value: money0(values[n - 1]) },
+        { label: past ? monthShort(cur) : 'This month', value: money0(values[n - 1]) },
         { label: `Average · ${n} mo`, value: money0(avg(values)), sub: 'per month' },
         { label: 'Shifts', value: String(shifts.length), sub: period },
       ],
@@ -114,21 +116,24 @@ export async function loadChart(cfg: ChartCfg): Promise<ChartData> {
   const all = (await loadAccounts()).filter((a) => !a.is_hidden);
   const accounts = source === 'carddebt' ? all.filter((a) => a.type === 'credit') : all;
   const points = Math.max(2, Math.round(n * 4.35) + 1);
-  const txns = accounts.length ? await loadTxnsFor(accounts.map((a) => a.id), addDays(now, -points * 7 - 7)) : [];
-  const per = accounts.map((a) => balanceHistory(signedBalance(a), txns.filter((x) => x.account_id === a.id), now, points, 7));
+  // Balances are worked back from today's, so a past month needs the weeks since then too.
+  const end = past ? monthEnd(cur) : now;
+  const total = points + Math.ceil(Math.max(0, daysBetween(end, now)) / 7) + 1;
+  const txns = accounts.length ? await loadTxnsFor(accounts.map((a) => a.id), addDays(now, -total * 7 - 7)) : [];
+  const per = accounts.map((a) => balanceHistory(signedBalance(a), txns.filter((x) => x.account_id === a.id), now, total, 7).filter((p) => p.date <= end).slice(-points));
   const dates = per[0]?.map((p) => p.date) ?? [];
   const sign = source === 'carddebt' ? -1 : 1;
   const values = dates.map((_, i) => Math.round(per.reduce((s, h) => s + (source === 'carddebt' ? Math.min(0, h[i].balance) : h[i].balance), 0) * sign));
   const last = values[values.length - 1] ?? 0, firstV = values[0] ?? 0;
   const ids = accounts.map((a) => a.id);
   return {
-    labels: dates.map((d) => shortDate(d)), period, from: dates[0] ?? now, to: now,
+    labels: dates.map((d) => shortDate(d)), period, from: dates[0] ?? now, to: end,
     series: [{ name: SOURCES[source].title, values }],
     breakdown: source === 'carddebt'
       ? accounts.map((a) => ({ label: `${a.icon ?? '💳'} ${a.name}`, value: Math.max(0, -signedBalance(a)), query: { accountIds: [a.id] } })).filter((x) => x.value > 0.5).sort((a, b) => b.value - a.value)
       : [],
     tiles: [
-      { label: 'Now', value: `${last < 0 ? '−' : ''}${money0(Math.abs(last))}` },
+      { label: past ? shortDate(dates[dates.length - 1] ?? end) : 'Now', value: `${last < 0 ? '−' : ''}${money0(Math.abs(last))}` },
       { label: `Change · ${n} mo`, value: `${last - firstV < 0 ? '−' : '+'}${money0(Math.abs(last - firstV))}`, sub: `from ${money0(firstV)}` },
     ],
     drill: (i) => (i === 0 ? null : { from: addDays(dates[i], -6), to: dates[i], accountIds: ids }),

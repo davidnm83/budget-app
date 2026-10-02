@@ -8,11 +8,11 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Columns } from '@/components/Columns';
+import { Sheet } from '@/components/Forms';
+import { WidgetBoard } from '@/components/WidgetBoard';
 import { useTxnSheet } from '@/components/TxnSheet';
-import { Widget, WidgetPicker } from '@/components/Widgets';
 import { loadPrefs, savePrefs, type ReportTab } from '@/lib/prefs';
-import { Bar, Card, Chip, Empty } from '@/components/ui';
+import { Bar, Button, Card, Chip, Empty } from '@/components/ui';
 import {
   loadCategories, loadCategoryMonths, loadMerchants, loadMonthSummaries, thisMonth,
   type Category, type CategoryMonth, type MerchantTotal, type MonthSummary,
@@ -57,6 +57,7 @@ export default function Reports() {
   const [tabs, setTabs] = useState<ReportTab[]>([]);
   const [editTab, setEditTab] = useState<ReportTab | null>(null);
   const [tabName, setTabName] = useState('');
+  const [editing, setEditing] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const custom = tabs.find((x) => x.id === tab) ?? null;
 
@@ -88,7 +89,11 @@ export default function Reports() {
     });
   };
   const saveTabs = async (next: ReportTab[]) => { await savePrefs({ report_tabs: next }); setTabs(next); };
-  const newTab = () => { const x = { id: `t${Date.now().toString(36)}`, name: '', widgets: [] }; setTabName(''); setEditTab(x); };
+  // A new tab appears straight away, open for adding widgets; name it from the edit bar.
+  const newTab = async () => {
+    const x = { id: `t${Date.now().toString(36)}`, name: 'My tab', widgets: [] };
+    try { await saveTabs([...tabs, x]); setTab(x.id); setEditing(true); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -108,11 +113,11 @@ export default function Reports() {
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {custom && (
         <>
-          <Columns>{custom.widgets.map((k) => <Widget key={k} k={k} refresh={refresh} />)}</Columns>
-          {!custom.widgets.length && <Empty text="No widgets on this tab yet." />}
-          <Pressable onPress={() => { setTabName(custom.name); setEditTab(custom); }} style={styles.editTab}>
-            <Ionicons name="options-outline" size={16} color={t.accent} /><Text style={{ color: t.accent }}>Edit this tab</Text>
-          </Pressable>
+          <WidgetBoard place="report" entries={custom.widgets} refresh={refresh} editing={editing} onEditing={setEditing}
+            onChange={(next) => saveTabs(tabs.map((y) => (y.id === custom.id ? { ...y, widgets: next } : y))).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))}
+            extra={<Pressable onPress={() => { setTabName(custom.name); setEditTab(custom); }} style={[styles.editTab, { borderColor: t.line }]}>
+              <Ionicons name="create-outline" size={16} color={t.accent} /><Text style={{ color: t.accent, fontWeight: '600' }}>Name or delete</Text>
+            </Pressable>} />
         </>
       )}
       {tab === 'categories' && <ByCategory t={t} cats={cats} rows={rows} open={open} />}
@@ -121,16 +126,14 @@ export default function Reports() {
     </ScrollView>
     {txnSheet}
     {editTab && (
-      <WidgetPicker place="report" current={editTab.widgets} title={tabs.some((x) => x.id === editTab.id) ? 'Edit tab' : 'New tab'}
-        header={<TextInput value={tabName} onChangeText={setTabName} placeholder="Tab name, e.g. Car or Monthly check-in" placeholderTextColor={t.muted}
-          style={[styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }]} />}
-        save={async (keys) => {
-          const x = { ...editTab, name: tabName.trim() || 'My tab', widgets: keys };
-          await saveTabs(tabs.some((y) => y.id === x.id) ? tabs.map((y) => (y.id === x.id ? x : y)) : [...tabs, x]);
-          setTab(x.id);
-        }}
-        onDelete={tabs.some((x) => x.id === editTab.id) ? async () => { await saveTabs(tabs.filter((x) => x.id !== editTab.id)); setTab('categories'); setEditTab(null); } : undefined}
-        onClose={() => setEditTab(null)} onSaved={() => {}} />
+      <Sheet title="This tab" onClose={() => setEditTab(null)}
+        footer={<View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button title="Delete tab" kind="danger" onPress={async () => { await saveTabs(tabs.filter((x) => x.id !== editTab.id)); setTab('categories'); setEditTab(null); }} />
+          <Button title="Save" style={{ flex: 1 }} onPress={async () => { await saveTabs(tabs.map((y) => (y.id === editTab.id ? { ...y, name: tabName.trim() || 'My tab' } : y))); setEditTab(null); }} />
+        </View>}>
+        <TextInput value={tabName} onChangeText={setTabName} placeholder="Tab name, e.g. Car or Monthly check-in" placeholderTextColor={t.muted}
+          style={[styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }]} />
+      </Sheet>
     )}
     </View>
   );
@@ -251,7 +254,7 @@ function ByMerchant({ t, list, open }: { t: Theme; list: MerchantTotal[]; open: 
 const styles = StyleSheet.create({
   tabBar: { gap: 6, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
   tab: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 7 },
-  editTab: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12 },
+  editTab: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, minHeight: 40 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15 },
   page: { paddingHorizontal: 12, paddingTop: 4, gap: 10, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   h: { fontSize: 12, fontWeight: '700', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },

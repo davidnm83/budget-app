@@ -18,10 +18,11 @@ import {
   type Budget, type Category, type CategoryMonth, type MonthSummary,
 } from '@/lib/reports';
 import { loadGroupIcons } from '@/lib/categories';
-import { DEFAULT_BUDGET, Widget, WidgetPicker } from '@/components/Widgets';
+import { WidgetBoard } from '@/components/WidgetBoard';
+import { DEFAULT_BUDGET } from '@/components/Widgets';
 import { useTxnSheet, type TxnQuery } from '@/components/TxnSheet';
 import { costPerKm, loadGigSettings, loadShifts } from '@/lib/gig';
-import { loadPrefs } from '@/lib/prefs';
+import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { TransactionEditor } from '@/components/TransactionEditor';
 import { afterClose } from '@/lib/useBackToClose';
 import { supabase } from '@/lib/supabase';
@@ -129,7 +130,7 @@ function MonthView(d: Data) {
   const [busy, setBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [incomeOpen, setIncomeOpen] = useState(true);
-  const [picking, setPicking] = useState(false);
+  const [editingWidgets, setEditingWidgets] = useState(false);
 
   const monthBudgets = d.budgets.filter((b) => b.month === month);
   const view = useMemo(() => {
@@ -284,12 +285,8 @@ function MonthView(d: Data) {
       {monthBudgets.length > 0 && <Button title={adding ? 'Close' : 'Add a budget'} kind="plain" onPress={() => setAdding(!adding)} />}
       {adding && <AddBudget d={d} monthBudgets={monthBudgets} onAdd={(r) => { add([r]); setAdding(false); }} suggestion={suggestion} />}
 
-      {d.widgets.map((k) => <Widget key={k} k={k} refresh={d.refresh} />)}
-      <Pressable onPress={() => setPicking(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 8 }}>
-        <Ionicons name="options-outline" size={16} color={t.accent} />
-        <Text style={{ color: t.accent }}>{d.widgets.length ? 'Change widgets' : 'Add widgets (watch list, averages…)'}</Text>
-      </Pressable>
-      {picking && <WidgetPicker place="budget" current={d.widgets} onClose={() => setPicking(false)} onSaved={d.setWidgets} />}
+      <WidgetBoard place="budget" entries={d.widgets} refresh={d.refresh} anchor={month} editing={editingWidgets} onEditing={setEditingWidgets}
+        onChange={(next) => { d.setWidgets(next); savePrefs({ budget_widgets: next }).catch((e: unknown) => d.setError(e instanceof Error ? e.message : String(e))); }} />
       <Archive d={d} months={pastMonths} />
       {editing && <BudgetEditor d={d} line={editing} onClose={() => setEditing(null)} />}
     </>

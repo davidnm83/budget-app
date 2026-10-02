@@ -15,7 +15,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Columns } from '@/components/Columns';
 import { TopBar } from '@/components/TopBar';
-import { CardShell, DEFAULT_HOME, Mini, Widget, WidgetPicker } from '@/components/Widgets';
+import { CardShell, DEFAULT_HOME, Mini, Widget } from '@/components/Widgets';
 import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { Bar } from '@/components/ui';
 import { WidgetBoard } from '@/components/WidgetBoard';

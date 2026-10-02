@@ -21,6 +21,7 @@ import { costPerKm, loadGigSettings, loadShifts } from '@/lib/gig';
 import { loadAccounts, loadEntries, loadRecurring, today } from '@/lib/plan';
 import { savePrefs } from '@/lib/prefs';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from '@/lib/reports';
+import { RISE } from '@/lib/motion';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
 import { loadWatch, type Watched } from '@/lib/watch';
@@ -71,7 +72,7 @@ export const DEFAULT_BUDGET: string[] = [];
 export function CardShell({ t, title, link, onPress, children, after }: { t: Theme; title: string; link?: string; onPress?: () => void; children: ReactNode; after?: ReactNode }) {
   return (
     <>
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, LIFT, { backgroundColor: t.card, borderColor: t.line, opacity: pressed && onPress ? 0.85 : 1 }]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, LIFT, RISE, { backgroundColor: t.card, borderColor: t.line, opacity: pressed && onPress ? 0.85 : 1 }]}>
       <View style={styles.between}>
         <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title.toUpperCase()}</Text>
         {link && <Text style={{ color: t.accent, fontSize: 12 }}>{link} ›</Text>}
@@ -93,12 +94,13 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): { data: T | nul
 }
 
 /** One of the self-loading widgets by key (the four Home cards are drawn by Home itself). */
-export function Widget({ k: entry, refresh = 0 }: { k: string; refresh?: number }) {
+/** `anchor`: the month the page is showing; widgets that can follow it do (charts, bills calendar, spending by group). */
+export function Widget({ k: entry, refresh = 0, anchor }: { k: string; refresh?: number; anchor?: Month }) {
   const t = useTheme();
   const [k, cfg] = parseEntry(entry);
   switch (k) {
-    case 'spend': return <ChartWidget t={t} refresh={refresh} cfg={{ source: 'spending', ...cfg }} />; // the older name for a spending chart
-    case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} />;
+    case 'spend': return <ChartWidget t={t} refresh={refresh} cfg={{ source: 'spending', ...cfg }} anchor={anchor} />; // the older name for a spending chart
+    case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} anchor={anchor} />;
     case 'account': return <AccountWidget t={t} refresh={refresh} cfg={cfg} />;
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
@@ -106,9 +108,9 @@ export function Widget({ k: entry, refresh = 0 }: { k: string; refresh?: number 
     case 'watch': return <WatchMini t={t} refresh={refresh} />;
     case 'credit': return <CreditMini t={t} refresh={refresh} />;
     case 'gig': return <GigWeek t={t} refresh={refresh} />;
-    case 'calendar': return <BillsCalendar t={t} refresh={refresh} />;
+    case 'calendar': return <BillsCalendar t={t} refresh={refresh} anchor={anchor} />;
     case 'nwtypes': return <NetWorthByType t={t} refresh={refresh} />;
-    case 'groups': return <SpendingByGroup t={t} refresh={refresh} />;
+    case 'groups': return <SpendingByGroup t={t} refresh={refresh} anchor={anchor} />;
     default: return null;
   }
 }
@@ -116,13 +118,13 @@ export function Widget({ k: entry, refresh = 0 }: { k: string; refresh?: number 
 const HEIGHTS = { s: 96, m: 150, l: 230 } as const;
 
 /** Any chart widget: a source of data drawn as bars, a line, a pie, a ranked list, a table or plain numbers. */
-function ChartWidget({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: WidgetCfg }) {
+function ChartWidget({ t, refresh, cfg, anchor }: { t: Theme; refresh: number; cfg: WidgetCfg; anchor?: Month }) {
   const [showTxns, txnSheet] = useTxnSheet();
   const source: Source = cfg.source ?? 'spending';
   const allowed = SOURCES[source].views;
   const want: ChartView = cfg.view ?? cfg.chart ?? allowed[0];
   const view = allowed.includes(want) ? want : allowed[0];
-  const { data, error } = useLoad(() => loadChart(cfg), [refresh, JSON.stringify(cfg)]);
+  const { data, error } = useLoad(() => loadChart(cfg, anchor), [refresh, JSON.stringify(cfg), anchor]);
   const title = cfg.title || cfg.group || SOURCES[source].title;
   if (!data) return <CardShell t={t} title={title}>{error ? <Text style={{ color: t.danger }}>{error}</Text> : <Skeleton color={t.track} />}</CardShell>;
   const h = HEIGHTS[cfg.h ?? 'm'];
@@ -341,14 +343,14 @@ function GigWeek({ t, refresh }: { t: Theme; refresh: number }) {
   );
 }
 
-function BillsCalendar({ t, refresh }: { t: Theme; refresh: number }) {
-  const month: Month = thisMonth();
+function BillsCalendar({ t, refresh, anchor }: { t: Theme; refresh: number; anchor?: Month }) {
+  const month: Month = anchor ?? thisMonth();
   const end = monthEnd(month);
   const [showTxns, txnSheet] = useTxnSheet();
   const { data } = useLoad(async () => {
     const [rec, ent] = await Promise.all([loadRecurring(), loadEntries(addDays(month, -31), addDays(end, 31))]);
     return expandPlan(rec, ent, month, end).filter((p) => !p.transfer);
-  }, [refresh]);
+  }, [refresh, month]);
   const now = today();
   const first = new Date(month + 'T00:00:00Z');
   const lead = (first.getUTCDay() + 6) % 7; // Monday first
@@ -408,9 +410,9 @@ function NetWorthByType({ t, refresh }: { t: Theme; refresh: number }) {
   );
 }
 
-function SpendingByGroup({ t, refresh }: { t: Theme; refresh: number }) {
+function SpendingByGroup({ t, refresh, anchor }: { t: Theme; refresh: number; anchor?: Month }) {
   const [showTxns, txnSheet] = useTxnSheet();
-  const cur = thisMonth(), last = addMonths(cur, -1);
+  const cur = anchor ?? thisMonth(), last = addMonths(cur, -1);
   const { data } = useLoad(async () => {
     const [cats, rows] = await Promise.all([loadCategories(), loadCategoryMonths(last, cur)]);
     const m = new Map<string, { now: number; prev: number }>();
@@ -421,12 +423,12 @@ function SpendingByGroup({ t, refresh }: { t: Theme; refresh: number }) {
       if (r.month === cur) e.now -= r.total; else e.prev -= r.total;
     }
     return [...m.entries()].map(([group, v]) => ({ group, ...v })).filter((x) => x.now > 0.5 || x.prev > 0.5).sort((a, b) => b.now - a.now);
-  }, [refresh]);
+  }, [refresh, cur]);
   const max = Math.max(1, ...(data ?? []).flatMap((g) => [g.now, g.prev]));
   return (
-    <CardShell t={t} after={txnSheet} title="Spending by group" link="Reports" onPress={() => router.push('/reports')}>
+    <CardShell t={t} after={txnSheet} title={anchor && anchor !== thisMonth() ? `Spending by group · ${monthShort(cur)}` : 'Spending by group'} link="Reports" onPress={() => router.push('/reports')}>
       {!data ? <Skeleton color={t.track} /> : data.slice(0, 10).map((g) => (
-        <Pressable key={g.group} style={{ gap: 3 }} onPress={() => showTxns({ title: `${g.group} · this month`, from: cur, to: monthEnd(cur), group: g.group, kind: 'expense' })}>
+        <Pressable key={g.group} style={{ gap: 3 }} onPress={() => showTxns({ title: `${g.group} · ${monthShort(cur)}`, from: cur, to: monthEnd(cur), group: g.group, kind: 'expense' })}>
           <View style={styles.between}>
             <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{g.group}</Text>
             <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{money0(g.now)} <Text style={{ color: t.muted }}>· last {money0(g.prev)}</Text></Text>
@@ -435,86 +437,6 @@ function SpendingByGroup({ t, refresh }: { t: Theme; refresh: number }) {
         </Pressable>
       ))}
     </CardShell>
-  );
-}
-
-const HOME_ONLY = ['review', 'week', 'budget', 'networth'];
-
-/**
- * Choose which widgets a screen shows and their order. Home and Budget save to your prefs; a
- * Reports tab or a page passes `save` (and a name field as `header`, plus `onDelete`).
- * Widgets with settings ("Category spending", "Account") can be added more than once.
- */
-export function WidgetPicker({ place, current, onClose, onSaved, save: saveFn, title, header, onDelete, deleteLabel = 'Delete tab' }: {
-  place: 'home' | 'budget' | 'report'; current: string[]; onClose: () => void; onSaved: (keys: string[]) => void;
-  save?: (keys: string[]) => Promise<void>; title?: string; header?: ReactNode; onDelete?: () => void; deleteLabel?: string;
-}) {
-  const t = useTheme();
-  const avail = place === 'report' ? WIDGETS.filter((w) => !HOME_ONLY.includes(w.key)) : WIDGETS.filter((w) => w[place]);
-  const def = (e: string) => avail.find((w) => w.key === keyOf(e));
-  // One list in a fixed order; a switch only changes whether a row is on, never where it sits.
-  const [order, setOrder] = useState<string[]>(() => { const cur = current.filter((e) => def(e)); return [...cur, ...avail.filter((w) => !w.config).map((w) => w.key).filter((k) => !cur.includes(k))]; });
-  const [active, setActive] = useState<Set<string>>(() => new Set(current.filter((e) => def(e))));
-  const on = order.filter((k) => active.has(k));
-  const [error, setError] = useState('');
-  const [editing, setEditing] = useState<{ index: number | null; key: string; cfg: WidgetCfg } | null>(null);
-  const move = (k: string, d: -1 | 1) => setOrder((list) => {
-    const i = list.indexOf(k), j = i + d;
-    if (i < 0 || j < 0 || j >= list.length) return list;
-    const next = [...list]; [next[i], next[j]] = [next[j], next[i]]; return next;
-  });
-  const save = async () => {
-    try {
-      if (saveFn) await saveFn(on);
-      else await savePrefs(place === 'home' ? { home_widgets: on } : { budget_widgets: on });
-      onSaved(on); onClose();
-    }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-  };
-  const label = entryLabel;
-  return (
-    <Sheet title={title ?? (place === 'home' ? 'Overview widgets' : 'Budget widgets')} onClose={onClose}
-      footer={<View style={{ flexDirection: 'row', gap: 8 }}>
-        {onDelete ? <Button title={deleteLabel} kind="danger" onPress={onDelete} /> : null}
-        <Button title="Save" onPress={save} style={{ flex: 1 }} />
-      </View>}>
-      {header}
-      <Text style={{ color: t.muted, fontSize: 13 }}>Turn widgets on or off; arrows change the order (rows that are off are skipped).{place === 'budget' ? ' They show below your budget, above past months.' : ''}</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-        {avail.filter((w) => w.config).map((w) => (
-          <Button key={w.key} kind="plain" title={`+ ${w.title}`} onPress={() => setEditing({ index: null, key: w.key, cfg: w.config === 'chart' ? { months: 6, source: 'spending', view: 'bars' } : {} })} />
-        ))}
-      </View>
-      {order.map((k) => {
-        const w = def(k)!; const isOn = active.has(k);
-        return (
-          <View key={k} style={[styles.pick, { borderColor: t.line, backgroundColor: t.card }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: isOn ? t.text : t.muted, fontWeight: '600' }}>{label(k)}</Text>
-              <Text style={{ color: t.muted, fontSize: 12 }}>{w.about}</Text>
-            </View>
-            {isOn && (
-              <>
-                {w.config && <Pressable onPress={() => setEditing({ index: order.indexOf(k), key: w.key, cfg: parseEntry(k)[0] === 'spend' ? { source: 'spending', ...parseEntry(k)[1] } : parseEntry(k)[1] })} hitSlop={6} accessibilityLabel={`Set up ${w.title}`}><Ionicons name="settings-outline" size={19} color={t.accent} /></Pressable>}
-                <Pressable onPress={() => move(k, -1)} hitSlop={6} accessibilityLabel={`Move ${w.title} up`}><Ionicons name="chevron-up" size={20} color={t.accent} /></Pressable>
-                <Pressable onPress={() => move(k, 1)} hitSlop={6} accessibilityLabel={`Move ${w.title} down`}><Ionicons name="chevron-down" size={20} color={t.accent} /></Pressable>
-              </>
-            )}
-            <Switch value={isOn} onValueChange={(v) => setActive((set) => { const n = new Set(set); if (v) n.add(k); else n.delete(k); return n; })} />
-          </View>
-        );
-      })}
-      {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-      {editing && (
-        <WidgetSettings kind={editing.key as 'chart' | 'account'} cfg={editing.cfg} onClose={() => setEditing(null)}
-          onDone={(cfg) => {
-            const e = makeEntry(editing.key === 'spend' ? 'chart' : editing.key, cfg); const old = editing.index == null ? null : order[editing.index];
-            setOrder((list) => (old == null ? [e, ...list] : list.map((x) => (x === old ? e : x))));
-            setActive((set) => { const n = new Set(set); if (old) n.delete(old); n.add(e); return n; });
-            setEditing(null);
-          }} />
-      )}
-    </Sheet>
   );
 }
 
