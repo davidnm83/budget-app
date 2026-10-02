@@ -1,7 +1,8 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { installPullRefresh } from '@/lib/pullRefresh';
 import { installShortcuts } from '@/lib/shortcuts';
-import { PullIndicator, Toaster } from '@/components/Overlays';
+import { OfflinePill, PullIndicator, Toaster } from '@/components/Overlays';
+import { registerServiceWorker } from '@/lib/sw';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { Platform, View } from 'react-native';
@@ -45,6 +46,7 @@ function RootStack() {
     {!!session && <PullIndicator />}
     {!!session && <Panels />}
     {cover}
+    {!!session && <OfflinePill />}
     <Toaster />
     </View>
   );
@@ -78,6 +80,7 @@ function useNoAutofill() {
     const obs = new MutationObserver((list) => list.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) { fix(n as Element); mark(n as Element); } })));
     obs.observe(document.body, { childList: true, subtree: true });
     const stopPull = installPullRefresh(), stopKeys = installShortcuts();
+    registerServiceWorker();
     return () => { obs.disconnect(); css.remove(); stopPull(); stopKeys(); };
   }, []);
 }
