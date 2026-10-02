@@ -1,6 +1,7 @@
 // Budget tab (BUD-1, 2, 4, 5, 6): this month's budget, past months in a collapsed archive by year,
 // comparisons with other months or years, and a year view of budget vs actual by month.
 import { PAGE_MAX } from '@/lib/layout';
+import { Tile } from '@/components/Tile';
 import {
   actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
   categoryIcon, gigFuelByMonth, groupIcon, shortDate, suggestBudget, todayIn, type BudgetLine, type Month,
@@ -312,7 +313,7 @@ function Line({ t, icon, label, actual, available, pace, bold, income, carry }: 
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Text style={styles.icon}>{icon}</Text>
         <Text style={{ flex: 1, color: t.text, fontWeight: bold ? '700' : '400', fontSize: bold ? 15 : 14 }} numberOfLines={1}>
-          {label}{carry ? <Text style={{ color: t.muted, fontSize: 11 }}>{`  ${carry > 0 ? '+' : '−'}${money0(Math.abs(carry))} rolled over`}</Text> : null}
+          {label}{carry ? <Text style={{ color: t.muted, fontSize: 12 }}>{`  ${carry > 0 ? '+' : '−'}${money0(Math.abs(carry))} rolled over`}</Text> : null}
         </Text>
         <Text style={{ color: over ? t.danger : t.text, fontWeight: bold || over ? '700' : '500', fontSize: 13, fontVariant: ['tabular-nums'] }}>
           {money0(actual)}<Text style={{ color: t.muted, fontWeight: '400' }}>{` / ${money0(available)}`}</Text>
@@ -332,7 +333,7 @@ function Line({ t, icon, label, actual, available, pace, bold, income, carry }: 
 function SectionHead({ t, title, open, onToggle }: { t: Theme; title: string; open: boolean; onToggle: () => void }) {
   return (
     <View style={[styles.between, { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 6 }]}>
-      <Text style={{ color: t.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.5 }}>{title}</Text>
+      <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title}</Text>
       <Pressable onPress={onToggle} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
         accessibilityLabel={open ? `Collapse all ${title.toLowerCase()}` : `Expand all ${title.toLowerCase()}`}>
         <Ionicons name={open ? 'contract-outline' : 'expand-outline'} size={14} color={t.accent} />
@@ -378,16 +379,6 @@ function TotalRow({ t, label, actual, available, pace, income }: { t: Theme; lab
   );
 }
 
-function Tile({ t, label, value, sub, warn, color }: { t: Theme; label: string; value: string; sub?: string; warn?: boolean; color?: string }) {
-  const c = color ?? (warn ? t.danger : undefined);
-  return (
-    <View style={[styles.tile, { backgroundColor: c ? c + '14' : t.card, borderColor: c ?? t.line }, c && { borderLeftWidth: 3 }]}>
-      <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{label.toUpperCase()}</Text>
-      <Text style={{ color: c ?? t.text, fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{value}</Text>
-      {!!sub && <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{sub}</Text>}
-    </View>
-  );
-}
 
 /** The month's transactions for a budget line, listed right in its pop-up. */
 function MonthTxns({ d, line, reload, onOpen, onAll }: { d: Data; line: BudgetLine; reload: number; onOpen: (id: string) => void; onAll: () => void }) {
@@ -664,7 +655,7 @@ function YearView(d: Data) {
                       <Pressable key={i} style={styles.yCellBox} disabled={!v}
                         onPress={() => drill(d, l.key.startsWith('g:') ? { categoryId: null, groupName: l.label, label: l.label } : { categoryId: l.key.slice(2), groupName: null, label: l.label }, months[i], monthEnd(months[i]))}>
                         <Text style={{ color: over ? t.danger : v ? t.text : t.muted, textAlign: 'right', fontSize: 13 }}>{v ? money0(v) : '–'}</Text>
-                        {b !== undefined && <Text style={{ color: t.muted, textAlign: 'right', fontSize: 11 }}>{over ? '! ' : ''}of {money0(b)}</Text>}
+                        {b !== undefined && <Text style={{ color: t.muted, textAlign: 'right', fontSize: 12 }}>{over ? '! ' : ''}of {money0(b)}</Text>}
                       </Pressable>
                     );
                   })}
@@ -681,15 +672,15 @@ function YearView(d: Data) {
 
 const styles = StyleSheet.create({
   page: { paddingHorizontal: 12, paddingTop: 4, gap: 8, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { flexGrow: 1, flexBasis: '22%', minWidth: 78, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
   groupRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth },
   lineRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 30, paddingRight: 12, paddingVertical: 7 },
   icon: { width: 22, fontSize: 16, textAlign: 'center' },
   txn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, borderBottomWidth: StyleSheet.hairlineWidth },
   total: { gap: 6, paddingHorizontal: 12, paddingVertical: 10, borderLeftWidth: 4, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'transparent' },
-  cardHead: { fontSize: 11, fontWeight: '600', letterSpacing: 0.5, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4 },
-  h: { fontSize: 13, fontWeight: '600', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  cardHead: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 4 },
+  h: { fontSize: 12, fontWeight: '700', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   unb: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },

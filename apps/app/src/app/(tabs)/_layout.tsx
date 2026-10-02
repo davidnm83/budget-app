@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MenuButton } from '@/components/Menu';
 import { PAGE_MAX, useWide } from '@/lib/layout';
+import { useSidebar } from '@/lib/sidebar';
 import { useTheme } from '@/lib/theme';
 
 // No headers: each tab starts with its own TopBar (menu button + its controls).
@@ -11,8 +12,9 @@ import { useTheme } from '@/lib/theme';
 export default function TabLayout() {
   const t = useTheme();
   const wide = useWide();
+  const sidebar = useSidebar();
   return (
-    <Tabs tabBar={wide ? (p: any) => <WideBar {...p} /> : undefined}
+    <Tabs tabBar={wide ? (p: any) => (sidebar ? null : <WideBar {...p} />) : undefined}
       screenOptions={{ headerShown: false, tabBarActiveTintColor: t.accent, sceneStyle: { backgroundColor: t.bg }, tabBarPosition: wide ? 'top' : 'bottom', tabBarStyle: { backgroundColor: t.card } }}>
       <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }} />
       <Tabs.Screen name="transactions" options={{ title: 'Transactions', tabBarIcon: ({ color, size }) => <Ionicons name="list" color={color} size={size} /> }} />

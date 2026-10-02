@@ -33,7 +33,7 @@ export function Sheet({ title, onClose, children, footer, scroll = true }: { tit
 
 export const Field = ({ t, label, children, hint }: { t: Theme; label: string; children: React.ReactNode; hint?: string }) => (
   <View style={{ gap: 6 }}>
-    <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>
+    <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>
     {children}
     {hint ? <Text style={{ color: t.muted, fontSize: 12 }}>{hint}</Text> : null}
   </View>

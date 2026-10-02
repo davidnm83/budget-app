@@ -108,7 +108,7 @@ export default function Credit() {
 
       {utilTrend.length > 1 && (
         <Card style={{ gap: 6 }}>
-          <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', letterSpacing: 0.5 }}>UTILISATION AT MONTH END</Text>
+          <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>UTILISATION AT MONTH END</Text>
           <View style={styles.utilChart}>
             {utilTrend.map((p) => (
               <Pressable key={p.date} style={{ flex: 1, alignItems: 'center', gap: 2 }}
@@ -121,7 +121,7 @@ export default function Credit() {
               </Pressable>
             ))}
           </View>
-          <Text style={{ color: t.muted, fontSize: 11 }}>Under 30% is generally better for your credit score. Uses today’s limits. Tap a month for its card transactions.</Text>
+          <Text style={{ color: t.muted, fontSize: 12 }}>Under 30% is generally better for your credit score. Uses today’s limits. Tap a month for its card transactions.</Text>
         </Card>
       )}
       {txnSheet}
@@ -132,7 +132,7 @@ export default function Credit() {
 
 const styles = StyleSheet.create({
   page: { padding: 12, gap: 10, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   card: { gap: 5, paddingHorizontal: 12, paddingVertical: 10 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   utilChart: { height: 110, flexDirection: 'row', gap: 3 },

@@ -66,9 +66,10 @@ export default function Settings() {
       </Card>
       {!!msg && <Text style={{ color: t.muted, marginTop: 12 }}>{msg}</Text>}
 
-      <Text style={[styles.h, { color: t.text }]}>Move over from Fina</Text>
+      <Text style={[styles.h, { color: t.text }]}>Import</Text>
       <Card style={{ gap: 12 }}>
-        <Text style={{ color: t.muted }}>Bring in your Fina history with its categories, notes and splits. Safe to run again with a newer export.</Text>
+        <Text style={{ color: t.muted }}>Bring in transactions from a bank’s CSV file, or your Fina history with its categories, notes and splits. Both are safe to run again.</Text>
+        <Button title="Import a CSV file" kind="plain" onPress={() => router.push('/import')} />
         <Button title="Import history from Fina" kind="plain" onPress={() => router.push('/fina-import')} />
       </Card>
 

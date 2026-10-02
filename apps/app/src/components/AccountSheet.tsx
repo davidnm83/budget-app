@@ -6,6 +6,8 @@
 //   • Transactions — the latest 100.
 // The overview is built from small blocks so they can be reused on custom pages later.
 import Ionicons from '@expo/vector-icons/Ionicons';
+export { Tile } from '@/components/Tile';
+import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
   accountIcon, addDays, balanceHistory, cardCycle, cardStatus, expandPlan, formatMoney, loanSummary, monthEnd, monthName,
@@ -89,7 +91,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
         {tab === 'overview' && (
           <ScrollView contentContainerStyle={styles.page}>
             <View>
-              <Text style={{ color: t.muted, fontSize: 11 }}>{account.type === 'credit' || account.type === 'loan' ? 'OWING' : 'BALANCE'}</Text>
+              <Text style={{ color: t.muted, fontSize: 12 }}>{account.type === 'credit' || account.type === 'loan' ? 'OWING' : 'BALANCE'}</Text>
               <Text style={{ color: t.text, fontSize: 28, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
                 {account.current_balance == null ? '—' : formatMoney(Math.abs(signedBalance(account)))}
               </Text>
@@ -134,19 +136,10 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
 }
 
 // ───────────────────────── overview blocks ─────────────────────────
-export function Tile({ t, label, value, sub, warn }: { t: Theme; label: string; value: string; sub?: string; warn?: boolean }) {
-  return (
-    <View style={[styles.tile, { backgroundColor: t.card, borderColor: warn ? t.danger : t.line }]}>
-      <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{label.toUpperCase()}</Text>
-      <Text style={{ color: warn ? t.danger : t.text, fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{value}</Text>
-      {!!sub && <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={2}>{sub}</Text>}
-    </View>
-  );
-}
 
 const Section = ({ t, title, children }: { t: Theme; title: string; children: React.ReactNode }) => (
   <View style={{ gap: 6 }}>
-    <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', letterSpacing: 0.5 }}>{title.toUpperCase()}</Text>
+    <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title.toUpperCase()}</Text>
     {children}
   </View>
 );
@@ -175,7 +168,7 @@ export function LoanBlock({ t, a, txns }: { t: Theme; a: Account; txns: Txn[] })
             <Tile t={t} label="Principal / month" value={money0(s.perMonth.principal)} />
           </View>
         )}
-        <Text style={{ color: t.muted, fontSize: 11 }}>Averages of the last 2 months. Months left = −ln(1 − rB/P) ÷ ln(1 + r), with B owed, P payment, r monthly interest ÷ balance.</Text>
+        <Text style={{ color: t.muted, fontSize: 12 }}>Averages of the last 2 months. Months left = −ln(1 − rB/P) ÷ ln(1 + r), with B owed, P payment, r monthly interest ÷ balance.</Text>
       </Section>
       <Section t={t} title={`To date${s.since ? ` (since ${shortDate(s.since)} ${s.since.slice(0, 4)})` : ''}`}>
         <View style={styles.tiles}>
@@ -205,7 +198,7 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
               <Text style={{ color: t.muted, fontSize: 12 }}>{money0(owed)} of {money0(a.credit_limit!)} · {money0(a.credit_limit! - owed)} available</Text>
             </View>
             <Bar value={owed} max={a.credit_limit!} color={u > 0.7 ? t.danger : u > 0.3 ? t.series2 : t.accent} />
-            <Text style={{ color: t.muted, fontSize: 11 }}>Under 30% is generally better for your credit score.</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }}>Under 30% is generally better for your credit score.</Text>
           </>
         )}
       </Section>
@@ -227,7 +220,7 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
                   : `Nothing owing from the last statement, so no interest so far this cycle.`}
               </Text>
             ) : <Pressable onPress={onSetUp}><Text style={{ color: t.accent, fontSize: 13 }}>Add the interest rate in Details for an interest estimate.</Text></Pressable>}
-            <Text style={{ color: t.muted, fontSize: 11 }}>Estimate: daily interest on what's left plus about half of this cycle's spending, for one cycle. Your statement is the final word.</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }}>Estimate: daily interest on what's left plus about half of this cycle's spending, for one cycle. Your statement is the final word.</Text>
           </>
         )}
       </Section>
@@ -460,7 +453,7 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
 
 const Field = ({ t, label, children }: { t: Theme; label: string; children: React.ReactNode }) => (
   <View style={{ gap: 6 }}>
-    <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>
+    <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>
     {children}
   </View>
 );
@@ -486,7 +479,7 @@ export function BalanceChart({ t, points, title = 'BALANCE, PAST YEAR', onPick }
   return (
     <View style={{ gap: 4 }}>
       <View style={styles.between}>
-        <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', letterSpacing: 0.5 }}>{title}</Text>
+        <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title}</Text>
         <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>{shortDate(shown.date)} {shown.date.slice(0, 4)} · {formatMoney(shown.balance)}</Text>
       </View>
       <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -500,11 +493,11 @@ export function BalanceChart({ t, points, title = 'BALANCE, PAST YEAR', onPick }
           ))}
         </View>
         <View style={{ justifyContent: 'space-between' }}>
-          <Text style={{ color: t.muted, fontSize: 11 }}>{money0(hi)}</Text>
-          <Text style={{ color: t.muted, fontSize: 11 }}>{money0(lo)}</Text>
+          <Text style={{ color: t.muted, fontSize: 12 }}>{money0(hi)}</Text>
+          <Text style={{ color: t.muted, fontSize: 12 }}>{money0(lo)}</Text>
         </View>
       </View>
-      {onPick && <Text style={{ color: t.muted, fontSize: 11 }}>Tap a bar for that week’s transactions.</Text>}
+      {onPick && <Text style={{ color: t.muted, fontSize: 12 }}>Tap a bar for that week’s transactions.</Text>}
     </View>
   );
 }
@@ -516,7 +509,7 @@ const styles = StyleSheet.create({
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { flexGrow: 1, flexBasis: '30%', minWidth: 90, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
   chart: { flex: 1, height: 100, flexDirection: 'row', alignItems: 'flex-end', borderBottomWidth: 1 },
   txn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },

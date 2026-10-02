@@ -1,10 +1,11 @@
 // Planner tab (PLN): Monday-to-Sunday week of planned bills, income and one-offs against what
 // actually posted, with a running balance and a warning before an account dips below its buffer.
 import { PAGE_MAX } from '@/lib/layout';
+import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { addDays, formatMoney, shortDate, weekStart as mondayOf, type WeekRow } from '@budget-app/core';
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PlanEntryForm } from '@/components/Forms';
 import { IconButton, TopBar } from '@/components/TopBar';
@@ -25,6 +26,9 @@ export default function Planner() {
   const [error, setError] = useState('');
   const [form, setForm] = useState<any | null>(null);
   const [view, setView] = useState<'week' | 'bills'>('week');
+  // Links elsewhere (the bills calendar) open straight on Bills & income.
+  const params = useLocalSearchParams<{ view?: string }>();
+  useEffect(() => { if (params.view === 'bills') { setView('bills'); router.setParams({ view: undefined } as any); } }, [params.view]);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -60,7 +64,7 @@ export default function Planner() {
         <Pressable onPress={() => setWeek(addDays(week, -7))} hitSlop={10} accessibilityLabel="Previous week"><Ionicons name="chevron-back" size={22} color={t.accent} /></Pressable>
         <Pressable onPress={() => setWeek(thisWeek)} style={{ flex: 1, alignItems: 'center' }}>
           <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{label}</Text>
-          <Text style={{ color: t.muted, fontSize: 11 }}>{week === thisWeek ? 'This week' : week < thisWeek ? 'Past week · tap for this week' : 'Ahead · tap for this week'}</Text>
+          <Text style={{ color: t.muted, fontSize: 12 }}>{week === thisWeek ? 'This week' : week < thisWeek ? 'Past week · tap for this week' : 'Ahead · tap for this week'}</Text>
         </Pressable>
         <Pressable onPress={() => setWeek(addDays(week, 7))} hitSlop={10} accessibilityLabel="Next week"><Ionicons name="chevron-forward" size={22} color={t.accent} /></Pressable>
         <IconButton icon="add" label="Plan an entry" onPress={() => setForm({ date: week > now ? week : now, description: '', amount: null, account_id: planAccounts[0]?.id ?? null })} />
@@ -153,32 +157,23 @@ function Row({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string
       <Ionicons name={icon} size={17} color={color} />
       <View style={{ flex: 1 }}>
         <Text style={{ color: t.text, fontSize: 14, fontStyle: r.kind === 'actual' ? 'italic' : 'normal' }} numberOfLines={1}>{r.description}</Text>
-        <Text style={{ color: r.overdue ? t.danger : t.muted, fontSize: 11 }} numberOfLines={1}>
+        <Text style={{ color: r.overdue ? t.danger : t.muted, fontSize: 12 }} numberOfLines={1}>
           {r.kind === 'actual' ? 'unplanned' : matched ? `planned ${formatMoney(r.planned!)}` : r.overdue ? 'not posted yet' : 'planned'}{account ? ` · ${account}` : ''}
         </Text>
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={{ color: r.counted > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'], fontWeight: matched || r.kind === 'actual' ? '600' : '400' }}>{formatMoney(r.counted)}</Text>
-        <Text style={{ color: r.balanceAfter < 0 ? t.danger : t.muted, fontSize: 11, fontVariant: ['tabular-nums'] }}>{formatMoney(r.balanceAfter)}</Text>
+        <Text style={{ color: r.balanceAfter < 0 ? t.danger : t.muted, fontSize: 12, fontVariant: ['tabular-nums'] }}>{formatMoney(r.balanceAfter)}</Text>
       </View>
     </Pressable>
   );
 }
 
-function Tile({ t, label, value, strong, warn, sub }: { t: Theme; label: string; value: string; strong?: boolean; warn?: boolean; sub?: string }) {
-  return (
-    <View style={[styles.tile, { backgroundColor: t.card, borderColor: warn ? t.danger : t.line }]}>
-      <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{label}</Text>
-      <Text style={{ color: warn ? t.danger : t.text, fontSize: strong ? 16 : 13, fontWeight: strong ? '700' : '600', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{value}</Text>
-      {!!sub && <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{sub}</Text>}
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   page: { padding: 12, gap: 10, paddingBottom: 40, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   ahead: { flexDirection: 'row', gap: 2, padding: 3, borderRadius: 10 },
   aheadCell: { flex: 1, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 5, alignItems: 'center' },
   tile: { flexGrow: 1, flexBasis: '22%', minWidth: 80, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },

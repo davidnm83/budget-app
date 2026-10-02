@@ -201,7 +201,7 @@ function BudgetCard({ t, b }: { t: Theme; b: HomeData['budget'] }) {
         <Bar value={b.spent} max={b.budgeted} color={b.spent > b.budgeted ? t.danger : diff > 0 ? t.series2 : t.accent} overColor={t.danger} />
         <View style={{ position: 'absolute', left: `${Math.min(1, b.pace) * 100}%`, top: -3, bottom: -3, width: 2, backgroundColor: t.text, opacity: 0.5 }} />
       </View>
-      <Text style={{ color: t.muted, fontSize: 11 }}>{Math.round(b.pace * 100)}% of the month gone · the tick shows where spending would be at an even pace</Text>
+      <Text style={{ color: t.muted, fontSize: 12 }}>{Math.round(b.pace * 100)}% of the month gone · the tick shows where spending would be at an even pace</Text>
       {b.ahead.length > 0 && (
         <View style={{ gap: 4 }}>
           {b.ahead.map((l) => (
@@ -237,6 +237,6 @@ const styles = StyleSheet.create({
   card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 12, gap: 8 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  tiles: { flexDirection: 'row', gap: 8 },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   customize: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12 },
 });

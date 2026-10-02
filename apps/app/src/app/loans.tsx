@@ -47,7 +47,7 @@ export default function Loans() {
       {loan && (
         <>
           <Pressable onPress={() => setOpen(loan)}>
-            <Text style={{ color: t.muted, fontSize: 11 }}>OWING · {loan.name}{loan.mask ? ` ••${loan.mask}` : ''}</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }}>OWING · {loan.name}{loan.mask ? ` ••${loan.mask}` : ''}</Text>
             <Text style={{ color: t.text, fontSize: 28, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{formatMoney(Math.abs(signedBalance(loan)))}</Text>
             <Text style={{ color: t.accent, fontSize: 12 }}>Account details and payment settings ›</Text>
           </Pressable>
@@ -73,7 +73,7 @@ function List({ t, title, rows }: { t: Theme; title: string; rows: { date: strin
   return (
     <Card style={{ padding: 0 }}>
       <View style={[styles.head, { borderColor: t.line }]}>
-        <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', letterSpacing: 0.5, flex: 1 }}>{title.toUpperCase()} · {rows.length}</Text>
+        <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, flex: 1 }}>{title.toUpperCase()} · {rows.length}</Text>
         <Text style={{ color: t.text, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{formatMoney(Math.abs(total))}</Text>
       </View>
       {(all ? sorted : sorted.slice(0, 8)).map((r, i) => (

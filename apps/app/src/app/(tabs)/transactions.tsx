@@ -396,7 +396,7 @@ function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total
 }
 
 const Label = ({ t, text }: { t: Theme; text: string }) => (
-  <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 }}>{text}</Text>
+  <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>{text}</Text>
 );
 
 const COLUMN = { width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' } as const;

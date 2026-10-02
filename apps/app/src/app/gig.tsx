@@ -3,6 +3,7 @@
 // the earnings, active time and orders; $/hour, $/active hour, % active, $/km, after gas.
 // Settings: gas (L/100 km × $/L), and when each app pays out, which feeds the planner.
 import { PAGE_MAX } from '@/lib/layout';
+import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   addDays, costPerKmFrom, formatDuration, monthEnd, formatMoney, fuelCostFor, GIG_PLATFORMS, partsOf, platformByKey, shiftStats, shortDate,
@@ -242,7 +243,7 @@ function Shifts({ t, shifts, cpk, onEdit, onSettings }: { t: Theme; shifts: Shif
               <Text style={[styles.mCell, { color: t.muted }]}>{a.deliveries ? `${a.deliveries} orders` : ''}</Text>
             </View>
           ))}
-          <Text style={{ color: t.muted, fontSize: 11, padding: 12, paddingTop: 6 }}>Per active hour counts only the time that app had you on an order.</Text>
+          <Text style={{ color: t.muted, fontSize: 12, padding: 12, paddingTop: 6 }}>Per active hour counts only the time that app had you on an order.</Text>
         </Card>
       )}
 
@@ -254,7 +255,7 @@ function Shifts({ t, shifts, cpk, onEdit, onSettings }: { t: Theme; shifts: Shif
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View>
               <View style={[styles.mRow, { borderColor: t.line }]}>
-                {MONTH_COLS.map((c) => <Text key={c.label} style={[styles.tCell, { width: c.w, color: t.muted, fontSize: 11 }, c.left && { textAlign: 'left' }]}>{c.label}</Text>)}
+                {MONTH_COLS.map((c) => <Text key={c.label} style={[styles.tCell, { width: c.w, color: t.muted, fontSize: 12 }, c.left && { textAlign: 'left' }]}>{c.label}</Text>)}
               </View>
               {months.slice(0, 24).map((m) => (
                 <View key={m.month} style={[styles.mRow, { borderColor: t.line }]}>
@@ -310,7 +311,7 @@ function ShiftLine({ t, s, cpk, onPress }: { t: Theme; s: ShiftRow; cpk: number 
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         <Text style={{ color: t.text, fontWeight: '600', fontVariant: ['tabular-nums'] }}>{formatMoney(st.earnings)}</Text>
-        {st.carCost != null && <Text style={{ color: t.muted, fontSize: 11 }}>{formatMoney(st.net)} after gas</Text>}
+        {st.carCost != null && <Text style={{ color: t.muted, fontSize: 12 }}>{formatMoney(st.net)} after gas</Text>}
       </View>
     </Pressable>
   );
@@ -547,15 +548,6 @@ function SettingsForm({ initial, rules, accounts, usedApps, suggestedCpk, gas90,
   );
 }
 
-function Tile({ t, label, value, sub, color }: { t: Theme; label: string; value: string; sub?: string; color?: string }) {
-  return (
-    <View style={[styles.tile, { backgroundColor: color ? color + '14' : t.card, borderColor: color ?? t.line }, color && { borderLeftWidth: 3 }]}>
-      <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{label.toUpperCase()}</Text>
-      <Text style={{ color: color ?? t.text, fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{value}</Text>
-      {!!sub && <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{sub}</Text>}
-    </View>
-  );
-}
 
 const monthLabel = (ym: string) => new Date(`${ym}-15T00:00:00Z`).toLocaleDateString('en-CA', { month: 'short', year: '2-digit', timeZone: 'UTC' });
 const PLATFORM_COLORS: Record<string, string> = { doordash: '#e5533d', uber: '#3987e5', instacart: '#43a047', skip: '#f29f05', lyft: '#d63fa3', 'naan-kabob': '#8e6bd6', other: '#8a8a84' };
@@ -563,7 +555,7 @@ const CHART_H = 150;
 
 const styles = StyleSheet.create({
   page: { padding: 12, gap: 10, paddingBottom: 96, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { flexGrow: 1, flexBasis: '30%', minWidth: 96, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
   h: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },

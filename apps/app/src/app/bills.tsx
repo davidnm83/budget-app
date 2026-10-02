@@ -1,6 +1,7 @@
 // Bills & income (BIL): this month's due dates, paid or upcoming, matched to transactions
 // automatically; the list of schedules; and suggestions spotted in your history.
 import { PAGE_MAX } from '@/lib/layout';
+import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   addDays, addMonths, daysBetween, detectRecurring, formatMoney, matchDues, monthEnd, monthName, monthOf, normalizeDescription,
@@ -185,7 +186,7 @@ function Section({ t, title, dues, now, accountName, onEdit }: {
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={{ color: t.text, fontVariant: ['tabular-nums'] }}>{formatMoney(d.txn ? d.txn.amount : d.bill.amount)}</Text>
                 {d.txn && Math.abs(d.txn.amount - d.bill.amount) >= 0.01 && (
-                  <Text style={{ color: t.muted, fontSize: 11 }}>expected {formatMoney(d.bill.amount)}</Text>
+                  <Text style={{ color: t.muted, fontSize: 12 }}>expected {formatMoney(d.bill.amount)}</Text>
                 )}
               </View>
             </Pressable>
@@ -196,19 +197,11 @@ function Section({ t, title, dues, now, accountName, onEdit }: {
   );
 }
 
-function Tile({ t, label, value, strong }: { t: Theme; label: string; value: string; strong?: boolean }) {
-  return (
-    <View style={[styles.tile, { backgroundColor: t.card, borderColor: t.line }]}>
-      <Text style={{ color: t.muted, fontSize: 11 }}>{label}</Text>
-      <Text style={{ color: t.text, fontSize: strong ? 18 : 15, fontWeight: strong ? '700' : '600', fontVariant: ['tabular-nums'] }}>{value}</Text>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   page: { padding: 16, gap: 10, paddingBottom: 96, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
-  h: { fontSize: 12, fontWeight: '600', marginTop: 6, letterSpacing: 0.5, textTransform: 'uppercase' },
-  tiles: { flexDirection: 'row', gap: 8 },
+  h: { fontSize: 12, fontWeight: '700', marginTop: 6, letterSpacing: 0.5, textTransform: 'uppercase' },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, padding: 10, gap: 2 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
   fab: { position: 'absolute', right: 20, bottom: 28, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },

@@ -63,12 +63,12 @@ export default function Accounts() {
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <TopBar>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: t.muted, fontSize: 11 }}>NET WORTH</Text>
+          <Text style={{ color: t.muted, fontSize: 12 }}>NET WORTH</Text>
           <Text style={{ color: assets + debts < 0 ? t.danger : t.text, fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{formatMoney(assets + debts)}</Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={{ color: t.muted, fontSize: 11 }}>Assets {formatMoney(assets)}</Text>
-          <Text style={{ color: t.muted, fontSize: 11 }}>Debts {formatMoney(-debts)}</Text>
+          <Text style={{ color: t.muted, fontSize: 12 }}>Assets {formatMoney(assets)}</Text>
+          <Text style={{ color: t.muted, fontSize: 12 }}>Debts {formatMoney(-debts)}</Text>
         </View>
         {syncing ? <View style={styles.spinner}><ActivityIndicator color={t.accent} /></View>
           : <IconButton icon="sync" label="Sync now" onPress={syncNow} />}
@@ -82,7 +82,7 @@ export default function Accounts() {
         ListEmptyComponent={<Empty text="No accounts yet. Link a bank in Settings, or import a CSV (menu)." />}
         renderSectionHeader={({ section }) => (
           <View style={styles.header}>
-            <Text style={{ color: t.muted, fontWeight: '600', fontSize: 12, letterSpacing: 0.5 }}>{section.title.toUpperCase()}</Text>
+            <Text style={{ color: t.muted, fontWeight: '700', fontSize: 12, letterSpacing: 0.5 }}>{section.title.toUpperCase()}</Text>
             <Text style={{ color: t.muted, fontSize: 12, fontVariant: ['tabular-nums'] }}>{formatMoney(section.total)}</Text>
           </View>
         )}

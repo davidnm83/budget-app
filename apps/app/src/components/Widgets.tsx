@@ -2,6 +2,8 @@
 // data, so a screen only pays for the widgets it shows. Which ones show, and in what order, is
 // kept per user (user_prefs) and changed with the WidgetPicker.
 import Ionicons from '@expo/vector-icons/Ionicons';
+export { Tile, Tile as Mini } from '@/components/Tile';
+import { Tile as Mini } from '@/components/Tile';
 import {
   addDays, addMonths, balanceHistory, categoryIcon, expandPlan, formatDuration, loanSummary, formatMoney, monthEnd, shortDate, totalShifts, weekStart, type Month,
 } from '@budget-app/core';
@@ -61,7 +63,7 @@ export function CardShell({ t, title, link, onPress, children, after }: { t: The
     <>
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { backgroundColor: t.card, borderColor: t.line, opacity: pressed && onPress ? 0.85 : 1 }]}>
       <View style={styles.between}>
-        <Text style={{ color: t.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.6 }}>{title.toUpperCase()}</Text>
+        <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title.toUpperCase()}</Text>
         {link && <Text style={{ color: t.accent, fontSize: 12 }}>{link} ›</Text>}
       </View>
       {children}
@@ -71,15 +73,6 @@ export function CardShell({ t, title, link, onPress, children, after }: { t: The
   );
 }
 
-export function Mini({ t, label, value, sub, color }: { t: Theme; label: string; value: string; sub?: string; color?: string }) {
-  return (
-    <View style={[styles.mini, { borderColor: color ?? t.line, backgroundColor: color ? color + '12' : 'transparent' }]}>
-      <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{label.toUpperCase()}</Text>
-      <Text style={{ color: color ?? t.text, fontSize: 18, fontWeight: '700', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{value}</Text>
-      {!!sub && <Text style={{ color: t.muted, fontSize: 10 }} numberOfLines={1}>{sub}</Text>}
-    </View>
-  );
-}
 
 /** Loads once per mount; shows a quiet placeholder while loading and the error if it fails. */
 function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): { data: T | null; error: string } {
@@ -158,7 +151,7 @@ function CategorySpend({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: Wi
               </Pressable>
             ))}
           </View>
-          <Text style={{ color: t.muted, fontSize: 11 }} numberOfLines={2}>{mine.map((c) => c.name).join(' · ')} · tap a month for its transactions</Text>
+          <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={2}>{mine.map((c) => c.name).join(' · ')} · tap a month for its transactions</Text>
         </>
       )}
     </CardShell>
@@ -233,7 +226,7 @@ function Runway({ t, refresh }: { t: Theme; refresh: number }) {
         <Text style={{ color, fontSize: 26, fontWeight: '700' }}>{runway == null ? '–' : runway < 1 ? '< 1' : Math.floor(runway)}</Text>
         <Text style={{ color: t.muted }}>days of cash at {money0(data.daily)}/day</Text>
       </View>
-      <Text style={{ color: t.muted, fontSize: 11 }}>{money0(data.cash)} in chequing and savings ÷ your average daily spending over the last 3 months. Income isn’t counted.</Text>
+      <Text style={{ color: t.muted, fontSize: 12 }}>{money0(data.cash)} in chequing and savings ÷ your average daily spending over the last 3 months. Income isn’t counted.</Text>
     </CardShell>
   );
 }
@@ -282,7 +275,7 @@ function WatchMini({ t, refresh }: { t: Theme; refresh: number }) {
           </Pressable>
         );
       })}
-      <Text style={{ color: t.muted, fontSize: 11 }}>This month so far → where it’s heading, vs the 3-month average.</Text>
+      <Text style={{ color: t.muted, fontSize: 12 }}>This month so far → where it’s heading, vs the 3-month average.</Text>
     </CardShell>
   );
 }
@@ -353,7 +346,7 @@ function BillsCalendar({ t, refresh }: { t: Theme; refresh: number }) {
   const out = (data ?? []).filter((p) => p.amount < 0).reduce((s, p) => s + p.amount, 0);
   const inn = (data ?? []).filter((p) => p.amount > 0).reduce((s, p) => s + p.amount, 0);
   return (
-    <CardShell t={t} after={txnSheet} title={`Bills · ${new Date(month + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'long', timeZone: 'UTC' })}`} link="Bills" onPress={() => router.push('/bills')}>
+    <CardShell t={t} after={txnSheet} title={`Bills · ${new Date(month + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'long', timeZone: 'UTC' })}`} link="Bills" onPress={() => router.navigate({ pathname: '/planner', params: { view: 'bills' } } as any)}>
       <View style={styles.calHead}>{['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <Text key={i} style={[styles.calCell, { color: t.muted, fontSize: 10 }]}>{d}</Text>)}</View>
       <View style={styles.calGrid}>
         {cells.map((d, i) => {
@@ -560,7 +553,7 @@ const styles = StyleSheet.create({
   card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 12, gap: 8 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  tiles: { flexDirection: 'row', gap: 8 },
+  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   mini: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
   bars: { height: 96, flexDirection: 'row', gap: 4 },
   calHead: { flexDirection: 'row' },
