@@ -9,6 +9,7 @@
 // the data unreadable to anyone looking through the device's storage; it does not lock the app
 // itself. Saved data is wiped on sign-out and dropped after KEEP_DAYS.
 import { useSyncExternalStore } from 'react';
+import { lockEnabled, lockKey } from './lock';
 
 const DB = 'budget-offline';
 const KEEP_DAYS = 30;       // saved answers older than this are deleted
@@ -65,6 +66,8 @@ async function store(name: 'kv' | 'res', mode: IDBTransactionMode = 'readonly') 
 
 let keyP: Promise<CryptoKey> | null = null;
 function key(): Promise<CryptoKey> {
+  // With the app lock on, the lock's key is used: no fingerprint or PIN, no reading the saved data.
+  if (lockEnabled()) return Promise.resolve().then(lockKey);
   return keyP ??= (async () => {
     const have = await done((await store('kv')).get('key'));
     if (have) return have as CryptoKey;
@@ -93,6 +96,11 @@ const get = async (id: string) => open(await done((await store('res')).get(id)) 
 export async function wipeOffline() {
   if (!can) return;
   lsSet('offline.lastOnline', null); lsSet('offline.uid', null); lsSet('offline.refreshed', null);
+  try { keyP = null; await done((await store('res', 'readwrite')).clear()); await done((await store('kv', 'readwrite')).clear()); } catch { /* nothing saved */ }
+}
+/** The saved answers were encrypted with a key that's no longer the one in use (the app lock was turned on or off): start again. */
+export async function resetOfflineStore() {
+  if (!can) return;
   try { keyP = null; await done((await store('res', 'readwrite')).clear()); await done((await store('kv', 'readwrite')).clear()); } catch { /* nothing saved */ }
 }
 /** Saved data belongs to one sign-in: a different user on this device starts from nothing. */

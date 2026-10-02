@@ -3,7 +3,7 @@
 // transactions are categorised the same way, and can apply it to unreviewed ones too (TXN-5).
 // Bank transactions keep the bank's original date and amount beside your changes (TXN-12).
 import { categoryIcon, formatMoney, normalizeDescription, parseMoney, round2, searchPattern, shortDate, toIsoDate } from '@budget-app/core';
-import { toast } from '@/lib/toast';
+import { deleteWithUndo, toast } from '@/lib/toast';
 import { merchantLogo, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { router } from 'expo-router';
@@ -129,6 +129,12 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     if (error) setError(error.message); else onDone();
   };
 
+  // Delete, with Undo in the message that follows. Splits go with it and come back with it.
+  const remove = async () => {
+    if (!txn) return;
+    const err = await deleteWithUndo('transactions', txn.id, 'Transaction deleted', { table: 'transaction_splits', key: 'transaction_id' });
+    if (err) setError(err); else onDone();
+  };
   const save = async () => {
     setBusy(true);
     setError('');
@@ -302,6 +308,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
 
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <Button title="Save and mark reviewed" onPress={save} busy={busy || !ready} style={{ marginTop: 16 }} />
+      <Button title="Delete transaction" kind="danger" onPress={remove} disabled={busy || !ready} />
+      {!!(txn as any)?.plaid_transaction_id && <Text style={{ color: t.muted, fontSize: 12 }}>This one came from your bank. Deleting it removes it here only; it stays gone unless the bank later changes it.</Text>}
       <SinglePicker visible={picking || pickFor != null} title="Category" onClose={() => { setPicking(false); setPickFor(null); }}
         selected={pickFor != null ? parts?.[pickFor]?.category_id ?? null : categoryId} suggested={shownSuggested}
         items={cats.map((c: any) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))}

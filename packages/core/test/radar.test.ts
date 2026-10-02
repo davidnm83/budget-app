@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { radarBills, radarBuffer, radarPace, radarUnusual, rankRadar, type BudgetLine, type WeekRow } from '../src/index.ts';
+import { radarBanks, radarBills, radarBuffer, radarCards, radarLimits, radarPace, radarRunway, radarUnusual, rankRadar, type BudgetLine, type WeekRow } from '../src/index.ts';
 
 const line = (o: Partial<BudgetLine>): BudgetLine => ({ key: 'c:1', label: 'Groceries', categoryId: '1', groupName: null, kind: 'expense', budgeted: 400, carryIn: 0, available: 400, actual: 0, left: 400, rollover: false, ...o });
 const row = (o: Partial<WeekRow> & { amount?: number; estimated?: boolean }): WeekRow => ({
@@ -49,6 +49,34 @@ describe('radar', () => {
     expect(radarUnusual(cats, new Map([['1', 260]]), usual, '2026-10-01', 12)[0].title).toContain('usually');
     expect(radarUnusual(cats, new Map([['1', 130]]), usual, '2026-10-01', 12)).toEqual([]);
     expect(radarUnusual(cats, new Map([['1', 260]]), [new Map([['1', 100]]), new Map(), new Map()], '2026-10-01', 12)).toEqual([]);
+  });
+
+  it('flags a card by share of its limit, and uses the widget\'s own threshold', () => {
+    const cards = [{ id: 'v', name: 'Visa', owed: 800, limit: 1000 }, { id: 'm', name: 'MC', owed: 100, limit: 1000 }, { id: 'n', name: 'No limit', owed: 500, limit: null }];
+    expect(radarCards(cards).map((c) => [c.id, c.severity])).toEqual([['card:v:8', 'heads']]);
+    expect(radarCards(cards, radarLimits({ cardPct: 90 }))).toEqual([]);
+    expect(radarCards([{ id: 'v', name: 'Visa', owed: 950, limit: 1000 }])[0].severity).toBe('act');
+  });
+
+  it('warns when cash covers few days, and never without a spending history', () => {
+    expect(radarRunway(500, 100, '2026-10-01')[0].severity).toBe('act');
+    expect(radarRunway(1000, 100, '2026-10-01')[0].severity).toBe('heads');
+    expect(radarRunway(5000, 100, '2026-10-01')).toEqual([]);
+    expect(radarRunway(10, 0, '2026-10-01')).toEqual([]);
+    expect(radarRunway(1000, 100, '2026-10-01', radarLimits({ runwayDays: 7 }))).toEqual([]);
+  });
+
+  it('reports only bank links that are not ok', () => {
+    const got = radarBanks([{ id: '1', name: 'Bank A', status: 'ok' }, { id: '2', name: 'Bank B', status: 'login_required' }, { id: '3', name: 'Bank C', status: 'error' }]);
+    expect(got.map((c) => c.id)).toEqual(['bank:2:login_required', 'bank:3:error']);
+  });
+
+  it('applies the unusual-spending settings', () => {
+    const cats = [{ id: '1', name: 'Shopping', kind: 'expense' }];
+    const usual = [new Map([['1', 100]]), new Map([['1', 100]]), new Map([['1', 100]])];
+    expect(radarUnusual(cats, new Map([['1', 160]]), usual, '2026-10-01', 5)).toHaveLength(1);
+    expect(radarUnusual(cats, new Map([['1', 160]]), usual, '2026-10-01', 5, radarLimits({ unusualPct: 100 }))).toEqual([]);
+    expect(radarUnusual(cats, new Map([['1', 160]]), usual, '2026-10-01', 5, radarLimits({ unusualMin: 80 }))).toEqual([]);
   });
 
   it('ranks by urgency then money, and drops dismissed cards', () => {

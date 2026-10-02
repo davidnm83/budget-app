@@ -13,6 +13,7 @@ import { COMMON_CURRENCIES, clearSampleData, loadSampleData, saveCurrency } from
 import { useConfirm } from '@/components/Confirm';
 import { toast } from '@/lib/toast';
 import { setPanel } from '@/lib/panels';
+import { LockSettings } from '@/components/LockSettings';
 import { canExport, exportEverything } from '@/lib/exportAll';
 import { accountIsEmpty, describeBackup, readBackup, restoreBackup, type Backup } from '@/lib/restore';
 import { pickJsonText } from '@/lib/pickFile';
@@ -199,6 +200,8 @@ export default function Settings() {
 
       <Text style={[styles.h, { color: t.text }]}>Planner</Text>
       <PlannerSettings />
+
+      <LockSettings />
 
       {Platform.OS === 'web' && (
         <>

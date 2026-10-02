@@ -5,6 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 export { Tile, Tile as Mini } from '@/components/Tile';
 import { Tile as Mini } from '@/components/Tile';
 import {
+  RADAR_CHECKS, RADAR_LIMITS, type RadarSettings,
   addDays, addMonths, balanceHistory, categoryIcon, expandPlan, loanSummary, formatMoney, monthEnd, shortDate, weekStart, type Month,
 } from '@budget-app/core';
 import { router } from 'expo-router';
@@ -45,7 +46,9 @@ export interface WidgetCfg extends ChartCfg { title?: string; chart?: Chart;
   /** Chart widgets: what to show and how. */
   view?: ChartView;
   /** Layout: width on wide screens, and chart height. */
-  w?: 'half' | 'full'; h?: 's' | 'm' | 'l' }
+  w?: 'half' | 'full'; h?: 's' | 'm' | 'l';
+  /** Radar: checks switched off and thresholds changed. */
+  radar?: RadarSettings }
 /** How a Category spending widget draws: monthly bars, a pie of the categories, or a ranked list. */
 export type Chart = 'bars' | 'pie' | 'list';
 /**
@@ -134,7 +137,7 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
     case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} anchor={anchor} range={range} />;
     case 'text': return <TextNote t={t} cfg={cfg} />;
     case 'tags': return <TagTotals t={t} refresh={refresh} h={cfg.h} />;
-    case 'radar': return <Radar t={t} refresh={refresh} />;
+    case 'radar': return <Radar t={t} refresh={refresh} settings={cfg.radar} />;
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
     case 'watch': return <WatchMini t={t} refresh={refresh} h={cfg.h} />;
@@ -212,10 +215,10 @@ const isCash = (a: Account) => a.type === 'depository' && !a.is_hidden;
 const owed = (a: Account) => Math.max(0, -signedBalance(a));
 
 /** What needs attention right now, most urgent first. Each line opens the page behind it; × hides it until the facts change. */
-function Radar({ t, refresh }: { t: Theme; refresh: number }) {
+function Radar({ t, refresh, settings }: { t: Theme; refresh: number; settings?: RadarSettings }) {
   const [again, setAgain] = useState(0);
   const [all, setAll] = useState(false);
-  const { data, error } = useLoad(loadRadar, [refresh, again]);
+  const { data, error } = useLoad(() => loadRadar(settings), [refresh, again, JSON.stringify(settings ?? {})]);
   if (error) return <CardShell t={t} title="Radar"><Text style={{ color: t.muted, fontSize: 13 }}>{error}</Text></CardShell>;
   if (!data) return <CardShell t={t} title="Radar"><Skeleton color={t.track} /></CardShell>;
   const LOOK = { act: { icon: 'alert-circle', color: t.danger }, heads: { icon: 'warning', color: t.series2 }, info: { icon: 'information-circle', color: t.muted } } as const;
@@ -462,6 +465,8 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
   const [pace, setPace] = useState(!!cfg.pace);
   const [text, setText] = useState(cfg.text ?? '');
   const [plain, setPlain] = useState(!!cfg.plain);
+  const [radar, setRadar] = useState<RadarSettings>(cfg.radar ?? {});
+  const radarNum = (k: 'unusualPct' | 'unusualMin' | 'cardPct' | 'runwayDays', v: string) => setRadar((r) => { const n = Number(v); const { [k]: _old, ...rest } = r; return v.trim() && isFinite(n) && n >= 0 ? { ...rest, [k]: n } : rest; });
   const [pick, setPick] = useState(false);
   const [pickAcc, setPickAcc] = useState(false);
   const { data } = useLoad(async () => {
@@ -491,7 +496,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
   const input = { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15, color: t.text, borderColor: t.line, backgroundColor: t.card };
   const keep = { w: cfg.w, h: cfg.h };
   const done = () => onDone(kind === 'basic'
-    ? { ...keep, title: title.trim() || undefined }
+    ? { ...keep, title: title.trim() || undefined, ...(widget === 'radar' && (radar.off?.length || Object.keys(radar).some((k) => k !== 'off')) ? { radar: { ...radar, off: radar.off?.length ? radar.off : undefined } } : {}) }
     : kind === 'text' ? { ...keep, title: title.trim() || undefined, text: text.trim() || undefined, ...(plain ? { plain: true } : {}) }
     : {
       ...keep, title: title.trim() || undefined, source, view: shown, months,
@@ -568,6 +573,31 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
       ) : (
         <>
           {!!def && <Text style={{ color: t.muted, fontSize: 13 }}>{def.about}.</Text>}
+          {widget === 'radar' && (
+            <>
+              <Field t={t} label="What to watch for">
+                {RADAR_CHECKS.map((c) => (
+                  <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: t.text }}>{c.label}</Text>
+                      <Text style={{ color: t.muted, fontSize: 12 }}>{c.about}</Text>
+                    </View>
+                    <Switch value={!(radar.off ?? []).includes(c.key)} onValueChange={(v) => setRadar((r) => ({ ...r, off: v ? (r.off ?? []).filter((x) => x !== c.key) : [...(r.off ?? []), c.key] }))} />
+                  </View>
+                ))}
+              </Field>
+              <Field t={t} label="When to speak up" hint="Leave a box empty to use the usual value shown in grey.">
+                {([['unusualPct', 'Unusual spending: % above the average', String(50)], ['unusualMin', 'Unusual spending: at least this much above', String(RADAR_LIMITS.unusualMin)],
+                  ['cardPct', 'Card use: % of the limit', String(RADAR_LIMITS.cardPct)], ['runwayDays', 'Cash runway: fewer days than', String(RADAR_LIMITS.runwayDays)]] as const).map(([k, label, usual]) => (
+                  <View key={k} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 3 }}>
+                    <Text style={{ color: t.text, flex: 1 }}>{label}</Text>
+                    <TextInput defaultValue={radar[k] != null ? String(radar[k]) : ''} onChangeText={(v) => radarNum(k, v)} keyboardType="decimal-pad" placeholder={usual} placeholderTextColor={t.muted} accessibilityLabel={label}
+                      style={[input, { width: 84, textAlign: 'right' }]} />
+                  </View>
+                ))}
+              </Field>
+            </>
+          )}
           {widget === 'watch' && (
             <Field t={t} label="Watched categories" hint="The same list as the Spending watch page; changing it here changes it everywhere.">
               <Button kind="plain" title={watch?.length ? `${watch.length} chosen · change` : 'Choose categories'} onPress={() => setPickWatch(true)} />

@@ -3,6 +3,8 @@ import { installPullRefresh } from '@/lib/pullRefresh';
 import { installShortcuts } from '@/lib/shortcuts';
 import { OfflinePill, PullIndicator, Toaster } from '@/components/Overlays';
 import { registerServiceWorker } from '@/lib/sw';
+import { LockScreen } from '@/components/LockScreen';
+import { installAutoLock } from '@/lib/lock';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { Platform, View } from 'react-native';
@@ -79,9 +81,9 @@ function useNoAutofill() {
     mark(document);
     const obs = new MutationObserver((list) => list.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) { fix(n as Element); mark(n as Element); } })));
     obs.observe(document.body, { childList: true, subtree: true });
-    const stopPull = installPullRefresh(), stopKeys = installShortcuts();
+    const stopPull = installPullRefresh(), stopKeys = installShortcuts(), stopLock = installAutoLock();
     registerServiceWorker();
-    return () => { obs.disconnect(); css.remove(); stopPull(); stopKeys(); };
+    return () => { obs.disconnect(); css.remove(); stopPull(); stopKeys(); stopLock(); };
   }, []);
 }
 
@@ -93,6 +95,8 @@ export default function RootLayout() {
       <SessionProvider>
         <RootStack />
       </SessionProvider>
+      {/* In front of everything while locked; the sign-in itself can't be read until it is unlocked. */}
+      <LockScreen />
     </ThemeProvider>
   );
 }

@@ -2,6 +2,7 @@ import type { Session } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { supabase } from './supabase';
 import { isOffline, offlineUser, refreshSaved, wipeOffline } from './offline';
+import { forgetLock } from './lock';
 
 // Without a connection the sign-in can't be renewed, and after an hour Supabase reports no session
 // at all. The saved one is still on the device, so use it to show the saved data; it is renewed
@@ -38,7 +39,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (data.session) signedIn(data.session);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
-      if (event === 'SIGNED_OUT') { wipeOffline(); setSession(null); return; }
+      // Signing out clears this device: the offline copy and the app lock (it protected that sign-in).
+      if (event === 'SIGNED_OUT') { wipeOffline(); forgetLock(); setSession(null); return; }
       setSession(s ?? savedSession());
       if (s && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) signedIn(s);
     });

@@ -207,7 +207,7 @@ export default function ImportScreen() {
       {done.length > 0 && (
         <Card style={{ gap: 8 }}>
           {done.map((d, i) => <Text key={i} style={{ color: t.text }}>{d}</Text>)}
-          {!file && <Button title="Review them" onPress={() => router.navigate('/transactions' as any)} />}
+          {!file && <Button title="Review them" onPress={() => router.navigate('/transactions?mode=review' as any)} />}
         </Card>
       )}
     </ScrollView>
