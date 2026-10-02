@@ -8,7 +8,7 @@ import { UNDER_BAR } from '@/lib/layout';
 import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
-  addDays, addMonths, daysBetween, detectRecurring, formatMoney, matchDues, monthEnd, monthName, monthOf, normalizeDescription,
+  addDays, addMonths, daysBetween, detectRecurring, formatMoney, matchChanged, matchDues, monthEnd, monthName, monthOf, normalizeDescription,
   occurrences, shortDate, type Recurring, type RecurringSuggestion,
 } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
@@ -24,7 +24,7 @@ import type { Account } from '@/lib/types';
 
 const FREQ_LABEL = { weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Monthly', yearly: 'Yearly' } as const;
 
-interface Due { key: string; bill: Recurring; date: string; txn: { date: string; amount: number } | null }
+interface Due { key: string; bill: Recurring; date: string; txn: { date: string; amount: number } | null; /** Paid, but for a different amount than the bill says (BIL-7). */ changed?: boolean }
 
 /** Inside the Planner (`embedded`) the planner's top bar owns the month arrows and the + button. */
 export default function Bills({ mode = 'month', month: monthProp, embedded }: { mode?: 'month' | 'all'; month?: string; embedded?: boolean }) {
@@ -68,7 +68,9 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
       const posted = await loadPosted(ids.length ? ids : a.map((x) => x.id), addDays(month, -5), addDays(end, 5));
       const m = matchDues(list.map((d) => ({ key: d.key, date: d.date, amount: d.bill.amount, accountId: d.bill.account_id, matchText: d.bill.match_text, estimated: d.bill.estimated })), posted);
       const byId = new Map(posted.map((p) => [p.id, p]));
-      setDues(list.map((d) => ({ ...d, txn: m.has(d.key) ? byId.get(m.get(d.key)!)! : null })).sort((x, y) => x.date.localeCompare(y.date)));
+      const asDues = list.map((d) => ({ key: d.key, date: d.date, amount: d.bill.amount, accountId: d.bill.account_id, matchText: d.bill.match_text, estimated: d.bill.estimated }));
+      const ch = matchChanged(asDues, posted, m);
+      setDues(list.map((d) => ({ ...d, txn: m.has(d.key) ? byId.get(m.get(d.key)!)! : ch.has(d.key) ? byId.get(ch.get(d.key)!)! : null, changed: ch.has(d.key) })).sort((x, y) => x.date.localeCompare(y.date)));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -103,6 +105,12 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
   const incomeDue = dues.filter((d) => d.bill.kind === 'income');
   const toPay = billsDue.filter((d) => !d.txn).reduce((s, d) => s - d.bill.amount, 0);
   const totalBills = billsDue.reduce((s, d) => s - (d.txn ? d.txn.amount : d.bill.amount), 0);
+  // BIL-7: paid for a different amount, or more than 4 days late with nothing seen.
+  const flagged = dues.filter((d) => d.changed || (!d.txn && daysBetween(now, d.date) < -4));
+  const useAmount = async (d: Due) => {
+    const { error } = await supabase.from('recurring').update({ amount: d.txn!.amount }).eq('id', d.bill.id);
+    if (error) setError(error.message); else { toast(`${d.bill.name} is now ${formatMoney(d.txn!.amount)}`); load(); }
+  };
   const accountName = (id: string | null) => accounts.find((a) => a.id === id)?.name ?? 'Any account';
 
   return (
@@ -137,7 +145,17 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
                 <Button title="Find recurring bills and income" onPress={() => setSuggesting(true)} />
               </Card>
             )}
-            {billsDue.length > 0 && <Section t={t} title="Bills" dues={billsDue} now={now} accountName={accountName} onEdit={(b) => setEditing(b)} />}
+            {flagged.length > 0 && (
+              <Card style={{ gap: 4, borderColor: t.series2, borderWidth: 1 }}>
+                <Text style={{ color: t.text, fontWeight: '700' }}>{flagged.length} to look at</Text>
+                {flagged.map((d) => (
+                  <Text key={d.key} style={{ color: t.muted, fontSize: 13 }}>
+                    {d.changed ? `${d.bill.name}: ${formatMoney(d.txn!.amount)} instead of ${formatMoney(d.bill.amount)}` : `${d.bill.name}: nothing seen since it was due ${shortDate(d.date)}`}
+                  </Text>
+                ))}
+              </Card>
+            )}
+            {billsDue.length > 0 && <Section t={t} title="Bills" dues={billsDue} now={now} accountName={accountName} onEdit={(b) => setEditing(b)} onUse={useAmount} />}
             {incomeDue.length > 0 && <Section t={t} title="Income" dues={incomeDue} now={now} accountName={accountName} onEdit={(b) => setEditing(b)} />}
           </>
         )}
@@ -200,8 +218,8 @@ function nextDue(s: RecurringSuggestion): string {
   return next ?? s.start_date;
 }
 
-function Section({ t, title, dues, now, accountName, onEdit }: {
-  t: Theme; title: string; dues: Due[]; now: string; accountName: (id: string | null) => string; onEdit: (b: Recurring) => void;
+function Section({ t, title, dues, now, accountName, onEdit, onUse }: {
+  t: Theme; title: string; dues: Due[]; now: string; accountName: (id: string | null) => string; onEdit: (b: Recurring) => void; onUse?: (d: Due) => void;
 }) {
   return (
     <>
@@ -209,19 +227,22 @@ function Section({ t, title, dues, now, accountName, onEdit }: {
       <Card style={{ padding: 0 }}>
         {dues.map((d, i) => {
           const days = daysBetween(now, d.date);
-          const status = d.txn ? `Paid ${shortDate(d.txn.date)}` : days < 0 ? `Overdue ${-days}d` : days === 0 ? 'Due today' : `In ${days}d`;
+          const status = d.txn ? `Paid ${shortDate(d.txn.date)}${d.changed ? ' · amount changed' : ''}` : days < -4 ? `Not seen · ${-days}d late` : days < 0 ? `Overdue ${-days}d` : days === 0 ? 'Due today' : `In ${days}d`;
           return (
             <Pressable key={d.key} onPress={() => onEdit(d.bill)} style={[styles.row, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }]}>
-              <Ionicons name={d.txn ? 'checkmark-circle' : days < 0 ? 'alert-circle' : 'ellipse-outline'} size={20} color={d.txn ? t.accent : days < 0 ? t.danger : t.muted} />
+              <Ionicons name={d.changed ? 'alert-circle' : d.txn ? 'checkmark-circle' : days < 0 ? 'alert-circle' : 'ellipse-outline'} size={20} color={d.changed ? t.series2 : d.txn ? t.accent : days < 0 ? t.danger : t.muted} />
               <Text style={{ color: t.muted, width: 48, fontSize: 13 }}>{shortDate(d.date)}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: t.text }} numberOfLines={1}>{d.bill.name}</Text>
-                <Text style={{ color: d.txn ? t.muted : days < 0 ? t.danger : t.muted, fontSize: 12 }} numberOfLines={1}>{status} · {accountName(d.bill.account_id)}</Text>
+                <Text style={{ color: d.changed ? t.series2 : d.txn ? t.muted : days < 0 ? t.danger : t.muted, fontSize: 12 }} numberOfLines={1}>{status} · {accountName(d.bill.account_id)}</Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
                 <Text style={{ color: t.text, fontVariant: ['tabular-nums'] }}>{formatMoney(d.txn ? d.txn.amount : d.bill.amount)}</Text>
                 {d.txn && Math.abs(d.txn.amount - d.bill.amount) >= 0.01 && (
                   <Text style={{ color: t.muted, fontSize: 12 }}>expected {formatMoney(d.bill.amount)}</Text>
+                )}
+                {d.changed && onUse && (
+                  <Pressable onPress={() => onUse(d)} hitSlop={6}><Text style={{ color: t.accent, fontSize: 12, fontWeight: '600' }}>Update the bill</Text></Pressable>
                 )}
               </View>
             </Pressable>

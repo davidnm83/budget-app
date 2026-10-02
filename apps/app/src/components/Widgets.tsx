@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/Columns';
 import { Field, Sheet } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
 import { loadTxnsFor } from '@/lib/accountTxns';
+import { supabase } from '@/lib/supabase';
 import { useTxnSheet } from '@/components/TxnSheet';
 import { Bar, Button, Chip, LIFT, Segmented } from '@/components/ui';
 import { loadAccounts, loadEntries, loadRecurring, today } from '@/lib/plan';
@@ -63,6 +64,7 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'nwtypes', title: 'Net worth by type', about: 'Cash, cards, loans and investments', home: true, budget: false },
   { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth or card debt, drawn the way you choose', home: true, budget: true, config: 'chart', sizable: true },
   { key: 'account', title: 'Account', about: 'One account: balance, past year, loan payoff', home: true, budget: true, config: 'account', sizable: true },
+  { key: 'tags', title: 'Tag totals', about: 'Everything under each tag added up: a trip, a move, a repair', home: true, budget: true, sizable: true },
   { key: 'groups', title: 'Spending by group', about: 'This month by category group, with last month beside it', home: true, budget: true, sizable: true },
 ];
 export const DEFAULT_HOME = ['review', 'week', 'budget', 'networth'];
@@ -115,6 +117,7 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
     case 'spend': return <ChartWidget t={t} refresh={refresh} cfg={{ source: 'spending', ...cfg }} anchor={anchor} range={range} />; // the older name for a spending chart
     case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} anchor={anchor} range={range} />;
     case 'account': return <AccountWidget t={t} refresh={refresh} cfg={cfg} />;
+    case 'tags': return <TagTotals t={t} refresh={refresh} h={cfg.h} />;
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
     case 'avgspend': return <AvgSpending t={t} refresh={refresh} months={cfg.months} />;
@@ -281,6 +284,45 @@ function AvgSpending({ t, refresh, months }: { t: Theme; refresh: number; months
         </Pressable>
       </View>
       <Bar value={projected} max={Math.max(avg, projected)} color={color} />
+    </CardShell>
+  );
+}
+
+// IDEA-14: each tag as a project total. Transfers between your accounts are left out.
+function TagTotals({ t, refresh, h }: { t: Theme; refresh: number; h?: WidgetCfg['h'] }) {
+  const [showTxns, txnSheet] = useTxnSheet();
+  const { data } = useLoad(async () => {
+    const by = new Map<string, { tag: string; n: number; total: number; first: string; last: string; ids: string[] }>();
+    for (let p = 0; p < 5; p++) {
+      const { data: rows, error } = await supabase.from('transactions').select('id, date, amount, tags, is_transfer').neq('tags', '{}').order('date', { ascending: false }).range(p * 1000, p * 1000 + 999);
+      if (error) throw new Error(error.message);
+      for (const r of (rows ?? []) as { id: string; date: string; amount: number; tags: string[]; is_transfer: boolean }[]) {
+        if (r.is_transfer) continue;
+        for (const tag of r.tags ?? []) {
+          const x = by.get(tag) ?? { tag, n: 0, total: 0, first: r.date, last: r.date, ids: [] };
+          x.n++; x.total += Number(r.amount); x.ids.push(r.id);
+          if (r.date < x.first) x.first = r.date;
+          if (r.date > x.last) x.last = r.date;
+          by.set(tag, x);
+        }
+      }
+      if (!rows || rows.length < 1000) break;
+    }
+    return [...by.values()].sort((a, b) => b.last.localeCompare(a.last));
+  }, [refresh]);
+  const list = data?.slice(0, h === 's' ? 3 : h === 'l' ? 20 : 8) ?? [];
+  const span = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}${a.slice(0, 4) !== b.slice(0, 4) || b.slice(0, 4) !== today().slice(0, 4) ? ` ${b.slice(0, 4)}` : ''}`);
+  return (
+    <CardShell t={t} after={txnSheet} title="Tag totals">
+      {!data ? <Skeleton color={t.track} /> : !list.length ? <Text style={{ color: t.muted }}>Add a tag to a few transactions (a trip, a move, a repair) and its total shows up here.</Text> : list.map((x) => (
+        <Pressable key={x.tag} style={styles.row} onPress={() => showTxns({ title: `#${x.tag}`, from: x.first, to: x.last, ids: x.ids })}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text, fontSize: 13 }} numberOfLines={1}>#{x.tag}</Text>
+            <Text style={{ color: t.muted, fontSize: 11 }} numberOfLines={1}>{x.n} {x.n === 1 ? 'transaction' : 'transactions'} · {span(x.first, x.last)}</Text>
+          </View>
+          <Text style={{ color: x.total > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'], fontWeight: '600' }}>{formatMoney(x.total)}</Text>
+        </Pressable>
+      ))}
     </CardShell>
   );
 }

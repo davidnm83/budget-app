@@ -22,6 +22,8 @@ export interface TxnQuery {
   merchant?: string;
   kind?: 'expense' | 'income' | 'transfer';
   accountIds?: string[];
+  /** Only these transactions (used by tag totals). */
+  ids?: string[];
   /** Leave out transfers between your own accounts (default for category and group views). */
   noTransfers?: boolean;
 }
@@ -54,6 +56,7 @@ export function TxnSheet({ q, onClose }: { q: TxnQuery; onClose: () => void }) {
       }
       if (q.merchant) s = s.eq('merchant', q.merchant);
       if (q.accountIds?.length) s = s.in('account_id', q.accountIds);
+      if (q.ids) s = s.in('transaction_id', q.ids.slice(0, 300));
       if (q.kind) s = s.eq('kind', q.kind);
       else if (q.noTransfers) s = s.neq('kind', 'transfer');
       const { data, error } = await s;

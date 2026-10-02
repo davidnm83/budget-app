@@ -12,6 +12,7 @@ import { currency } from '@budget-app/core';
 import { COMMON_CURRENCIES, clearSampleData, loadSampleData, saveCurrency } from '@/lib/setup';
 import { useConfirm } from '@/components/Confirm';
 import { toast } from '@/lib/toast';
+import { canExport, exportEverything } from '@/lib/exportAll';
 import { setThemeMode, useTheme, useThemeMode } from '@/lib/theme';
 import type { PlaidItem } from '@/lib/types';
 
@@ -33,6 +34,12 @@ export default function Settings() {
   const [items, setItems] = useState<PlaidItem[]>([]);
   const [msg, setMsg] = useState('');
   const [code, setCode] = useState(currency());
+  const [exporting, setExporting] = useState('');
+  const backup = async () => {
+    try { const r = await exportEverything(setExporting); toast(`Downloaded ${r.rows.toLocaleString()} rows from ${r.tables} tables`); }
+    catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); }
+    finally { setExporting(''); }
+  };
   const changeCurrency = async (c: string) => { try { await saveCurrency(c); setCode(c); } catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); } };
   const [ask, confirmUi] = useConfirm();
   const sample = async () => {
@@ -115,6 +122,14 @@ export default function Settings() {
         <Text style={{ color: t.muted }}>Bring in transactions from a bank’s CSV file, or your history from another budgeting app with its categories, notes and splits. Both are safe to run again.</Text>
         <Button title="Import a CSV file" kind="plain" onPress={() => router.push('/import')} />
         <Button title="Import from another app" kind="plain" onPress={() => router.push('/history-import')} />
+      </Card>
+
+      <Text style={[styles.h, { color: t.text }]}>Backup</Text>
+      <Card style={{ gap: 12 }}>
+        <Text style={{ color: t.muted }}>Download everything in your account as one JSON file: accounts, transactions, categories, rules, budgets, bills and settings. Bank sign-in tokens are never included.</Text>
+        <Button title="Download everything" kind="plain" busy={!!exporting} disabled={!canExport} onPress={backup} />
+        {!!exporting && <Text style={{ color: t.muted, fontSize: 12 }}>{exporting}</Text>}
+        {!canExport && <Text style={{ color: t.muted, fontSize: 12 }}>Available in the web version.</Text>}
       </Card>
 
       <Text style={[styles.h, { color: t.text }]}>Sample data</Text>

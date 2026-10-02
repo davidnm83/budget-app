@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addDays, computeLoanInterest, dedupeAgainstExisting, fromPlaidAmount, hourIn, learnMerchantRules,
+  addDays, loanWhatIf, matchChanged, matchDues, payoffAt, payoffSchedule, computeLoanInterest, dedupeAgainstExisting, fromPlaidAmount, hourIn, learnMerchantRules,
   guessMerchant, merchantFor, normalizeDescription, parseBankCsv, parseMoney, suggestCategory, todayIn, toIsoDate, weekStart,
 } from '../src/index.ts';
 
@@ -162,5 +162,38 @@ describe('plaid category mapping', () => {
     expect(plaidCategoryToName('INCOME_WAGES', 'INCOME')).toBe('Paycheck');
     expect(plaidCategoryToName(null, 'TRAVEL')).toBeNull();
     expect(isTransferCategory('LOAN_PAYMENTS', 'LOAN_PAYMENTS_CREDIT_CARD_PAYMENT')).toBe(true);
+  });
+});
+
+describe('loan what-if and projection (LOAN-4, LOAN-5)', () => {
+  it('pays off sooner and saves interest with an extra payment', () => {
+    const base = payoffAt(10000, 300, 0.005, '2026-10-01')!;
+    expect(base.monthsLeft).toBe(37);
+    const sched = payoffSchedule(10000, 300, 0.005);
+    expect([sched[0], sched[sched.length - 1], sched.length - 1]).toEqual([10000, 0, 37]);
+    const s = { owed: 10000, perMonth: { payment: 300, interest: 50, principal: 250 }, monthsLeft: base.monthsLeft, interestLeft: base.interestLeft, status: 'ok' } as any;
+    const w = loanWhatIf(s, 100, '2026-10-01')!;
+    expect(w.monthsLeft).toBe(27);
+    expect(w.monthsSaved).toBe(10);
+    expect(w.interestSaved).toBeGreaterThan(200);
+    expect(loanWhatIf(s, 0, '2026-10-01')).toBeNull();
+    expect(payoffAt(10000, 40, 0.005, '2026-10-01')).toBeNull(); // doesn't cover the interest
+  });
+});
+
+describe('bills whose amount changed (BIL-7)', () => {
+  it('finds the payment for an unmatched bill by its match text', () => {
+    const dues = [
+      { key: 'ins', date: '2026-10-20', amount: -162, accountId: 'a', matchText: 'Shield Auto', estimated: false },
+      { key: 'gym', date: '2026-10-16', amount: -48, accountId: 'a', matchText: null, estimated: false },
+    ];
+    const txns = [
+      { id: 't1', date: '2026-10-21', amount: -189.5, accountId: 'a', name: 'SHIELD AUTO INSURANCE', merchant: null },
+      { id: 't2', date: '2026-10-16', amount: -70, accountId: 'a', name: 'SOMETHING ELSE', merchant: null },
+      { id: 't3', date: '2026-10-20', amount: 189.5, accountId: 'a', name: 'SHIELD AUTO REFUND', merchant: null },
+    ];
+    const matched = matchDues(dues, txns);
+    expect(matched.size).toBe(0);
+    expect([...matchChanged(dues, txns, matched)]).toEqual([['ins', 't1']]);
   });
 });

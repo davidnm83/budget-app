@@ -71,3 +71,43 @@ export function loanSummary(owed: number, txns: { date: IsoDate; amount: number;
   d.setUTCMonth(d.getUTCMonth() + Math.ceil(n));
   return { ...base, perMonth, status: 'ok', monthsLeft: Math.ceil(n), payoffDate: toIso(d), interestLeft: round2(p * n - owed) };
 }
+
+// ───────────────────────── payoff projection and what-if (LOAN-4, LOAN-5) ─────────────────────────
+
+export interface Payoff { monthsLeft: number; payoffDate: IsoDate; interestLeft: number }
+
+/**
+ * Months to pay off `owed` at `payment` a month, with interest at `rate` a month (interest ÷
+ * balance). Null when the payment doesn't cover the interest.
+ */
+export function payoffAt(owed: number, payment: number, rate: number, today: IsoDate): Payoff | null {
+  if (owed <= 0.005) return { monthsLeft: 0, payoffDate: today, interestLeft: 0 };
+  if (payment <= rate * owed + 0.005) return null;
+  const n = rate > 0 ? -Math.log(1 - (rate * owed) / payment) / Math.log(1 + rate) : owed / payment;
+  const d = parseIso(today);
+  d.setUTCMonth(d.getUTCMonth() + Math.ceil(n));
+  return { monthsLeft: Math.ceil(n), payoffDate: toIso(d), interestLeft: round2(Math.max(0, payment * n - owed)) };
+}
+
+/** What's owed at the end of each month from now until it reaches 0 (first entry is today). */
+export function payoffSchedule(owed: number, payment: number, rate: number, maxMonths = 480): number[] {
+  const out = [round2(owed)];
+  let b = owed;
+  for (let i = 0; i < maxMonths && b > 0.005; i++) {
+    b = Math.max(0, b * (1 + rate) - payment);
+    if (b >= out[out.length - 1] && rate > 0) break; // not going down: stop rather than loop
+    out.push(round2(b));
+  }
+  return out;
+}
+
+export interface WhatIf extends Payoff { monthsSaved: number; interestSaved: number }
+
+/** The payoff with `extra` added to every monthly payment, against the current pace. */
+export function loanWhatIf(s: LoanSummary, extra: number, today: IsoDate): WhatIf | null {
+  if (s.status !== 'ok' || !s.perMonth || !(extra > 0)) return null;
+  const rate = s.perMonth.interest / s.owed;
+  const p = payoffAt(s.owed, s.perMonth.payment + extra, rate, today);
+  if (!p) return null;
+  return { ...p, monthsSaved: Math.max(0, (s.monthsLeft ?? 0) - p.monthsLeft), interestSaved: round2(Math.max(0, (s.interestLeft ?? 0) - p.interestLeft)) };
+}

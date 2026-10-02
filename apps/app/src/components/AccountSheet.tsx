@@ -18,7 +18,7 @@ export { Tile } from '@/components/Tile';
 import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  accountIcon, addDays, balanceHistory, cardCycle, cardStatus, expandPlan, formatMoney, loanSummary, monthEnd, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatus, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
   monthlyFlow, shortDate, todayIn, utilization,
 } from '@budget-app/core';
 import { router } from 'expo-router';
@@ -162,6 +162,15 @@ const Section = ({ t, title, children }: { t: Theme; title: string; children: Re
 export function LoanBlock({ t, a, txns }: { t: Theme; a: Account; txns: Txn[] }) {
   const owed = Math.abs(signedBalance(a));
   const s = loanSummary(owed, txns, today());
+  // LOAN-5: an extra amount on top of every monthly payment. LOAN-4: both paths drawn down to 0.
+  const [extraText, setExtraText] = useState('');
+  const extra = Math.max(0, parseMoney(extraText) || 0);
+  const now = today();
+  const what = loanWhatIf(s, extra, now);
+  const rate = s.status === 'ok' && s.perMonth ? s.perMonth.interest / s.owed : 0;
+  const base = s.status === 'ok' && s.perMonth ? payoffSchedule(s.owed, s.perMonth.payment, rate) : [];
+  const faster = what && s.perMonth ? payoffSchedule(s.owed, s.perMonth.payment + extra, rate) : [];
+  const ahead = (i: number) => { const d = new Date(Date.UTC(Number(now.slice(0, 4)), Number(now.slice(5, 7)) - 1 + i, 1)); return d.toLocaleDateString('en', { month: 'short', year: '2-digit', timeZone: 'UTC' }); };
   const years = s.monthsLeft != null ? `${Math.floor(s.monthsLeft / 12)}y ${s.monthsLeft % 12}m` : '';
   return (
     <>
@@ -184,6 +193,24 @@ export function LoanBlock({ t, a, txns }: { t: Theme; a: Account; txns: Txn[] })
         )}
         <Text style={{ color: t.muted, fontSize: 12 }}>Averages of the last 2 months. Months left = −ln(1 − rB/P) ÷ ln(1 + r), with B owed, P payment, r monthly interest ÷ balance.</Text>
       </Section>
+      {base.length > 1 && (
+        <Section t={t} title="Payoff projection">
+          <LineChart t={t} height={120} labels={base.map((_, i) => (i === 0 ? 'Now' : ahead(i)))} format={money0}
+            series={what ? [{ name: 'Current pace', values: base }, { name: `With ${money0(extra)} extra`, values: faster }] : [{ name: 'Owed', values: base }]} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={{ color: t.text, flex: 1 }}>What if you paid extra each month?</Text>
+            <TextInput value={extraText} onChangeText={setExtraText} placeholder="0" placeholderTextColor={t.muted} keyboardType="numbers-and-punctuation"
+              style={[styles.input, { color: t.text, borderColor: t.line, width: 96, textAlign: 'right' }]} />
+          </View>
+          {what && (
+            <View style={styles.tiles}>
+              <Tile t={t} label="Paid off" value={monthName(what.payoffDate.slice(0, 7) + '-01')} sub={what.monthsSaved ? `${what.monthsSaved} ${what.monthsSaved === 1 ? 'month' : 'months'} sooner` : 'same month'} color={t.accent} />
+              <Tile t={t} label="Interest saved" value={money0(what.interestSaved)} sub={`${money0(what.interestLeft)} still to pay`} color={t.accent} />
+            </View>
+          )}
+          <Text style={{ color: t.muted, fontSize: 12 }}>Assumes the same payment and interest rate as the last 2 months, every month until it's paid.</Text>
+        </Section>
+      )}
       <Section t={t} title={`To date${s.since ? ` (since ${shortDate(s.since)} ${s.since.slice(0, 4)})` : ''}`}>
         <View style={styles.tiles}>
           <Tile t={t} label="Payments" value={money0(s.paymentsToDate)} />
