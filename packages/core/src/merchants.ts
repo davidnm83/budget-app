@@ -1,6 +1,6 @@
 /**
  * Merchant cleanup. A rule maps text found in a bank description to the
- * merchant name you use ("RCSS" → "Superstore"). Descriptions are normalised
+ * merchant name you use ("CRNR MKT" → "Corner Market"). Descriptions are normalised
  * first so store numbers, reference numbers and "CITY, ON" don't matter.
  */
 export interface MerchantRule {
@@ -55,7 +55,7 @@ export function learnMerchantRules(rows: { name: string; merchant: string }[]): 
     .sort((a, b) => a.match.localeCompare(b.match));
 }
 
-const KEEP_UPPER = new Set(['CA', 'US', 'TD', 'BMO', 'RBC', 'CIBC', 'LCBO', 'TTC', 'IKEA', 'HM', 'KFC', 'PC']);
+const KEEP_UPPER = new Set(['CA', 'US', 'UK', 'TD', 'BMO', 'RBC', 'CIBC', 'HSBC', 'ING', 'CVS', 'BP', 'ATM', 'IKEA', 'HM', 'KFC', 'PC']);
 
 /**
  * A readable merchant name from a raw card description, used for CSV imports when no

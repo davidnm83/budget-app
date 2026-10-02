@@ -1,9 +1,9 @@
 // Pictures for banks and merchants. A logo comes from, in order:
 //   1. the bank feed (Plaid sends a logo with many transactions),
 //   2. a picture you uploaded for the merchant or account,
-//   3. a built-in list of well-known Canadian banks and stores,
+//   3. a built-in list of well-known banks and stores,
 // and for 3 the picture is the site's icon, fetched from DuckDuckGo's icon service (only
-// the site name, e.g. "cibc.com", is sent). Anything else shows its first letter. Logos can be
+// the site name, e.g. "examplebank.com", is sent). Anything else shows its first letter. Logos can be
 // turned off in Settings, which stops every outside request for them.
 import { useSyncExternalStore } from 'react';
 import { supabase } from './supabase';
@@ -56,28 +56,28 @@ const icon = (domain: string) => `https://icons.duckduckgo.com/ip3/${cleanDomain
 
 // [what to look for in the name, website]. First match wins, so longer names come first.
 const BANKS: [RegExp, string][] = [
-  [/american express|amex/i, 'americanexpress.com'], [/simplii/i, 'simplii.com'], [/cibc/i, 'cibc.com'], [/tangerine/i, 'tangerine.ca'],
-  [/scotia/i, 'scotiabank.com'], [/\brbc\b|royal bank/i, 'rbc.com'], [/\bbmo\b|bank of montreal/i, 'bmo.com'], [/\btd\b|toronto.dominion/i, 'td.com'],
-  [/national bank|\bnbc\b/i, 'nbc.ca'], [/desjardins/i, 'desjardins.com'], [/rogers/i, 'rogersbank.com'], [/pc (financial|world|money)|president'?s choice/i, 'pcfinancial.ca'],
-  [/capital one/i, 'capitalone.ca'], [/wealthsimple/i, 'wealthsimple.com'], [/\beq bank\b/i, 'eqbank.ca'], [/\bneo\b/i, 'neofinancial.com'], [/mbna/i, 'mbna.ca'],
-  [/triangle|canadian tire/i, 'canadiantire.ca'], [/walmart/i, 'walmart.ca'], [/home trust/i, 'hometrust.ca'], [/manulife/i, 'manulifebank.ca'],
-  [/hsbc/i, 'hsbc.ca'], [/laurentian/i, 'laurentianbank.ca'], [/\batb\b/i, 'atb.com'], [/questrade/i, 'questrade.com'], [/paypal/i, 'paypal.com'], [/\bwise\b/i, 'wise.com'],
-  [/koho/i, 'koho.ca'], [/nslsc|student loan/i, 'csnpe-nslsc.canada.ca'],
+  [/american express|amex/i, 'americanexpress.com'], [/capital one/i, 'capitalone.com'], [/\bchase\b|jpmorgan/i, 'chase.com'], [/bank of america|\bbofa\b/i, 'bankofamerica.com'],
+  [/wells fargo/i, 'wellsfargo.com'], [/\bciti(bank)?\b/i, 'citi.com'], [/discover/i, 'discover.com'], [/us bank|u\.s\. bank/i, 'usbank.com'], [/\bpnc\b/i, 'pnc.com'],
+  [/\bally\b/i, 'ally.com'], [/charles schwab|schwab/i, 'schwab.com'], [/fidelity/i, 'fidelity.com'], [/vanguard/i, 'vanguard.com'], [/\bsofi\b/i, 'sofi.com'], [/chime/i, 'chime.com'],
+  [/royal bank|\brbc\b/i, 'rbc.com'], [/toronto.dominion|\btd\b/i, 'td.com'], [/scotia/i, 'scotiabank.com'], [/bank of montreal|\bbmo\b/i, 'bmo.com'], [/\bcibc\b/i, 'cibc.com'],
+  [/hsbc/i, 'hsbc.com'], [/barclay/i, 'barclays.co.uk'], [/lloyds/i, 'lloydsbank.com'], [/natwest/i, 'natwest.com'], [/santander/i, 'santander.com'], [/monzo/i, 'monzo.com'],
+  [/revolut/i, 'revolut.com'], [/\bn26\b/i, 'n26.com'], [/\bing\b/i, 'ing.com'], [/deutsche bank/i, 'deutsche-bank.de'], [/bnp paribas/i, 'bnpparibas.com'],
+  [/commonwealth bank|commbank/i, 'commbank.com.au'], [/westpac/i, 'westpac.com.au'], [/\banz\b/i, 'anz.com'], [/\bnab\b/i, 'nab.com.au'],
+  [/paypal/i, 'paypal.com'], [/\bwise\b/i, 'wise.com'], [/venmo/i, 'venmo.com'], [/cash app/i, 'cash.app'], [/wealthsimple/i, 'wealthsimple.com'], [/robinhood/i, 'robinhood.com'],
 ];
 const STORES: [RegExp, string][] = [
-  [/doordash/i, 'doordash.com'], [/uber ?eats/i, 'ubereats.com'], [/\buber\b/i, 'uber.com'], [/instacart/i, 'instacart.ca'], [/skip ?the ?dishes/i, 'skipthedishes.com'], [/\blyft\b/i, 'lyft.com'],
-  [/amazon|amzn/i, 'amazon.ca'], [/netflix/i, 'netflix.com'], [/spotify/i, 'spotify.com'], [/disney/i, 'disneyplus.com'], [/youtube/i, 'youtube.com'], [/google/i, 'google.com'], [/apple/i, 'apple.com'],
-  [/microsoft|xbox/i, 'microsoft.com'], [/playstation|sony/i, 'playstation.com'], [/steam/i, 'steampowered.com'], [/nintendo/i, 'nintendo.com'],
-  [/tim hortons|tims\b/i, 'timhortons.ca'], [/starbucks/i, 'starbucks.ca'], [/mcdonald/i, 'mcdonalds.com'], [/a ?& ?w\b/i, 'aw.ca'], [/wendy/i, 'wendys.com'], [/subway/i, 'subway.com'],
-  [/popeyes/i, 'popeyes.com'], [/\bkfc\b/i, 'kfc.ca'], [/burger king/i, 'burgerking.ca'], [/pizza pizza/i, 'pizzapizza.ca'], [/domino/i, 'dominos.ca'], [/chipotle/i, 'chipotle.com'], [/harvey'?s/i, 'harveys.ca'],
-  [/loblaws/i, 'loblaws.ca'], [/no frills/i, 'nofrills.ca'], [/superstore|rcss/i, 'realcanadiansuperstore.ca'], [/metro\b/i, 'metro.ca'], [/sobeys/i, 'sobeys.com'], [/freshco/i, 'freshco.com'],
-  [/food basics/i, 'foodbasics.ca'], [/costco/i, 'costco.ca'], [/shoppers/i, 'shoppersdrugmart.ca'], [/dollarama/i, 'dollarama.com'], [/walmart/i, 'walmart.ca'], [/canadian tire/i, 'canadiantire.ca'],
-  [/home depot/i, 'homedepot.ca'], [/ikea/i, 'ikea.com'], [/best buy/i, 'bestbuy.ca'], [/winners/i, 'winners.ca'], [/\blcbo\b/i, 'lcbo.com'], [/beer store/i, 'thebeerstore.ca'],
-  [/esso/i, 'esso.ca'], [/petro.?canada/i, 'petro-canada.ca'], [/shell\b/i, 'shell.ca'], [/pioneer/i, 'pioneer.ca'], [/ultramar/i, 'ultramar.ca'], [/circle k/i, 'circlek.com'], [/7.?eleven/i, '7-eleven.ca'],
-  [/presto/i, 'prestocard.ca'], [/\bttc\b/i, 'ttc.ca'], [/go transit|metrolinx/i, 'gotransit.com'], [/via rail/i, 'viarail.ca'], [/air canada/i, 'aircanada.com'], [/westjet/i, 'westjet.com'],
-  [/rogers/i, 'rogers.com'], [/\bbell\b/i, 'bell.ca'], [/telus/i, 'telus.com'], [/fido/i, 'fido.ca'], [/koodo/i, 'koodomobile.com'], [/freedom mobile/i, 'freedommobile.ca'], [/public mobile/i, 'publicmobile.ca'],
-  [/goodlife/i, 'goodlifefitness.com'], [/planet fitness/i, 'planetfitness.ca'], [/belair/i, 'belairdirect.com'], [/cineplex/i, 'cineplex.com'], [/indigo|chapters/i, 'indigo.ca'],
-  [/ford/i, 'ford.ca'], [/toyota/i, 'toyota.ca'], [/honda/i, 'honda.ca'], [/openai|chatgpt/i, 'openai.com'], [/anthropic|claude/i, 'anthropic.com'], [/github/i, 'github.com'],
+  [/doordash/i, 'doordash.com'], [/uber ?eats/i, 'ubereats.com'], [/\buber\b/i, 'uber.com'], [/instacart/i, 'instacart.com'], [/\blyft\b/i, 'lyft.com'], [/deliveroo/i, 'deliveroo.com'],
+  [/amazon|amzn/i, 'amazon.com'], [/netflix/i, 'netflix.com'], [/spotify/i, 'spotify.com'], [/disney/i, 'disneyplus.com'], [/youtube/i, 'youtube.com'], [/google/i, 'google.com'], [/apple/i, 'apple.com'],
+  [/microsoft|xbox/i, 'microsoft.com'], [/playstation|sony/i, 'playstation.com'], [/steam/i, 'steampowered.com'], [/nintendo/i, 'nintendo.com'], [/\bhulu\b/i, 'hulu.com'], [/audible/i, 'audible.com'],
+  [/starbucks/i, 'starbucks.com'], [/mcdonald/i, 'mcdonalds.com'], [/wendy/i, 'wendys.com'], [/subway/i, 'subway.com'], [/dunkin/i, 'dunkindonuts.com'], [/tim hortons/i, 'timhortons.com'],
+  [/popeyes/i, 'popeyes.com'], [/\bkfc\b/i, 'kfc.com'], [/burger king/i, 'bk.com'], [/domino/i, 'dominos.com'], [/chipotle/i, 'chipotle.com'], [/taco bell/i, 'tacobell.com'], [/pizza hut/i, 'pizzahut.com'],
+  [/walmart/i, 'walmart.com'], [/costco/i, 'costco.com'], [/target\b/i, 'target.com'], [/whole foods/i, 'wholefoodsmarket.com'], [/trader joe/i, 'traderjoes.com'], [/kroger/i, 'kroger.com'],
+  [/\baldi\b/i, 'aldi.com'], [/\blidl\b/i, 'lidl.com'], [/tesco/i, 'tesco.com'], [/sainsbury/i, 'sainsburys.co.uk'], [/carrefour/i, 'carrefour.com'], [/loblaws/i, 'loblaws.ca'],
+  [/home depot/i, 'homedepot.com'], [/lowe'?s/i, 'lowes.com'], [/ikea/i, 'ikea.com'], [/best buy/i, 'bestbuy.com'], [/\bcvs\b/i, 'cvs.com'], [/walgreens/i, 'walgreens.com'], [/\bebay\b/i, 'ebay.com'], [/etsy/i, 'etsy.com'],
+  [/\bshell\b/i, 'shell.com'], [/\bbp\b/i, 'bp.com'], [/exxon|mobil\b|esso/i, 'exxon.com'], [/chevron/i, 'chevron.com'], [/circle k/i, 'circlek.com'], [/7.?eleven/i, '7-eleven.com'],
+  [/airbnb/i, 'airbnb.com'], [/booking\.com/i, 'booking.com'], [/expedia/i, 'expedia.com'],
+  [/verizon/i, 'verizon.com'], [/at&t/i, 'att.com'], [/t-?mobile/i, 't-mobile.com'], [/comcast|xfinity/i, 'xfinity.com'], [/vodafone/i, 'vodafone.com'],
+  [/planet fitness/i, 'planetfitness.com'], [/openai|chatgpt/i, 'openai.com'], [/anthropic|claude/i, 'anthropic.com'], [/github/i, 'github.com'], [/dropbox/i, 'dropbox.com'], [/adobe/i, 'adobe.com'],
 ];
 const match = (list: [RegExp, string][], name: string) => list.find(([re]) => re.test(name))?.[1];
 

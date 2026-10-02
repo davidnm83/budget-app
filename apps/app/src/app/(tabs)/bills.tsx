@@ -157,7 +157,7 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
                 </Pressable>
               ))}
             </Card>
-          ) : <EmptyState icon="repeat-outline" title="No bills or income yet" text="Add what repeats (rent, phone, paycheque) and the Planner will show it each week." action="Find them in my history" onAction={() => setSuggesting(true)} />
+          ) : <EmptyState icon="repeat-outline" title="No bills or income yet" text="Add what repeats (rent, phone, pay) and the Planner will show it each week." action="Find them in my history" onAction={() => setSuggesting(true)} />
         )}
 
         {view === 'suggest' && (

@@ -18,7 +18,7 @@ const TEMPLATES: { name: string; icon: string; about: string; widgets: string[] 
   { name: 'Car', icon: '🚗', about: 'Car costs by month, gas, the car loan and its payoff', widgets: [
     makeEntry('spend', { title: 'Car costs', group: 'Transportation', months: 6 }),
     makeEntry('spend', { title: 'Gas', names: ['Gas'], months: 6 }),
-    makeEntry('account', { title: 'Car loan', accountMatch: 'auto|car|escape|vehicle' }),
+    makeEntry('account', { title: 'Car loan', accountMatch: 'auto|car|vehicle' }),
   ] },
   { name: 'Debt', icon: '💳', about: 'Cards, utilisation, interest paid and what’s left after the cards', widgets: [
     'credit', 'cash', makeEntry('spend', { title: 'Interest and fees', names: ['Credit card interest', 'Bank Charges & Fees'], months: 12 }), 'nwtypes',

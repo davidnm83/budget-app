@@ -1,11 +1,10 @@
 // Data for Bills and the Planner: recurring bills/income, one-off planned entries, the
 // accounts the plan covers, and posted transactions to match against.
 import {
-  addDays, balanceAt, buildWeek, cardCycle, cardStatus, expandPlan, gigPlanned, round2, todayIn, weekStart as mondayOf, weeklyAverages,
+  addDays, balanceAt, buildWeek, cardCycle, cardStatus, expandPlan, round2, todayIn, weekStart as mondayOf,
   type PlanEntry, type PostedTxn, type Recurring, type WeekView,
 } from '@budget-app/core';
 import { supabase } from './supabase';
-import { loadGigSettings, loadPayoutRules, loadShifts } from './gig';
 import { signedBalance, type Account } from './types';
 
 export const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -98,12 +97,11 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   const ids = planAccounts.map((a) => a.id);
   const from = week < thisWeek ? week : thisWeek;
   const to = addDays(week > thisWeek ? week : thisWeek, 6);
-  const [recurring, entries, posted, gig] = await Promise.all([
+  const [recurring, entries, posted] = await Promise.all([
     loadRecurring(), loadEntries(addDays(from, -31), addDays(to, 31)), loadPosted(ids, addDays(from, -4), addDays(to > now ? to : now, 4)),
-    loadGig(from, thisWeek),
   ]);
-  // Planned items for a week: bills, income and one-offs, plus gig payouts from logged shifts.
-  const plannedFor = (w: string) => [...expandPlan(recurring, entries, w, addDays(w, 6)), ...gig(w, addDays(w, 6))];
+  // Planned items for a week: bills, income and one-offs.
+  const plannedFor = (w: string) => expandPlan(recurring, entries, w, addDays(w, 6));
 
   const balanceOn = (d: string) => Object.fromEntries(planAccounts.map((a) => [a.id, balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), d)]));
   const shown = only ? planAccounts.filter((a) => a.id === only) : planAccounts;
@@ -131,21 +129,4 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
     accounts: shown.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })),
   });
   return { view, accounts: all, recurring, entries, ahead };
-}
-
-/**
- * Gig payouts for the planner (from the Gig work page's payout settings). Returns a function that
- * gives the planned items for a date range. Without any payout set up it plans nothing.
- */
-async function loadGig(from: string, thisWeek: string): Promise<(a: string, b: string) => ReturnType<typeof gigPlanned>> {
-  try {
-    const rules = (await loadPayoutRules()).filter((r) => r.mode !== 'off' && r.accountId);
-    if (!rules.length) return () => [];
-    const [shifts, settings] = await Promise.all([loadShifts(addDays(from < thisWeek ? from : thisWeek, -63)), loadGigSettings()]);
-    const now = today();
-    const avg = settings.plan_ahead ? weeklyAverages(shifts, now) : null;
-    return (a, b) => gigPlanned(shifts, rules, a, b, now, avg);
-  } catch {
-    return () => [];
-  }
 }

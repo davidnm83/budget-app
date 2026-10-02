@@ -1,68 +1,49 @@
 # budget-app
 
-A personal budgeting app you host yourself: bank sync through your own Plaid account, a review inbox for new transactions, rules that learn your categories and merchant names, recurring bills, and a weekly cash planner. It's meant to replace Mint/Fina-style apps without handing your bank data to a third party.
+A budgeting app you host yourself. Your bank connects through your own Plaid account, new transactions land in a review inbox, rules learn your categories and merchant names, and a weekly planner shows whether the bills fit. Nothing is shared with a third-party budgeting service.
 
-Runs on iPhone, Android and the web from one codebase. Everything fits in free tiers.
+It runs on the web, iPhone and Android from one codebase, and fits in the free tiers of Supabase, Plaid and Vercel.
 
-> **Each person runs their own copy.** Fork the repo, create your own Supabase project and Plaid account, and follow **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**.
+> **Each person runs their own copy.** Fork the repo, create your own Supabase project, and follow **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**. Plaid is optional: you can import files or add accounts by hand.
 
-## What works today
+| Transactions | Budget | First run |
+| --- | --- | --- |
+| ![Transactions](docs/screenshots/transactions.png) | ![Budget](docs/screenshots/budget.png) | ![Setup](docs/screenshots/setup.png) |
 
-- **Bank sync via Plaid.** Link banks, a daily sync at 5 AM (your time zone), **Sync now**, and **Fix** for connections that need a new sign-in.
-- **Transactions tab.** Everything grouped by day, with search, filters (dates, accounts, categories incl. split parts, money in/out, amount) and sorting by date, amount or merchant. "To review" shows new arrivals to tick off, one at a time or all at once.
-- **Auto-categorisation.** Your rules first, then the category you used last time for that merchant, then Plaid's category. The inbox shows where each category came from.
-- **Rules from edits.** When you change a category, "Always use this category for …" makes it a rule.
-- **Merchant cleanup.** Rules turn `RETAIL PURCHASE 0010… RCSS 1077` into `Superstore`.
-- **Budgets.** Monthly budgets per category or group, with rollover, a collapsed archive of past months by year, comparisons (last month, same month last year, any month, year to date) and a year view.
-- **Reports.** Spending by category with drill-down to transactions, cash flow by month with money in by source, and spending by merchant.
-- **Import from Fina.** Brings over your history with categories, notes and splits, and fills in transactions the app already synced instead of duplicating them. Safe to run again.
-- **Notes, tags and edits.** Change a transaction's date or amount; bank transactions keep the bank's original value beside yours.
-- **Accounts.** Cash, credit cards and loans, with balances. Manual accounts keep an auto balance (start + transactions); tap one to set it.
-- **Manual → bank.** When you connect a bank for a card you were tracking by CSV or Fina, the account is taken over (same last 4 digits) and imported rows are linked to the bank's instead of duplicated, splits included. Otherwise, merge them yourself from the Accounts tab.
-- **CSV import** for banks Plaid can't reach (Rogers, PC Financial, American Express, or any CSV with date, description and amount). Rows the account already has are skipped. Web app only for now.
-- **Privacy.** Bank tokens are encrypted in Supabase Vault and never reach the app, and row-level security covers every table.
+Screenshots show the built-in sample data.
 
-- **Weekly planner.** Monday-to-Sunday plan per bill-paying account (or combined): bills, income and one-offs against what posted, a running balance, and a warning before an account dips below its buffer.
-- **Bills & income.** Schedules (weekly, every 2 weeks, monthly, yearly, with optional end date), this month's due dates matched to the payments automatically, and suggestions found in your history.
-- **Home.** To review, this week (cash, projected end, warnings, what's next), budget pace and net worth at a glance.
-- **Account pages.** Loans: payoff estimate from the last 2 months, payments and interest to date. Credit cards: utilisation, what's left on the statement by the due date, interest estimate. Cash: monthly cash flow and what the planner has coming up.
-- **Layout.** Tabs: Home, Transactions, Planner, Budget, Accounts. Bills, Reports, Categories, Settings and the imports are in the menu (top left). The phone's back gesture closes pop-ups instead of leaving the page.
+## What it does
 
-### New in 1.0
-
-- **Budget rows** show spent / budget with a pace marker on the bar, and an emoji per category.
-- **Categories screen.** Add, rename, emoji, change group or type, hide, merge one into another (transactions, rules, bills and budgets move with it), rename groups.
-- **Split editing.** Split any transaction across categories, or undo a split.
-- **Rule back-fill.** When you save a rule, optionally apply it to matching transactions still to review.
-- **Transfers paired.** Money moving between your own accounts is linked both ways and kept out of spending.
-- **Loans.** Payments are copied from the paying account (set the "payment match" text in the loan's Details) and interest is logged from the bank's balance changes after each sync.
-- **Credit card bills.** A bill can follow a card: the statement balance, an estimated minimum, or a fixed amount.
-- **Planner.** Match a planned entry to a transaction by hand, and a 4-week look-ahead strip.
-- **CSV export** of whatever the Transactions filters show.
-
-## Roadmap
-
-1. **Release 2:** reminders, net worth history, custom pages from Home blocks, rule manager, merchant logos
-2. **Later:** savings goals, gig income tracking, subscription audit, tax-time export, backup/restore
+- **Bank sync (optional).** Link banks through Plaid, with a daily sync at 5 AM in your time zone, **Sync now**, and **Fix** for connections that need a new sign-in.
+- **Transactions.** Grouped by day, with search, filters, sorting and a review inbox for new arrivals. Edit dates and amounts, add notes and tags, split across categories.
+- **Auto-categorisation.** Your rules first, then what you chose last time for that merchant, then the bank's category. Changing a category can become a rule.
+- **Merchant cleanup.** Rules turn `POS PURCHASE 0010 CRNR MKT 1077` into `Corner Market`. Logos and your own pictures for merchants and accounts.
+- **Budgets.** Monthly budgets per category or group, rollover, comparisons and a year view.
+- **Bills, income and a weekly planner.** Schedules matched to payments automatically, a running balance per account, and a warning before an account dips below its buffer.
+- **Accounts.** Cash, credit cards and loans: utilisation, statement and due dates, payoff estimates, interest.
+- **Reports and widgets.** Spending by category and merchant, cash flow, net worth. Every page is a board of widgets you can rearrange, resize and add to, and you can make pages of your own.
+- **Import.** From another budgeting app (Mint, Monarch, YNAB and Fina exports are recognised; any other CSV lets you pick the columns), or a CSV file from your bank. Both skip what is already there.
+- **First-run setup.** Pick a currency, then link a bank, import, load sample data or start empty.
+- **Works like an app.** Installable from the browser, keyboard shortcuts on desktop, light and dark themes.
 
 ## How it fits together
 
 ```
 apps/app/                 Expo app (iOS, Android, web) ── talks to ──┐
 packages/core/            Shared logic + tests (merchants, rules,    │
-                          CSV parsing, loan interest, dates)         │
+                          imports, budgets, planner, dates)          │
 supabase/                                                            ▼
 ├── migrations/           Postgres tables + row-level security   Supabase
 ├── functions/            Edge Functions (Deno):                 (your project)
 │   ├── plaid-link-token  start Plaid Link                           │
 │   ├── plaid-exchange    save a new bank connection                 │
-│   ├── plaid-sync        daily / on-demand sync  ◀── pg_cron 5 AM   │
+│   ├── plaid-sync        daily / on-demand sync  ◀── pg_cron        │
 │   ├── plaid-remove      disconnect a bank                          ▼
 │   └── _shared/          Plaid client, sync logic, copy of core    Plaid
 └── setup/cron.sql        schedules the daily sync
 ```
 
-Amounts follow one rule everywhere: **money out is negative, money in is positive.** Dates are plain `YYYY-MM-DD` calendar days, so no time zone can shift them.
+Amounts follow one rule everywhere: **money out is negative, money in is positive.** Dates are plain `YYYY-MM-DD` calendar days, so no time zone can shift them. Amounts are shown in one currency (chosen at setup); nothing is converted.
 
 ## Development
 
@@ -75,13 +56,13 @@ npm run web              # run the app in a browser (needs apps/app/.env)
 npm run sync-core        # after changing packages/core: copy it into the Edge Functions
 ```
 
-CI runs all of the above on every push.
+### Database changes
 
-## Security notes
+`supabase/migrations/` starts with one file that creates the whole 2.0 schema. Add later changes as new, dated files after it. Never edit a migration that has already been pushed to a database.
 
-- **Never commit `.env` files.** Only the `.env.example` files are in the repo: `apps/app/.env.example` (app, public values) and `supabase/.env.example` (server secrets).
-- **Plaid keys and the cron secret** live in Supabase Edge Function secrets.
-- **The publishable key in the app is public by design**; row-level security is what protects the data. Turn off new sign-ups once your own account exists (see the self-hosting guide).
+## Security
+
+See **[SECURITY.md](SECURITY.md)** for where each secret lives and how data is protected. In short: never commit `.env` files, keep Plaid keys and the cron secret in Supabase secrets, and turn off new sign-ups once your account exists.
 
 ## Licence
 

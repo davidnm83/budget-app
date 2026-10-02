@@ -1,14 +1,13 @@
 // What a chart widget can show. Each source turns the account's data into the same shape, so
 // any view (bars, line, pie, list, table, tiles) can draw it and a tap can open what's behind it.
-import { addDays, addMonths, balanceHistory, daysBetween, monthOf, categoryIcon, formatMoney, monthEnd, platformByKey, shortDate, totalsByPlatform } from '@budget-app/core';
+import { addDays, addMonths, balanceHistory, daysBetween, monthOf, categoryIcon, formatMoney, monthEnd, shortDate } from '@budget-app/core';
 import type { TxnQuery } from '@/components/TxnSheet';
 import { loadTxnsFor } from './accountTxns';
-import { loadShifts } from './gig';
 import { loadAccounts, today } from './plan';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from './reports';
 import { signedBalance } from './types';
 
-export type Source = 'spending' | 'cashflow' | 'networth' | 'carddebt' | 'gig';
+export type Source = 'spending' | 'cashflow' | 'networth' | 'carddebt';
 export type ChartView = 'bars' | 'line' | 'pie' | 'list' | 'table' | 'tiles';
 export const VIEW_LABEL: Record<ChartView, string> = { bars: 'Bars', line: 'Line', pie: 'Pie', list: 'Ranked list', table: 'Table', tiles: 'Numbers' };
 export const SOURCES: Record<Source, { title: string; about: string; views: ChartView[] }> = {
@@ -16,7 +15,6 @@ export const SOURCES: Record<Source, { title: string; about: string; views: Char
   cashflow: { title: 'Money in and out', about: 'Income against spending each month', views: ['bars', 'line', 'table', 'tiles'] },
   networth: { title: 'Net worth', about: 'Everything you own minus everything you owe, over time', views: ['line', 'bars', 'table', 'tiles'] },
   carddebt: { title: 'Card debt', about: 'What you owe on credit cards over time, and by card', views: ['line', 'bars', 'pie', 'list', 'table', 'tiles'] },
-  gig: { title: 'Gig earnings', about: 'Shift earnings by month, and by app', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles'] },
 };
 
 export interface ChartCfg { source?: Source; months?: number; categoryIds?: string[]; group?: string; names?: string[] }
@@ -106,22 +104,6 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
         { label: `Average net · ${n} mo`, value: `${avg(net) < 0 ? '−' : '+'}${money0(Math.abs(avg(net)))}`, sub: 'per month' },
       ],
       drill: (i) => ({ from: months[i], to: monthEnd(months[i]), noTransfers: true }),
-    };
-  }
-
-  if (source === 'gig') {
-    const shifts = await loadShifts(first);
-    const values = months.map((m) => totalsByPlatform(shifts.filter((s) => s.date.slice(0, 7) === m.slice(0, 7))).reduce((s, p) => s + p.earnings, 0));
-    return {
-      ...base,
-      series: [{ name: 'Earnings', values }],
-      breakdown: totalsByPlatform(shifts).filter((p) => p.earnings > 0).map((p) => { const g = platformByKey(p.platform); return { label: `${g.icon} ${g.name}`, value: p.earnings }; }),
-      tiles: [
-        { label: past ? monthShort(cur) : 'This month', value: money0(values[n - 1]) },
-        { label: `Average · ${n} mo`, value: money0(avg(values)), sub: 'per month' },
-        { label: 'Shifts', value: String(shifts.length), sub: period },
-      ],
-      empty: shifts.length ? undefined : 'No shifts logged in this period.',
     };
   }
 

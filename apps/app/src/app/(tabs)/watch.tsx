@@ -1,4 +1,4 @@
-// Spending watch (VIEW-5, Fina's "Expense improvement tracker"): pick the categories you're trying
+// Spending watch (VIEW-5): pick the categories you're trying
 // to bring down and see each one's last 6 months, its 3-month average and where this month is heading.
 import { PAGE_MAX } from '@/lib/layout';
 import { EmptyState } from '@/components/States';

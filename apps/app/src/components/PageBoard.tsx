@@ -1,4 +1,4 @@
-// A built-in page as a widget layout (Gig work, Credit cards, Car & loans, Spending watch). The
+// A built-in page as a widget layout (Credit cards, Car & loans, Spending watch). The
 // page supplies its own blocks (drawn from data it already loaded) and a default order; you can
 // reorder, resize or remove them, add any other widget, or go back to the default. The layout is
 // stored with the account.

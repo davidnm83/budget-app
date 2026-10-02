@@ -4,16 +4,15 @@
  * Matched on the lowercased name; anything unknown gets a neutral dot.
  */
 const CATEGORY: Record<string, string> = {
-  'gig work': '🛵',
   // income
-  paycheck: '💼', paycheque: '💼', 'gig income': '🛵', 'repayment from others': '🔁', 'other income': '💵', refunds: '↩️',
+  paycheck: '💼', paycheque: '💼', 'repayment from others': '🔁', 'other income': '💵', refunds: '↩️',
   'money from family': '👪', 'tax returns & benefits': '🏛️', cashback: '🪙', 'interest income': '📈', sales: '🏷️', 'student loans': '🎓',
   // home & bills
   rent: '🏠', furniture: '🛋️', 'household items': '💡', home: '🏠', 'phone bill': '📱', 'phone & internet': '📱', subscriptions: '🔁',
   // fees
   'bank charges & fees': '🏦', 'credit card interest': '💳', 'installment plan': '🧾', 'credit card debt': '💳', 'interest & fees': '🏦',
   // food
-  groceries: '🛒', 'fast food': '🍔', snacks: '🍫', 'food delivery': '🛵', restaurants: '🍽️', 'coffee shops': '☕', 'movie snacks': '🍿', creami: '🍦',
+  groceries: '🛒', 'fast food': '🍔', snacks: '🍫', 'food delivery': '🛵', restaurants: '🍽️', 'coffee shops': '☕', 'movie snacks': '🍿',
   // transport
   'car payments': '🚙', 'car payment': '🚙', 'vehicle repairs & maintenance': '🔧', 'public transportation': '🚇', gas: '⛽',
   'other transportation': '🚕', taxis: '🚕', parking: '🅿️', 'parking tickets': '🎫', 'license & vehicle fees': '🪪', 'vehicle insurance': '🛡️',

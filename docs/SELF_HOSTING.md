@@ -7,7 +7,7 @@ Each person runs their **own copy**: their own Supabase project (database + serv
 - **[Node.js](https://nodejs.org) 20 or newer** and **[Git](https://git-scm.com)**
 - **A GitHub account**, to fork this repo
 - **A [Supabase](https://supabase.com) account** (free)
-- **A [Plaid](https://dashboard.plaid.com/signup) account on the free Trial plan**, which covers up to 10 bank logins and needs identity verification. The Trial plan uses Plaid's **production** environment, so use your **Production** secret.
+- **Optional: a [Plaid](https://dashboard.plaid.com/signup) account on the free Trial plan**, which covers up to 10 bank logins and needs identity verification. The Trial plan uses Plaid's **production** environment, so use your **Production** secret. Skip it if you only want to import files or add accounts by hand; steps 3 to 5 are then not needed.
 
 ## Where do I type these commands?
 
@@ -48,7 +48,7 @@ npm install
 
 ## 2. Create your Supabase project
 
-1. In Supabase, create a **New project**. Pick a region near you (e.g. Canada Central) and save the database password somewhere safe.
+1. In Supabase, create a **New project**. Pick a region near you and save the database password somewhere safe.
 2. Note the **project ref**, the `abcdefgh…` part of `https://abcdefgh….supabase.co`.
 3. Connect this repo to it and create the tables:
 
@@ -71,7 +71,7 @@ openssl rand -hex 32   # copy the output; it's your CRON_SECRET
 Then store your Plaid keys and settings as Edge Function secrets. They stay on the server; the app never sees them.
 
 1. Copy `supabase/.env.example` to `supabase/.env` (Windows: `copy supabase\.env.example supabase\.env`).
-2. Fill in your Plaid client ID, Production secret and the random `CRON_SECRET`.
+2. Fill in your Plaid client ID, Production secret and the random `CRON_SECRET`. Set `PLAID_COUNTRY_CODES`, `APP_TIMEZONE` and `DEFAULT_CURRENCY` for where you live.
 3. Upload them:
 
 ```bash
@@ -97,7 +97,7 @@ This deploys `plaid-link-token`, `plaid-exchange`, `plaid-sync` and `plaid-remov
    - the same `CRON_SECRET`
 2. Paste it into Supabase → **SQL Editor** and run it **once**.
 
-The job fires at 09:00 and 10:00 UTC. The function only does the work in the run that lands at 5 AM in `APP_TIMEZONE`, so it stays 5 AM through daylight-saving changes.
+The job fires every hour. The function only does the work in the run that lands at 5 AM in `APP_TIMEZONE` (set it in `supabase/.env`; the default is UTC), so it stays 5 AM through daylight-saving changes.
 
 ## 6. Lock down sign-ups (important)
 

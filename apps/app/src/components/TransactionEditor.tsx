@@ -227,7 +227,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       </View>
 
       <Text style={[styles.label, { color: t.muted }]}>Merchant</Text>
-      <TextInput style={input} value={merchant} onChangeText={setMerchant} placeholder="e.g. Superstore" placeholderTextColor={t.muted} />
+      <TextInput style={input} value={merchant} onChangeText={setMerchant} placeholder="e.g. Corner Market" placeholderTextColor={t.muted} />
 
       <View style={[styles.ruleRow, { marginTop: 16 }]}>
         <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>{split ? 'Split across categories' : 'Category'}</Text>

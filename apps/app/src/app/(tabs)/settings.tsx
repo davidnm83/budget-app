@@ -5,9 +5,13 @@ import { UNDER_BAR } from '@/lib/layout';
 import { useCallback, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import PlaidLinkButton from '@/components/PlaidLinkButton';
-import { Button, Card, Segmented } from '@/components/ui';
+import { Button, Card, Chip, Segmented } from '@/components/ui';
 import { callFunction, supabase } from '@/lib/supabase';
 import { useSession } from '@/lib/session';
+import { currency } from '@budget-app/core';
+import { COMMON_CURRENCIES, clearSampleData, loadSampleData, saveCurrency } from '@/lib/setup';
+import { useConfirm } from '@/components/Confirm';
+import { toast } from '@/lib/toast';
 import { setThemeMode, useTheme, useThemeMode } from '@/lib/theme';
 import type { PlaidItem } from '@/lib/types';
 
@@ -28,6 +32,21 @@ export default function Settings() {
   const { session } = useSession();
   const [items, setItems] = useState<PlaidItem[]>([]);
   const [msg, setMsg] = useState('');
+  const [code, setCode] = useState(currency());
+  const changeCurrency = async (c: string) => { try { await saveCurrency(c); setCode(c); } catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); } };
+  const [ask, confirmUi] = useConfirm();
+  const sample = async () => {
+    try { const n = await loadSampleData(); toast(`Sample data loaded: ${n} transactions`); }
+    catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); }
+  };
+  const unsample = () => ask({
+    title: 'Remove sample data?', action: 'Remove',
+    message: 'The “Sample …” accounts and everything in them are deleted. Your own accounts are not touched.',
+    run: async () => {
+      try { const n = await clearSampleData(); toast(n ? 'Sample data removed' : 'There was no sample data'); }
+      catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); }
+    },
+  });
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.from('plaid_items').select('id, item_id, institution_name, status, error_code, last_synced_at').order('institution_name');
@@ -54,7 +73,20 @@ export default function Settings() {
           <Text style={{ color: t.text, flex: 1 }}>Bank and merchant logos</Text>
           <Switch value={logos} onValueChange={setLogosEnabled} />
         </View>
-        <Text style={{ color: t.muted, fontSize: 12 }}>Pictures come from your bank feed, or from DuckDuckGo’s icon service using only the site name (like cibc.com). Off shows letters and emoji and makes no outside requests for them. Pictures you upload always show.</Text>
+        <Text style={{ color: t.muted, fontSize: 12 }}>Pictures come from your bank feed, or from DuckDuckGo’s icon service using only the site name (like examplebank.com). Off shows letters and emoji and makes no outside requests for them. Pictures you upload always show.</Text>
+      </Card>
+      <Text style={[styles.h, { color: t.text }]}>Currency</Text>
+      <Card style={{ gap: 8 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {COMMON_CURRENCIES.map((c) => <Chip key={c} label={c} on={currency() === c} onPress={() => changeCurrency(c)} />)}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={{ color: t.muted }}>Or type a code</Text>
+          <TextInput value={code} onChangeText={(v) => setCode(v.toUpperCase().slice(0, 3))} maxLength={3} autoCapitalize="characters"
+            style={{ color: t.text, borderColor: t.line, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, width: 70 }} />
+          {code.length === 3 && code !== currency() && <Button title="Use" kind="plain" onPress={() => changeCurrency(code)} />}
+        </View>
+        <Text style={{ color: t.muted, fontSize: 12 }}>Amounts are shown in one currency. Nothing is converted. Kept with your account.</Text>
       </Card>
       <Text style={[styles.h, { color: t.text }]}>Bank connections</Text>
       <Card style={{ gap: 12 }}>
@@ -80,10 +112,18 @@ export default function Settings() {
 
       <Text style={[styles.h, { color: t.text }]}>Import</Text>
       <Card style={{ gap: 12 }}>
-        <Text style={{ color: t.muted }}>Bring in transactions from a bank’s CSV file, or your Fina history with its categories, notes and splits. Both are safe to run again.</Text>
+        <Text style={{ color: t.muted }}>Bring in transactions from a bank’s CSV file, or your history from another budgeting app with its categories, notes and splits. Both are safe to run again.</Text>
         <Button title="Import a CSV file" kind="plain" onPress={() => router.push('/import')} />
-        <Button title="Import history from Fina" kind="plain" onPress={() => router.push('/fina-import')} />
+        <Button title="Import from another app" kind="plain" onPress={() => router.push('/history-import')} />
       </Card>
+
+      <Text style={[styles.h, { color: t.text }]}>Sample data</Text>
+      <Card style={{ gap: 12 }}>
+        <Text style={{ color: t.muted }}>Made-up accounts named “Sample …” with six months of transactions, budgets and bills, for looking around. Loading only works while you have no transactions of your own.</Text>
+        <Button title="Load sample data" kind="plain" onPress={sample} />
+        <Button title="Remove sample data" kind="plain" onPress={unsample} />
+      </Card>
+      {confirmUi}
 
       <Text style={[styles.h, { color: t.text }]}>Planner</Text>
       <PlannerSettings />

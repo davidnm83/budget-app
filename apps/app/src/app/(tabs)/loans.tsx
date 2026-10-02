@@ -43,7 +43,7 @@ export default function Loans() {
 
   // Car loans first: that's what this page is mostly for.
   const loans = accounts.filter((a) => a.type === 'loan')
-    .sort((a, b) => Number(/auto|car|escape|vehicle/i.test(b.name)) - Number(/auto|car|escape|vehicle/i.test(a.name)) || a.name.localeCompare(b.name));
+    .sort((a, b) => Number(/auto|car|vehicle/i.test(b.name)) - Number(/auto|car|vehicle/i.test(a.name)) || a.name.localeCompare(b.name));
   const loan = loans.find((l) => l.id === pick) ?? loans[0];
   const mine = useMemo(() => (loan ? txns.filter((x) => x.account_id === loan.id).map((x) => ({ date: x.date, amount: x.amount, name: x.name ?? '' })) : []), [loan, txns]);
   const now = today();

@@ -140,7 +140,7 @@ export function buildWeek(opts: {
     rows.push({ key: `t:${t.id}`, date: t.date, kind: 'actual', description: t.merchant || t.name, accountId: t.accountId,
       planned: null, actual: t.amount, counted: t.amount, overdue: false, item: null, txn: t });
   }
-  // Within a day: money in first, so a paycheque landing the same day as a bill doesn't false-alarm.
+  // Within a day: money in first, so a paycheck landing the same day as a bill doesn't false-alarm.
   rows.sort((a, b) => a.date.localeCompare(b.date) || b.counted - a.counted);
 
   const perAccount: Record<string, number> = Object.fromEntries(opts.accounts.map((a) => [a.id, a.startBalance]));

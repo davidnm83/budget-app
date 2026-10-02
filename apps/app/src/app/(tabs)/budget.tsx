@@ -10,7 +10,7 @@ import { seedTxn } from '@/lib/txnCache';
 import { Tile } from '@/components/Tile';
 import {
   actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
-  categoryIcon, gigFuelByMonth, groupIcon, shortDate, suggestBudget, todayIn, type BudgetLine, type Month,
+  categoryIcon, groupIcon, shortDate, suggestBudget, todayIn, type BudgetLine, type Month,
 } from '@budget-app/core';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -27,7 +27,6 @@ import { loadGroupIcons } from '@/lib/categories';
 import { WidgetBoard } from '@/components/WidgetBoard';
 import { DEFAULT_BUDGET } from '@/components/Widgets';
 import { useTxnSheet, type TxnQuery } from '@/components/TxnSheet';
-import { costPerKm, loadGigSettings, loadShifts } from '@/lib/gig';
 import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { TransactionEditor } from '@/components/TransactionEditor';
 import { afterClose } from '@/lib/useBackToClose';
@@ -47,7 +46,6 @@ export default function BudgetTab() {
   const [summaries, setSummaries] = useState<MonthSummary[]>([]);
   const [groupIcons, setGroupIcons] = useState<Record<string, string>>({});
   const [widgets, setWidgets] = useState<string[]>([]);
-  const [gigGas, setGigGas] = useState<Record<string, number>>({});
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -56,20 +54,12 @@ export default function BudgetTab() {
     setLoading(true); setError('');
     try {
       setRefresh((r) => r + 1);
-      const [c, b, s, gi, prefs, gig] = await Promise.all([loadCategories(), loadBudgets(), loadMonthSummaries(), loadGroupIcons(), loadPrefs(), loadGigSettings()]);
+      const [c, b, s, gi, prefs] = await Promise.all([loadCategories(), loadBudgets(), loadMonthSummaries(), loadGroupIcons(), loadPrefs()]);
       setWidgets(prefs.budget_widgets ?? DEFAULT_BUDGET);
       const now = thisMonth();
       const first = [...s.map((x) => x.month), ...b.map((x) => x.month), addMonths(now, -12)].sort()[0];
       setCats(c); setBudgets(b); setSummaries(s); setGroupIcons(gi);
-      let monthRows = await loadCategoryMonths(first, now > month ? now : month);
-      // Gig gas: take the gas used on gig shifts out of the Gas category (a work cost, not personal spending).
-      let fuel: Record<string, number> = {};
-      const gasId = c.find((x) => x.kind === 'expense' && /^(gas|gasoline|fuel)$/i.test(x.name))?.id;
-      if (gig.exclude_gig_gas && gasId) {
-        fuel = gigFuelByMonth(await loadShifts(first), costPerKm(gig));
-        monthRows = monthRows.map((r) => (r.category_id === gasId && fuel[r.month] ? { ...r, total: Math.min(0, r.total + fuel[r.month]) } : r));
-      }
-      setGigGas(fuel);
+      const monthRows = await loadCategoryMonths(first, now > month ? now : month);
       setRows(monthRows);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -81,7 +71,7 @@ export default function BudgetTab() {
   usePullRefresh(load);
 
   const [showTxns, txnSheet] = useTxnSheet();
-  const data = { t, cats, groupIcons, widgets, setWidgets, gigGas, refresh, showTxns, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
+  const data = { t, cats, groupIcons, widgets, setWidgets, refresh, showTxns, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
     <TopBar title="Budget" />
@@ -103,7 +93,7 @@ export default function BudgetTab() {
 }
 
 interface Data {
-  t: Theme; cats: Category[]; groupIcons: Record<string, string>; widgets: string[]; setWidgets: (w: string[]) => void; gigGas: Record<string, number>; refresh: number; showTxns: (q: TxnQuery) => void; budgets: Budget[]; rows: CategoryMonth[]; summaries: MonthSummary[];
+  t: Theme; cats: Category[]; groupIcons: Record<string, string>; widgets: string[]; setWidgets: (w: string[]) => void; refresh: number; showTxns: (q: TxnQuery) => void; budgets: Budget[]; rows: CategoryMonth[]; summaries: MonthSummary[];
   month: Month; setMonth: (m: Month) => void; reload: () => void; setError: (e: string) => void; setView: (v: View_) => void;
 }
 
@@ -217,7 +207,6 @@ function MonthView(d: Data) {
         );
       })()}
       {tot.unbudgetedExpenses > 0 && <Text style={{ color: t.muted, fontSize: 12 }}>{formatMoney(tot.unbudgetedExpenses)} spent outside the budget (listed at the bottom).</Text>}
-      {!!d.gigGas[month] && <Text style={{ color: t.muted, fontSize: 12 }}>⛽ Gas leaves out ≈ {formatMoney(d.gigGas[month])} used on gig shifts (Gig work settings).</Text>}
 
       {!monthBudgets.length && (
         <Card style={{ gap: 8 }}>

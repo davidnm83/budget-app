@@ -1,5 +1,5 @@
 /**
- * Merges a manually tracked account (CSV / Fina history) into a bank-connected one, for when
+ * Merges a manually tracked account (CSV or imported history) into a bank-connected one, for when
  * the bank couldn't be matched automatically (no shared last 4 digits).
  *
  *   • a manual transaction with a bank twin (same amount, within 3 days) gives the bank row its

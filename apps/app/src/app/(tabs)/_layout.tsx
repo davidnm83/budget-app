@@ -11,7 +11,7 @@ import { useScheme, useTheme } from '@/lib/theme';
 
 // Every signed-in page lives here, so the navigation bar stays put wherever you are.
 //   • The five tabs have no header: each starts with its own TopBar.
-//   • Menu pages (Gig work, Reports, Settings…) get a header with the menu button.
+//   • Menu pages (Reports, Settings…) get a header with the menu button.
 // Phones: a floating bar of five icons at the bottom. Wide screens: no bar; the sidebar lists everything.
 const TABS: { name: string; title: string; icon: keyof typeof Ionicons.glyphMap; on: keyof typeof Ionicons.glyphMap }[] = [
   { name: 'index', title: 'Home', icon: 'home-outline', on: 'home' },
@@ -21,11 +21,11 @@ const TABS: { name: string; title: string; icon: keyof typeof Ionicons.glyphMap;
   { name: 'accounts', title: 'Accounts', icon: 'wallet-outline', on: 'wallet' },
 ];
 const PAGES: [string, string][] = [
-  ['gig', 'Gig work'], ['credit', 'Credit cards'], ['watch', 'Spending watch'], ['loans', 'Car & loans'], ['reports', 'Reports'],
+  ['credit', 'Credit cards'], ['watch', 'Spending watch'], ['loans', 'Car & loans'], ['reports', 'Reports'],
   ['categories', 'Categories'], ['merchants', 'Merchants'], ['settings', 'Settings'], ['bills', 'Bills & income'], ['page/[id]', 'Page'],
 ];
 // Reached from Settings, so they go back there.
-const FROM_SETTINGS: [string, string][] = [['import', 'Import CSV'], ['fina-import', 'Import from Fina']];
+const FROM_SETTINGS: [string, string][] = [['import', 'Import a bank file'], ['history-import', 'Import from another app']];
 
 export default function TabLayout() {
   const t = useTheme();

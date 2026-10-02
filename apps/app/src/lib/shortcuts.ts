@@ -14,7 +14,6 @@ export const SHORTCUTS: { group: string; keys: string[]; does: string }[] = [
   { group: 'Go to', keys: ['G', 'B'], does: 'Budget' },
   { group: 'Go to', keys: ['G', 'A'], does: 'Accounts' },
   { group: 'Go to', keys: ['G', 'R'], does: 'Reports' },
-  { group: 'Go to', keys: ['G', 'W'], does: 'Gig work' },
   { group: 'Go to', keys: ['G', 'C'], does: 'Credit cards' },
   { group: 'Go to', keys: ['G', 'S'], does: 'Settings' },
   { group: 'Transactions', keys: ['/'], does: 'Jump to the search box' },
@@ -23,7 +22,7 @@ export const SHORTCUTS: { group: string; keys: string[]; does: string }[] = [
   { group: 'Charts', keys: ['Hover'], does: 'Read out a point' },
   { group: 'Charts', keys: ['Click'], does: 'Open the transactions behind it' },
 ];
-const GO: Record<string, string> = { h: '/', t: '/transactions', p: '/planner', b: '/budget', a: '/accounts', r: '/reports', w: '/gig', c: '/credit', s: '/settings' };
+const GO: Record<string, string> = { h: '/', t: '/transactions', p: '/planner', b: '/budget', a: '/accounts', r: '/reports', c: '/credit', s: '/settings' };
 
 export function installShortcuts(): () => void {
   if (typeof document === 'undefined') return () => {};

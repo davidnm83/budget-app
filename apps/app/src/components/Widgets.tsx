@@ -5,7 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 export { Tile, Tile as Mini } from '@/components/Tile';
 import { Tile as Mini } from '@/components/Tile';
 import {
-  addDays, addMonths, balanceHistory, categoryIcon, expandPlan, formatDuration, loanSummary, formatMoney, monthEnd, shortDate, totalShifts, weekStart, type Month,
+  addDays, addMonths, balanceHistory, categoryIcon, expandPlan, loanSummary, formatMoney, monthEnd, shortDate, weekStart, type Month,
 } from '@budget-app/core';
 import { router } from 'expo-router';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
@@ -17,7 +17,6 @@ import { MultiPicker } from '@/components/Picker';
 import { loadTxnsFor } from '@/lib/accountTxns';
 import { useTxnSheet } from '@/components/TxnSheet';
 import { Bar, Button, Chip, LIFT, Segmented } from '@/components/ui';
-import { costPerKm, loadGigSettings, loadShifts } from '@/lib/gig';
 import { loadAccounts, loadEntries, loadRecurring, today } from '@/lib/plan';
 import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from '@/lib/reports';
@@ -60,10 +59,9 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'avgspend', title: 'Average spending', about: 'Monthly average over 3, 6 or 12 months vs this month', home: true, budget: true },
   { key: 'watch', title: 'Spending watch', about: 'Your watch-list categories against their average', home: true, budget: true, sizable: true },
   { key: 'credit', title: 'Credit cards', about: 'Card debt, utilisation and the next due date', home: true, budget: true },
-  { key: 'gig', title: 'Gig work this week', about: 'Earnings, hours and $/hour so far this week', home: true, budget: true },
   { key: 'calendar', title: 'Bills calendar', about: 'This month’s bills and income on a calendar', home: true, budget: true },
   { key: 'nwtypes', title: 'Net worth by type', about: 'Cash, cards, loans and investments', home: true, budget: false },
-  { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or gig earnings, drawn the way you choose', home: true, budget: true, config: 'chart', sizable: true },
+  { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth or card debt, drawn the way you choose', home: true, budget: true, config: 'chart', sizable: true },
   { key: 'account', title: 'Account', about: 'One account: balance, past year, loan payoff', home: true, budget: true, config: 'account', sizable: true },
   { key: 'groups', title: 'Spending by group', about: 'This month by category group, with last month beside it', home: true, budget: true, sizable: true },
 ];
@@ -122,7 +120,6 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
     case 'avgspend': return <AvgSpending t={t} refresh={refresh} months={cfg.months} />;
     case 'watch': return <WatchMini t={t} refresh={refresh} h={cfg.h} />;
     case 'credit': return <CreditMini t={t} refresh={refresh} />;
-    case 'gig': return <GigWeek t={t} refresh={refresh} />;
     case 'calendar': return <BillsCalendar t={t} refresh={refresh} anchor={anchor} />;
     case 'nwtypes': return <NetWorthByType t={t} refresh={refresh} />;
     case 'groups': return <SpendingByGroup t={t} refresh={refresh} anchor={anchor} h={cfg.h} />;
@@ -232,7 +229,7 @@ function CashPosition({ t, refresh }: { t: Theme; refresh: number }) {
   return (
     <CardShell t={t} title="Cash position" link="Accounts" onPress={() => router.navigate('/accounts')}>
       <View style={styles.tiles}>
-        <Mini t={t} label="Cash" value={money0(cash)} sub="chequing + savings" />
+        <Mini t={t} label="Cash" value={money0(cash)} sub="checking + savings" />
         <Mini t={t} label="Card debt" value={money0(cards)} />
         <Mini t={t} label="After cards" value={`${left < 0 ? '−' : ''}${money0(Math.abs(left))}`} color={left < 0 ? t.danger : t.accent} />
       </View>
@@ -256,7 +253,7 @@ function Runway({ t, refresh }: { t: Theme; refresh: number }) {
         <Text style={{ color, fontSize: 26, fontWeight: '700' }}>{runway == null ? '–' : runway < 1 ? '< 1' : Math.floor(runway)}</Text>
         <Text style={{ color: t.muted }}>days of cash at {money0(data.daily)}/day</Text>
       </View>
-      <Text style={{ color: t.muted, fontSize: 12 }}>{money0(data.cash)} in chequing and savings ÷ your average daily spending over the last 3 months. Income isn’t counted.</Text>
+      <Text style={{ color: t.muted, fontSize: 12 }}>{money0(data.cash)} in checking and savings ÷ your average daily spending over the last 3 months. Income isn’t counted.</Text>
     </CardShell>
   );
 }
@@ -338,26 +335,6 @@ function CreditMini({ t, refresh }: { t: Theme; refresh: number }) {
   );
 }
 
-function GigWeek({ t, refresh }: { t: Theme; refresh: number }) {
-  const { data } = useLoad(async () => {
-    const w = weekStart(today());
-    const [shifts, settings] = await Promise.all([loadShifts(w), loadGigSettings()]);
-    return { tot: totalShifts(shifts, costPerKm(settings)), target: settings.weekly_target };
-  }, [refresh]);
-  if (!data) return <CardShell t={t} title="Gig work this week"><Skeleton color={t.track} /></CardShell>;
-  const { tot, target } = data;
-  return (
-    <CardShell t={t} title="Gig work this week" link="Gig work" onPress={() => router.push('/gig' as any)}>
-      <View style={styles.tiles}>
-        <Mini t={t} label="Earned" value={money0(tot.earnings)} sub={target ? `of ${money0(target)}` : `${tot.shifts} shifts`} color={target ? (tot.earnings >= target ? t.accent : t.series2) : undefined} />
-        <Mini t={t} label="Time" value={formatDuration(tot.minutes)} sub={tot.activeShare != null ? `${Math.round(tot.activeShare * 100)}% active` : ''} />
-        <Mini t={t} label="Per hour" value={tot.perHour != null ? formatMoney(tot.perHour) : '–'} sub={tot.perActiveHour != null ? `${formatMoney(tot.perActiveHour)}/active h` : ''} />
-      </View>
-      {!!target && <Bar value={tot.earnings} max={target} color={tot.earnings >= target ? t.accent : t.series2} />}
-    </CardShell>
-  );
-}
-
 function BillsCalendar({ t, refresh, anchor }: { t: Theme; refresh: number; anchor?: Month }) {
   const month: Month = anchor ?? thisMonth();
   const end = monthEnd(month);
@@ -388,8 +365,8 @@ function BillsCalendar({ t, refresh, anchor }: { t: Theme; refresh: number; anch
             <Pressable key={i} disabled={!d} onPress={() => { const day = `${month.slice(0, 8)}${String(d).padStart(2, '0')}`; showTxns({ title: `${shortDate(day)}`, from: day, to: day, noTransfers: true }); }}
               style={[styles.calCell, styles.calBox, { borderColor: isToday ? t.accent : 'transparent' }]}>
               {d ? <Text style={{ color: t.muted, fontSize: 10 }}>{d}</Text> : null}
-              {o ? <Text style={{ color: t.danger, fontSize: 9, fontVariant: ['tabular-nums'] }} numberOfLines={1}>{money0(-o).replace('$', '')}</Text> : null}
-              {n ? <Text style={{ color: t.positive, fontSize: 9, fontVariant: ['tabular-nums'] }} numberOfLines={1}>+{money0(n).replace('$', '')}</Text> : null}
+              {o ? <Text style={{ color: t.danger, fontSize: 9, fontVariant: ['tabular-nums'] }} numberOfLines={1}>{money0(-o).replace(/^(-?)[^\d]+/, '$1')}</Text> : null}
+              {n ? <Text style={{ color: t.positive, fontSize: 9, fontVariant: ['tabular-nums'] }} numberOfLines={1}>+{money0(n).replace(/^[^\d]+/, '')}</Text> : null}
             </Pressable>
           );
         })}

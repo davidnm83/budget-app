@@ -1,30 +1,31 @@
 /**
- * Moves your history over from Fina. Safe to run again: rows already imported are skipped.
+ * Moves your history over from another budgeting app. Safe to run again: rows already imported
+ * are skipped.
  *
- *   1. Categories: Fina's categories are added (or matched by name) with a starting group.
- *   2. Accounts: each Fina account goes into an app account you pick, or a new manual one.
+ *   1. Categories: the export's categories are added (or matched by name) with a starting group.
+ *   2. Accounts: each account in the export goes into an app account you pick, or a new manual one.
  *   3. Transactions: rows that match a transaction already in the app (same account and amount,
- *      within 3 days) give it Fina's category, merchant and note; the rest are added. Everything
- *      from Fina arrives already reviewed.
+ *      within 3 days) give it the export's category, merchant and note; the rest are added.
+ *      Everything imported arrives already reviewed.
  */
 import {
-  addDays, finaAccountName, learnMerchantRules, matchHistory, normalizeDescription,
-  type FinaAccount, type FinaExport, type FinaRow,
+  addDays, cleanAccountName, learnMerchantRules, matchHistory, normalizeDescription,
+  type HistoryAccount, type HistoryExport, type HistoryRow,
 } from '@budget-app/core';
 import { supabase } from './supabase';
 import { pairAllTransfers } from './transfers';
 
 export type AccountChoice = { kind: 'existing'; accountId: string } | { kind: 'new' } | { kind: 'skip' };
 
-export interface FinaImportOptions {
-  accounts: Map<string, AccountChoice>; // Fina account name → choice
+export interface ImportOptions {
+  accounts: Map<string, AccountChoice>; // imported account name → choice
   hideUnusedStarterCategories: boolean;
   learnMerchants: boolean;
 }
 
-export interface FinaImportResult {
+export interface ImportResult {
   added: number;
-  matched: number;       // existing transactions that took Fina's category
+  matched: number;       // existing transactions that took its category
   matchedReviewed: number; // existing transactions you'd already reviewed in the app (left as they were)
   split: number;         // existing transactions that became splits
   alreadyImported: number;
@@ -36,9 +37,9 @@ export interface FinaImportResult {
   transfersPaired?: number;
 }
 
-const STARTER = new Set(['paycheque', 'gig income', 'refunds', 'other income', 'groceries', 'restaurants', 'gas', 'car insurance',
-  'car payment', 'parking & transit', 'phone & internet', 'subscriptions', 'gym', 'interest & fees', 'shopping', 'personal care',
-  'health', 'education', 'entertainment', 'gifts', 'home', 'other', 'transfer', 'credit card payment']);
+const STARTER = new Set(['paycheck', 'refunds', 'other income', 'groceries', 'restaurants', 'gas', 'car insurance',
+  'car payment', 'parking & transit', 'rent', 'utilities', 'phone & internet', 'subscriptions', 'interest & fees', 'shopping', 'personal care',
+  'health', 'education', 'entertainment', 'travel', 'gifts', 'home', 'other', 'transfer', 'credit card payment']);
 
 /** Reads every row of a query, 1000 at a time (the API's page limit). */
 async function fetchAll<T>(make: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>): Promise<T[]> {
@@ -65,8 +66,8 @@ async function pool<T>(items: T[], n: number, fn: (item: T) => Promise<void>) {
 
 const check = ({ error }: { error: { message: string } | null }) => { if (error) throw new Error(error.message); };
 
-export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, progress: (msg: string) => void): Promise<FinaImportResult> {
-  const result: FinaImportResult = { added: 0, matched: 0, matchedReviewed: 0, split: 0, alreadyImported: 0, skipped: 0, categoriesAdded: 0, categoriesHidden: 0, accountsCreated: 0, merchantRules: 0 };
+export async function runHistoryImport(history: HistoryExport, opts: ImportOptions, progress: (msg: string) => void): Promise<ImportResult> {
+  const result: ImportResult = { added: 0, matched: 0, matchedReviewed: 0, split: 0, alreadyImported: 0, skipped: 0, categoriesAdded: 0, categoriesHidden: 0, accountsCreated: 0, merchantRules: 0 };
   const now = new Date().toISOString();
 
   // ── 1. categories ──
@@ -74,8 +75,8 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
   const { data: cats, error: catErr } = await supabase.from('categories').select('id, name, group_name, kind, is_hidden, sort');
   if (catErr) throw new Error(catErr.message);
   const byName = new Map((cats ?? []).map((c) => [c.name.toLowerCase(), c]));
-  const categoryId = new Map<string, string>(); // lowercased Fina name → id
-  for (const c of fina.categories) {
+  const categoryId = new Map<string, string>(); // lowercased imported name → id
+  for (const c of history.categories) {
     const sort = c.sort;
     const found = byName.get(c.name.toLowerCase());
     if (found) {
@@ -97,15 +98,15 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
 
   // ── 2. accounts ──
   progress('Setting up accounts…');
-  const accountId = new Map<string, string | null>(); // Fina account → app account id (null = skip)
-  for (const a of fina.accounts) {
+  const accountId = new Map<string, string | null>(); // imported account → app account id (null = skip)
+  for (const a of history.accounts) {
     const choice = opts.accounts.get(a.name) ?? { kind: 'new' };
     if (choice.kind === 'skip') accountId.set(a.name, null);
     else if (choice.kind === 'existing') accountId.set(a.name, choice.accountId);
-    else if (fina.rows.every((r) => r.account !== a.name || done.has(r.importId))) accountId.set(a.name, null); // nothing new for it
+    else if (history.rows.every((r) => r.account !== a.name || done.has(r.importId))) accountId.set(a.name, null); // nothing new for it
     else {
       const { data, error } = await supabase.from('accounts')
-        .insert({ name: finaAccountName(a.name), mask: a.mask, kind: 'manual', type: a.type, subtype: a.subtype })
+        .insert({ name: cleanAccountName(a.name), mask: a.mask, kind: 'manual', type: a.type, subtype: a.subtype })
         .select('id').single();
       if (error) throw new Error(error.message);
       accountId.set(a.name, data.id);
@@ -116,16 +117,16 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
   // ── 3. what's already in the app for those accounts ──
   progress('Checking what the app already has…');
   const ids = [...new Set([...accountId.values()].filter((x): x is string => !!x))];
-  const first = addDays(fina.rows.reduce((m, r) => (r.date < m ? r.date : m), '9999-12-31'), -3);
-  const last = addDays(fina.rows.reduce((m, r) => (r.date > m ? r.date : m), '0000-01-01'), 3);
+  const first = addDays(history.rows.reduce((m, r) => (r.date < m ? r.date : m), '9999-12-31'), -3);
+  const last = addDays(history.rows.reduce((m, r) => (r.date > m ? r.date : m), '0000-01-01'), 3);
   type Ex = { id: string; account_id: string; date: string; amount: number; reviewed: boolean; import_id: string | null };
   const existing = ids.length
     ? await fetchAll<Ex>((from, to) => supabase.from('transactions').select('id, account_id, date, amount, reviewed, import_id')
         .in('account_id', ids).gte('date', first).lte('date', last).order('id').range(from, to))
     : [];
 
-  const todo: (FinaRow & { accountId: string })[] = [];
-  for (const r of fina.rows) {
+  const todo: (HistoryRow & { accountId: string })[] = [];
+  for (const r of history.rows) {
     if (done.has(r.importId)) { result.alreadyImported++; continue; }
     const acc = accountId.get(r.account);
     if (!acc) { result.skipped++; continue; }
@@ -135,9 +136,9 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
   const match = matchHistory(todo, pool_);
   const byIndex = new Map(todo.map((r) => [r.index, r]));
   const exById = new Map(existing.map((e) => [e.id, e]));
-  const cat = (r: FinaRow) => categoryId.get(r.category.toLowerCase()) ?? null;
+  const cat = (r: HistoryRow) => categoryId.get(r.category.toLowerCase()) ?? null;
 
-  // ── 4. existing transactions that match one Fina row ──
+  // ── 4. existing transactions that match one imported row ──
   progress(`Updating ${match.single.size + match.splits.length} transactions already in the app…`);
   await pool([...match.single.entries()], 6, async ([index, id]) => {
     const r = byIndex.get(index)!;
@@ -160,7 +161,7 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
     result.matched++;
   });
 
-  // ── 5. existing transactions that several Fina rows split ──
+  // ── 5. existing transactions that several imported rows split ──
   await pool(match.splits, 4, async (s) => {
     const rows = s.rows.map((i) => byIndex.get(i)!);
     const importId = rows.map((r) => r.importId).join('\n');
@@ -213,7 +214,7 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
     progress('Learning merchant names…');
     const { data: have } = await supabase.from('merchant_rules').select('match');
     const known = new Set((have ?? []).map((r) => normalizeDescription(r.match)));
-    const rules = learnMerchantRules(fina.rows.filter((r) => r.merchant && r.kind !== 'transfer').map((r) => ({ name: r.name, merchant: r.merchant })))
+    const rules = learnMerchantRules(history.rows.filter((r) => r.merchant && r.kind !== 'transfer').map((r) => ({ name: r.name, merchant: r.merchant })))
       .filter((r) => r.match.length >= 4 && !known.has(r.match));
     await inBatches(rules, 500, async (batch) => { check(await supabase.from('merchant_rules').insert(batch)); });
     result.merchantRules = rules.length;
@@ -235,12 +236,12 @@ export async function runFinaImport(fina: FinaExport, opts: FinaImportOptions, p
   return result;
 }
 
-/** Suggests where each Fina account should go: an app account with the same last 4 digits or name, else a new one. */
-export function suggestAccountChoices(fina: FinaAccount[], app: { id: string; name: string; mask: string | null }[]): Map<string, AccountChoice> {
+/** Suggests where each imported account should go: an app account with the same last 4 digits or name, else a new one. */
+export function suggestAccountChoices(from: HistoryAccount[], app: { id: string; name: string; mask: string | null }[]): Map<string, AccountChoice> {
   const out = new Map<string, AccountChoice>();
   const taken = new Set<string>();
-  for (const a of fina) {
-    const name = finaAccountName(a.name).toLowerCase();
+  for (const a of from) {
+    const name = cleanAccountName(a.name).toLowerCase();
     const hit = app.find((x) => !taken.has(x.id) && ((a.mask && x.mask && x.mask.slice(-4) === a.mask) || x.name.toLowerCase() === name));
     if (hit) { taken.add(hit.id); out.set(a.name, { kind: 'existing', accountId: hit.id }); }
     else out.set(a.name, { kind: 'new' });

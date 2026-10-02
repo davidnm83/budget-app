@@ -144,7 +144,7 @@ function WeekCard({ t, data, now }: { t: Theme; data: PlannerData; now: string }
   if (!plan.length) {
     return (
       <CardShell t={t} title="This week" link="Planner" onPress={() => router.navigate('/planner')}>
-        <Text style={{ color: t.muted }}>Turn on “Plan bills from this account” for your chequing accounts to see the week here.</Text>
+        <Text style={{ color: t.muted }}>Turn on “Plan bills from this account” for your checking accounts to see the week here.</Text>
       </CardShell>
     );
   }

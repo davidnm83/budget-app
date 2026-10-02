@@ -8,14 +8,25 @@ import { Platform, View } from 'react-native';
 import { Panels, Sidebar } from '@/components/Menu';
 import { useScheme } from '@/lib/theme';
 import { SessionProvider, useSession } from '@/lib/session';
+import Setup from '@/components/Setup';
+import { useSetup } from '@/lib/setup';
 
 SplashScreen.preventAutoHideAsync();
 
 
 function RootStack() {
   const { session, loading } = useSession();
+  const scheme = useScheme();
   useEffect(() => { if (!loading) SplashScreen.hideAsync(); }, [loading]);
+  const setup = useSetup(session?.user.id);
   if (loading) return null;
+  // A brand-new account sees the setup screen first, laid over the app (which stays mounted so
+  // navigation keeps working). While that's being worked out, a blank cover avoids a flash.
+  const cover = !session || setup.state === 'done' ? null : (
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50, backgroundColor: scheme === 'dark' ? '#111110' : '#f0f0ec' }}>
+      {setup.state === 'needed' && <Setup onDone={setup.finish} demo={session.user.app_metadata?.demo === true} />}
+    </View>
+  );
   return (
     <View style={{ flex: 1, flexDirection: 'row' }}>
     {!!session && <Sidebar />}
@@ -33,6 +44,7 @@ function RootStack() {
     </View>
     {!!session && <PullIndicator />}
     {!!session && <Panels />}
+    {cover}
     <Toaster />
     </View>
   );

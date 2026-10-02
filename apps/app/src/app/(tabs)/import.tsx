@@ -15,7 +15,7 @@ import type { Account } from '@/lib/types';
 const NEW = 'new';
 const TYPES = [
   { label: 'Credit card', type: 'credit', subtype: 'credit card' },
-  { label: 'Chequing', type: 'depository', subtype: 'checking' },
+  { label: 'Checking', type: 'depository', subtype: 'checking' },
   { label: 'Savings', type: 'depository', subtype: 'savings' },
   { label: 'Loan', type: 'loan', subtype: 'loan' },
 ];

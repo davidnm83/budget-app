@@ -6,7 +6,7 @@
  */
 import { addDays, type IsoDate } from './dates.ts';
 import { round2 } from './money.ts';
-import type { CategoryKind } from './fina.ts';
+import type { CategoryKind } from './history.ts';
 
 export type Month = IsoDate; // always the 1st, e.g. '2026-09-01'
 
