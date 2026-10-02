@@ -71,14 +71,12 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, 
         )}
       </View>
   );
-  return (
-    <>
-      <View style={[styles.board, wide && { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch' }]}>
-        {known.map(({ e, i }) => {
-          const [k, cfg] = parseEntry(e);
-          const full = cfg.w === 'full';
-          return (
-            <Cell key={`${i}:${e}`} wide={wide} full={full} editing={editing} index={i} t={t} isOver={over === i && drag !== i}
+  // One widget with its edit tools. `column` = it sits in one of the two side-by-side columns.
+  const cell = ({ e, i }: { e: string; i: number }, column: boolean) => {
+    const [k, cfg] = parseEntry(e);
+    const full = cfg.w === 'full';
+    return (
+      <Cell key={`${i}:${e}`} editing={editing} index={i} t={t} isOver={over === i && drag !== i}
               onDragStart={() => setDrag(i)} onDragOver={() => setOver(i)} onDrop={() => { if (drag != null) move(drag, i); setDrag(null); setOver(null); }} onDragEnd={() => { setDrag(null); setOver(null); }}>
               {editing && (
                 <View style={[styles.tools, { backgroundColor: t.card, borderColor: t.line }]}>
@@ -97,11 +95,28 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, 
               <View style={[{ flexGrow: 1 }, editing && { opacity: drag === i ? 0.4 : 1 }]} pointerEvents={editing ? 'none' : 'auto'}>
                 {special?.(k) != null ? <TitleOverride.Provider value={cfg.title || undefined}>{special(k)}</TitleOverride.Provider> : <Widget k={e} refresh={refresh} anchor={anchor} range={range} />}
               </View>
-            </Cell>
-          );
-        })}
-      </View>
-      {!known.length && place !== 'budget' && !editing && <EmptyState icon="grid-outline" title="No widgets here yet" text="Add charts and summaries and arrange them the way you like." action="Add widgets" onAction={() => onEditing(true)} />}
+      </Cell>
+    );
+  };
+  // Wide screens: a run of half-width widgets fills two columns, alternating, and each column
+  // stacks on its own, so a short card beside a tall one doesn't stretch or leave a gap under it.
+  // Full-width widgets (and a half-width one on its own) take a whole row.
+  const rows: { e: string; i: number }[][] = [];
+  for (const x of known) {
+    const half = wide && parseEntry(x.e)[1].w !== 'full';
+    const last = rows[rows.length - 1];
+    if (half && last && last.length && wide && parseEntry(last[0].e)[1].w !== 'full') last.push(x); else rows.push([x]);
+  }
+  return (
+    <>
+      <View style={styles.board}>
+        {rows.map((row, r) => (row.length === 1 ? cell(row[0], false) : (
+          <View key={`row${r}`} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+            <View style={styles.column}>{row.filter((_, n) => n % 2 === 0).map((x) => cell(x, true))}</View>
+            <View style={styles.column}>{row.filter((_, n) => n % 2 === 1).map((x) => cell(x, true))}</View>
+          </View>
+        )))}
+      </View>       {!known.length && place !== 'budget' && !editing && <EmptyState icon="grid-outline" title="No widgets here yet" text="Add charts and summaries and arrange them the way you like." action="Add widgets" onAction={() => onEditing(true)} />}
       {bar}
       {adding && (
         <Sheet title="Add a widget" onClose={() => setAdding(false)}>
@@ -117,7 +132,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, 
         </Sheet>
       )}
       {settings && (
-        <WidgetSettings kind={settings.key === 'chart' ? 'chart' : 'basic'} widget={settings.key} cfg={settings.cfg} onClose={() => setSettings(null)}
+        <WidgetSettings kind={settings.key === 'chart' ? 'chart' : settings.key === 'text' ? 'text' : 'basic'} widget={settings.key} cfg={settings.cfg} onClose={() => setSettings(null)}
           onDone={(cfg) => {
             const e = makeEntry(settings.key, cfg);
             onChange(settings.index == null ? [...entries, e] : entries.map((x, n) => (n === settings.index ? e : x)));
@@ -137,8 +152,8 @@ function Tool({ t, icon, label, onPress, off }: { t: Theme; icon: keyof typeof I
 }
 
 /** One slot on the board. On the web, while editing, it can be dragged onto another slot to take its place. */
-function Cell({ wide, full, editing, index, t, isOver, onDragStart, onDragOver, onDrop, onDragEnd, children }: {
-  wide: boolean; full: boolean; editing: boolean; index: number; t: Theme; isOver: boolean;
+function Cell({ editing, index, t, isOver, onDragStart, onDragOver, onDrop, onDragEnd, children }: {
+  editing: boolean; index: number; t: Theme; isOver: boolean;
   onDragStart: () => void; onDragOver: () => void; onDrop: () => void; onDragEnd: () => void; children: ReactNode;
 }) {
   const ref = useRef<View>(null);
@@ -157,7 +172,7 @@ function Cell({ wide, full, editing, index, t, isOver, onDragStart, onDragOver, 
     return () => { el.removeEventListener('dragstart', start); el.removeEventListener('dragover', overFn); el.removeEventListener('drop', drop); el.removeEventListener('dragend', end); };
   }, [editing, index]);
   return (
-    <View ref={ref} style={[styles.cell, !editing && riseAfter(index), wide && (full ? { flexBasis: '100%' } : { flexBasis: '45%', flexGrow: 1, minWidth: 0 }), editing && { borderRadius: 14, outlineWidth: 2, outlineStyle: isOver ? 'solid' : 'dashed', outlineColor: isOver ? t.accent : t.line, outlineOffset: 2 } as any]}>
+    <View ref={ref} style={[styles.cell, !editing && riseAfter(index), editing && { borderRadius: 14, outlineWidth: 2, outlineStyle: isOver ? 'solid' : 'dashed', outlineColor: isOver ? t.accent : t.line, outlineOffset: 2 } as any]}>
       {children}
     </View>
   );
@@ -166,6 +181,7 @@ function Cell({ wide, full, editing, index, t, isOver, onDragStart, onDragOver, 
 const styles = StyleSheet.create({
   board: { gap: 10 },
   cell: { gap: 6 },
+  column: { flex: 1, minWidth: 0, gap: 10 },
   tools: { flexDirection: 'row', alignItems: 'center', gap: 2, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingLeft: 10, paddingRight: 4, minHeight: 40 },
   tool: { width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   size: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, height: 30, justifyContent: 'center', marginHorizontal: 2 },

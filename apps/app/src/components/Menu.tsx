@@ -22,7 +22,6 @@ import { afterClose } from '@/lib/useBackToClose';
 type Item = { icon?: keyof typeof Ionicons.glyphMap; emoji?: string; label: string; href: string };
 const PAGES: Item[] = [
   { icon: 'card-outline', label: 'Credit cards', href: '/credit' },
-  { icon: 'trending-down-outline', label: 'Spending watch', href: '/watch' },
   { icon: 'car-outline', label: 'Car & loans', href: '/loans' },
   { icon: 'bar-chart-outline', label: 'Reports', href: '/reports' },
 ];

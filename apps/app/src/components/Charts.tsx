@@ -79,7 +79,7 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, colors, 
   const all = [...(stacked ? labels.map((_, i) => series.reduce((x, s) => x + (s.values[i] ?? 0), 0)) : series.flatMap((s) => s.values)), ...(refLine != null ? [refLine] : []), ...also];
   const col = (i: number) => colors?.[i] ?? t.series[i];
   const lo = Math.min(0, ...all), hi = Math.max(0, ...all);
-  let max = niceMax(hi), min = lo < 0 ? -niceMax(-lo) : 0;
+  let max = hi > 0 || lo >= 0 ? niceMax(hi) : 0, min = lo < 0 ? -niceMax(-lo) : 0;
   // Lines show change, so they may leave zero out when the values sit far from it (a loan-heavy net worth).
   const dLo = Math.min(...all), dHi = Math.max(...all);
   if (free && all.length && (dLo > 0 || dHi < 0) && dHi - dLo < Math.abs(dHi + dLo) / 4) {
@@ -95,8 +95,12 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, colors, 
       {legend && <Legend t={t} series={series} col={col} />}
       {n > 0 && <Readout t={t} labels={labels} series={series} sel={sel} format={format} col={col} stacked={stacked} hint={onPick && sel != null && !wide ? 'tap again for details' : undefined} />}
       <View style={{ flexDirection: 'row', gap: 6 }}>
-        <View style={{ height, justifyContent: 'space-between', alignItems: 'flex-end' }}>
-          {ticks.map((v, i) => <Text key={i} style={{ color: t.muted, fontSize: 10, fontVariant: ['tabular-nums'], lineHeight: 12, marginTop: i === 0 ? -6 : 0, marginBottom: i === 2 ? -6 : 0 }}>{format(v)}</Text>)}
+        {/* Each label sits at its own value's height (zero isn't always in the middle). The hidden copies give the column its width. */}
+        <View style={{ height, alignItems: 'flex-end' }}>
+          {ticks.map((v, i) => <Text key={`w${i}`} style={{ fontSize: 10, fontVariant: ['tabular-nums'], lineHeight: 0, height: 0, opacity: 0 }}>{format(v)}</Text>)}
+          {ticks.filter((v, i) => i !== 1 || (Math.abs(v - max) > (max - min) * 0.12 && Math.abs(v - min) > (max - min) * 0.12)).map((v) => (
+            <Text key={v} style={{ position: 'absolute', right: 0, top: height - ((v - min) / (max - min || 1)) * height - 6, color: t.muted, fontSize: 10, fontVariant: ['tabular-nums'], lineHeight: 12 }}>{format(v)}</Text>
+          ))}
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ height }} onLayout={(e) => setW(e.nativeEvent.layout.width)}>

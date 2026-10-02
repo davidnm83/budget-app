@@ -8,21 +8,24 @@ import { loadAccounts, today } from './plan';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from './reports';
 import { signedBalance, type Account } from './types';
 
-export type Source = 'spending' | 'cashflow' | 'networth' | 'carddebt' | 'balance';
+export type Source = 'spending' | 'income' | 'cashflow' | 'savings' | 'networth' | 'carddebt' | 'utilization' | 'balance';
 /** How a chart's total is split into parts (for the pie, the ranked list and the table). */
 export type SplitBy = 'category' | 'group' | 'account' | 'type';
 export type ChartView = 'bars' | 'line' | 'pie' | 'list' | 'table' | 'tiles';
 export const VIEW_LABEL: Record<ChartView, string> = { bars: 'Bars', line: 'Line', pie: 'Pie', list: 'Ranked list', table: 'Table', tiles: 'Numbers' };
 export const SOURCES: Record<Source, { title: string; about: string; views: ChartView[] }> = {
   spending: { title: 'Spending', about: 'All spending or the categories you choose, by month and by category', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles'] },
+  income: { title: 'Income', about: 'Money coming in, by month and by category', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles'] },
   cashflow: { title: 'Money in and out', about: 'Income against spending each month', views: ['bars', 'line', 'table', 'tiles'] },
+  savings: { title: 'Savings rate', about: 'The share of each month\'s income that wasn\'t spent', views: ['bars', 'line', 'table', 'tiles'] },
   networth: { title: 'Net worth', about: 'Everything you own minus everything you owe, over time, and by account or type', views: ['line', 'bars', 'list', 'table', 'tiles'] },
   carddebt: { title: 'Card debt', about: 'What you owe on credit cards over time, and by card', views: ['line', 'bars', 'pie', 'list', 'table', 'tiles'] },
+  utilization: { title: 'Card utilisation', about: 'How much of your credit limits is in use, over time and by card', views: ['line', 'bars', 'list', 'table', 'tiles'] },
   balance: { title: 'Account balance', about: 'One account, or several added together, over time', views: ['line', 'bars', 'pie', 'list', 'table', 'tiles'] },
 };
 
 /** Which ways each source can be split. The first is the default. */
-export const SPLITS: Partial<Record<Source, SplitBy[]>> = { spending: ['category', 'group', 'account'], cashflow: [], networth: ['account', 'type'], carddebt: ['account'], balance: ['account'] };
+export const SPLITS: Partial<Record<Source, SplitBy[]>> = { spending: ['category', 'group', 'account'], income: ['category', 'account'], cashflow: [], networth: ['account', 'type'], carddebt: ['account'], utilization: ['account'], balance: ['account'] };
 /** Sources that aren't about accounts, so the account picker is hidden for them. */
 export const NO_ACCOUNTS: Source[] = [];
 export const SPLIT_LABEL: Record<SplitBy, string> = { category: 'Category', group: 'Group', account: 'Account', type: 'Account type' };
@@ -36,6 +39,12 @@ export interface ChartCfg {
   by?: SplitBy;
   /** A dashed line at the average of the period. */
   avg?: boolean;
+  /** Bars and lines: one coloured part per category, group or account (whatever `by` says) instead of a single total. */
+  stack?: boolean;
+  /** Draw the period before beside this one. */
+  compare?: boolean;
+  /** Spending: where this month is heading, against the average of the 3 months before. */
+  pace?: boolean;
   /** One loan picked under Account balance: add its payoff date and interest to the numbers. */
   payoff?: boolean;
 }
@@ -45,6 +54,14 @@ export interface ChartData {
   /** Parts of the whole over the period (categories, cards, apps), biggest first. Empty when the source has none. */
   breakdown: { label: string; value: number; query?: Omit<TxnQuery, 'title' | 'from' | 'to'> }[];
   tiles: { label: string; value: string; sub?: string }[];
+  /** The series are parts of a whole and should be stacked. */
+  stacked?: boolean;
+  /** Values are percentages, not money. */
+  percent?: boolean;
+  /** Where the last bar is heading (drawn as a dashed outline), and whether that beats the average. */
+  outline?: { i: number; value: number; good: boolean };
+  /** A sentence under the title ("Heading for …"). */
+  note?: string;
   /** A dashed line across the chart, when asked for. */
   refLine?: number;
   /** The transactions behind point i, when there are any to show. */
@@ -95,43 +112,78 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   const by: SplitBy | undefined = cfg.by && (SPLITS[source] ?? []).includes(cfg.by) ? cfg.by : (SPLITS[source] ?? [])[0];
   const mean = (values: number[]) => (cfg.avg && values.length > 1 ? avg(values) : undefined);
 
-  if (source === 'spending') {
+  if (source === 'spending' || source === 'income') {
+    const want = source === 'income' ? 'income' : 'expense';
+    const sign = source === 'income' ? 1 : -1;
+    const stack = !!cfg.stack;
+    const compare = !!cfg.compare && !stack;
+    // The period before is the same number of months, straight before this one.
+    const dataFrom = compare ? addMonths(first, -n) : first;
     // Per-account numbers come from the transactions themselves; otherwise the database's monthly totals.
     const perAccount = accIds.length > 0 || by === 'account';
-    const [cats, rows] = await Promise.all([loadCategories(), perAccount ? loadLines(first, monthEnd(cur), accIds) : loadCategoryMonths(first, cur).then((r) => r.map((x) => ({ ...x, account_id: '' })))]);
-    const picked = cfgCategories(cfg, cats);
-    const scope = picked.length ? picked : cats.filter((c) => c.kind === 'expense');
+    const [cats, rows] = await Promise.all([loadCategories(), perAccount ? loadLines(dataFrom, monthEnd(cur), accIds) : loadCategoryMonths(dataFrom, cur).then((r) => r.map((x) => ({ ...x, account_id: '' })))]);
+    const picked = cfgCategories(cfg, cats).filter((c) => source === 'spending' || c.kind === 'income');
+    const scope = picked.length ? picked : cats.filter((c) => c.kind === want);
     const byId = new Map(scope.map((c) => [c.id, c]));
-    // With no categories chosen it is all spending, so spending with no category counts too.
-    const mine = rows.filter((r) => r.kind !== 'transfer' && (r.category_id ? byId.has(r.category_id) : !picked.length && r.kind === 'expense'));
-    const values = months.map((m) => -mine.filter((r) => r.month === m).reduce((s, r) => s + r.total, 0));
+    // With no categories chosen it is everything of that kind, so rows with no category count too.
+    const all = rows.filter((r) => r.kind !== 'transfer' && (r.category_id ? byId.has(r.category_id) : !picked.length && r.kind === want));
+    const mine = all.filter((r) => r.month >= first);
+    const total = (list: typeof all, m: string) => sign * list.filter((r) => r.month === m).reduce((x, r) => x + r.total, 0);
+    const values = months.map((m) => total(mine, m));
     const keyFor = (r: { category_id: string | null; account_id: string }) => (by === 'account' ? r.account_id : by === 'group' ? `g:${byId.get(r.category_id ?? '')?.group ?? 'Other'}` : r.category_id ?? 'none');
     const by_ = new Map<string, number>();
-    for (const r of mine) by_.set(keyFor(r), (by_.get(keyFor(r)) ?? 0) - r.total);
+    for (const r of mine) by_.set(keyFor(r), (by_.get(keyFor(r)) ?? 0) + sign * r.total);
     const prior = values.slice(0, -1);
     const ids = scope.map((c) => c.id);
     const acc = accIds.length ? { accountIds: accIds } : {};
+    const kindQ = picked.length ? { categoryIds: ids } : { kind: want as 'expense' | 'income' };
     const part = (id: string, value: number): ChartData['breakdown'][number] => {
-      if (by === 'account') { const a = allAccounts.find((x) => x.id === id); return { label: `${a ? accountIcon(a) : '🏦'} ${a?.name ?? 'Account'}`, value, query: { accountIds: [id], ...(picked.length ? { categoryIds: ids } : { kind: 'expense' as const }), noTransfers: true } }; }
+      if (by === 'account') { const a = allAccounts.find((x) => x.id === id); return { label: `${a ? accountIcon(a) : '🏦'} ${a?.name ?? 'Account'}`, value, query: { accountIds: [id], ...kindQ, noTransfers: true } }; }
       if (by === 'group') { const g = id.slice(2); return { label: g, value, query: { categoryIds: scope.filter((c) => c.group === g).map((c) => c.id), ...acc, noTransfers: true } }; }
       const c = byId.get(id);
       return c ? { label: `${categoryIcon(c.name, c.icon)} ${c.name}`, value, query: { categoryIds: [id], ...acc, noTransfers: true } } : { label: '❔ Uncategorised', value, query: { category: 'none', ...acc, noTransfers: true } };
     };
+    const parts = [...by_.entries()].filter(([, v]) => v > 0.5).sort((a, b) => b[1] - a[1]);
+    const title = SOURCES[source].title;
+    let series: ChartData['series'] = [{ name: title, values }];
+    if (stack && parts.length > 1) {
+      // The biggest parts get a colour each; the rest are added together.
+      const top = parts.slice(0, 7).map(([id]) => id);
+      const per = (id: string) => months.map((m) => sign * mine.filter((r) => r.month === m && keyFor(r) === id).reduce((x, r) => x + r.total, 0));
+      series = top.map((id) => ({ name: part(id, 0).label.replace(/^\S+ /, by === 'group' ? '$&' : ''), values: per(id) }));
+      if (parts.length > top.length) series.push({ name: 'Everything else', values: months.map((m, i) => values[i] - series.reduce((x, sr) => x + sr.values[i], 0)) });
+    } else if (compare) {
+      const before = Array.from({ length: n }, (_, i) => addMonths(dataFrom, i));
+      series = [{ name: 'This period', values }, { name: 'Period before', values: before.map((m) => total(all, m)) }];
+    }
+    const sumOf = (v: number[]) => v.reduce((x, y) => x + y, 0);
+    const tiles: ChartData['tiles'] = [
+      { label: past ? monthShort(cur) : 'This month', value: money0(values[n - 1]) },
+      { label: `Average · ${prior.length || 1} mo`, value: money0(avg(prior.length ? prior : values)), sub: 'per month' },
+      { label: `Total · ${n} mo`, value: money0(sumOf(values)) },
+    ];
+    if (compare) { const d = sumOf(values) - sumOf(series[1].values); tiles[1] = { label: 'Against the period before', value: `${d < 0 ? '−' : '+'}${money0(Math.abs(d))}`, sub: `was ${money0(sumOf(series[1].values))}` }; }
+    // Where this month is heading: what's spent so far plus what the rest of the month usually costs.
+    let outline: ChartData['outline'], note: string | undefined, refLine = mean(values);
+    if (cfg.pace && source === 'spending' && !past && n > 1) {
+      const last3 = values.slice(Math.max(0, n - 4), n - 1);
+      const avg3 = avg(last3);
+      const rest = await restOfMonth(picked.length ? ids : null, accIds, cur, Math.min(3, n - 1), Number(now.slice(8, 10)));
+      const projected = values[n - 1] + rest;
+      const diff = projected - avg3;
+      outline = { i: n - 1, value: projected, good: projected <= avg3 };
+      note = `Heading for ${money0(projected)} this month vs a ${money0(avg3)} average${Math.abs(diff) >= 0.5 ? ` (${diff < 0 ? '−' : '+'}${money0(Math.abs(diff))})` : ''}`;
+      refLine = avg3 > 0 ? avg3 : undefined;
+    }
     return {
-      ...base,
-      series: [{ name: 'Spending', values }],
-      breakdown: [...by_.entries()].filter(([, v]) => v > 0.5).sort((a, b) => b[1] - a[1]).map(([id, value]) => part(id, value)),
-      refLine: mean(values),
-      tiles: [
-        { label: past ? monthShort(cur) : 'This month', value: money0(values[n - 1]) },
-        { label: `Average · ${prior.length || 1} mo`, value: money0(avg(prior.length ? prior : values)), sub: 'per month' },
-        { label: `Total · ${n} mo`, value: money0(values.reduce((s, v) => s + v, 0)) },
-      ],
-      drill: (i) => ({ from: months[i], to: monthEnd(months[i]), ...(picked.length ? { categoryIds: ids } : { kind: 'expense' as const }), ...acc, noTransfers: true }),
+      ...base, series, stacked: stack && series.length > 1,
+      breakdown: parts.map(([id, value]) => part(id, value)),
+      refLine, outline, note, tiles,
+      drill: (i) => ({ from: months[i], to: monthEnd(months[i]), ...kindQ, ...acc, noTransfers: true }),
     };
   }
 
-  if (source === 'cashflow') {
+  if (source === 'cashflow' || source === 'savings') {
     let income: number[], spending: number[];
     if (accIds.length) {
       const lines = await loadLines(first, monthEnd(cur), accIds);
@@ -143,6 +195,21 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
       income = months.map((m) => Math.abs(at(m)?.income ?? 0)); spending = months.map((m) => Math.abs(at(m)?.spending ?? 0));
     }
     const net = months.map((_, i) => income[i] - spending[i]);
+    if (source === 'savings') {
+      const rate = months.map((_, i) => (income[i] > 0 ? Math.round((net[i] / income[i]) * 100) : 0));
+      const tin = income.reduce((x, y) => x + y, 0), tnet = net.reduce((x, y) => x + y, 0);
+      return {
+        ...base, percent: true,
+        series: [{ name: 'Saved', values: rate }],
+        breakdown: [],
+        refLine: mean(rate),
+        tiles: [
+          { label: past ? monthShort(cur) : 'This month', value: `${rate[n - 1]}%`, sub: `${money0(net[n - 1])} of ${money0(income[n - 1])}` },
+          { label: `Over ${n} mo`, value: `${tin > 0 ? Math.round((tnet / tin) * 100) : 0}%`, sub: `${money0(tnet)} kept` },
+        ],
+        drill: (i) => ({ from: months[i], to: monthEnd(months[i]), ...(accIds.length ? { accountIds: accIds } : {}), noTransfers: true }),
+      };
+    }
     return {
       ...base,
       series: [{ name: 'Money in', values: income }, { name: 'Money out', values: spending }],
@@ -156,34 +223,44 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   }
 
   // Balances over time: weekly points going back from today.
-  const pool = source === 'carddebt' ? allAccounts.filter((a) => a.type === 'credit') : allAccounts;
+  const pool = source === 'utilization' ? allAccounts.filter((a) => a.type === 'credit' && Number(a.credit_limit) > 0) : source === 'carddebt' ? allAccounts.filter((a) => a.type === 'credit') : allAccounts;
   const accounts = source === 'balance' ? chosen : accIds.length ? pool.filter((a) => accIds.includes(a.id)) : pool;
   if (!accounts.length) {
-    return { ...base, series: [], breakdown: [], tiles: [], empty: source === 'balance' ? 'Pick an account in this chart\'s settings.' : source === 'carddebt' ? 'No credit cards yet.' : 'No accounts yet.' };
+    return { ...base, series: [], breakdown: [], tiles: [], empty: source === 'balance' ? 'Pick an account in this chart\'s settings.' : source === 'utilization' ? 'Add a credit limit to a card (Accounts, then the card\'s details) to see utilisation.' : source === 'carddebt' ? 'No credit cards yet.' : 'No accounts yet.' };
   }
   const isDebt = (a: Account) => a.type === 'credit' || a.type === 'loan';
   // Debts are drawn as the amount owed, so paying them down makes the line go down.
-  const owedView = source === 'carddebt' || (source === 'balance' && accounts.every(isDebt));
+  const owedView = source === 'carddebt' || source === 'utilization' || (source === 'balance' && accounts.every(isDebt));
   const loan = source === 'balance' && cfg.payoff !== false && accounts.length === 1 && accounts[0].type === 'loan' ? accounts[0] : null;
   const points = Math.max(2, Math.round(n * 4.35) + 1);
+  const span = cfg.compare ? points * 2 : points;
   // Balances are worked back from today's, so a past month needs the weeks since then too.
   const end = past ? monthEnd(cur) : now;
-  const total = points + Math.ceil(Math.max(0, daysBetween(end, now)) / 7) + 1;
+  const total = span + Math.ceil(Math.max(0, daysBetween(end, now)) / 7) + 1;
   const txns = await loadTxnsFor(accounts.map((a) => a.id), loan ? '1900-01-01' : addDays(now, -total * 7 - 7));
-  const per = accounts.map((a) => balanceHistory(signedBalance(a), txns.filter((x) => x.account_id === a.id && x.date >= addDays(now, -total * 7 - 7)), now, total, 7).filter((p) => p.date <= end).slice(-points));
-  const dates = per[0]?.map((p) => p.date) ?? [];
+  const per = accounts.map((a) => balanceHistory(signedBalance(a), txns.filter((x) => x.account_id === a.id && x.date >= addDays(now, -total * 7 - 7)), now, total, 7).filter((p) => p.date <= end).slice(-span));
+  const allDates = per[0]?.map((p) => p.date) ?? [];
   const sign = owedView ? -1 : 1;
-  const values = dates.map((_, i) => Math.round(per.reduce((x, h) => x + (source === 'carddebt' ? Math.min(0, h[i].balance) : h[i].balance), 0) * sign));
+  const limit = accounts.reduce((x, a) => x + Number(a.credit_limit ?? 0), 0);
+  const allValues = allDates.map((_, i) => (source === 'utilization'
+    ? Math.round((per.reduce((x, h) => x + Math.max(0, -h[i].balance), 0) / limit) * 100)
+    : Math.round(per.reduce((x, h) => x + (source === 'carddebt' ? Math.min(0, h[i].balance) : h[i].balance), 0) * sign)));
+  // With "compare", the first half of the points is the period before.
+  const cut = cfg.compare && allValues.length >= points * 2 ? allValues.length - points : 0;
+  const dates = allDates.slice(cut), values = allValues.slice(cut);
+  const before = cut ? allValues.slice(cut - points, cut) : null;
+  const pct = source === 'utilization';
+  const show = (v: number) => (pct ? `${Math.round(v)}%` : `${v < 0 ? '−' : ''}${money0(Math.abs(v))}`);
   const last = values[values.length - 1] ?? 0, firstV = values[0] ?? 0;
   const ids = accounts.map((a) => a.id);
   const TYPES: [string, (a: Account) => boolean][] = [['🏦 Cash', (a) => a.type === 'depository'], ['📈 Investments', (a) => a.type === 'investment'], ['💳 Credit cards', (a) => a.type === 'credit'], ['🧾 Loans', (a) => a.type === 'loan']];
   const worth = (a: Account) => (owedView ? Math.max(0, -signedBalance(a)) : signedBalance(a));
   const breakdown: ChartData['breakdown'] = by === 'type'
     ? TYPES.map(([label, f]) => ({ label, value: accounts.filter(f).reduce((x, a) => x + signedBalance(a), 0), query: { accountIds: accounts.filter(f).map((a) => a.id) } })).filter((x) => Math.abs(x.value) > 0.5)
-    : accounts.map((a) => ({ label: `${accountIcon(a)} ${a.name}`, value: worth(a), query: { accountIds: [a.id] } })).filter((x) => Math.abs(x.value) > 0.5).sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+    : accounts.map((a) => ({ label: `${accountIcon(a)} ${a.name}`, value: pct ? Math.round((Math.max(0, -signedBalance(a)) / Number(a.credit_limit)) * 100) : worth(a), query: { accountIds: [a.id] } })).filter((x) => Math.abs(x.value) > 0.5).sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
   const tiles: ChartData['tiles'] = [
-    { label: past ? shortDate(dates[dates.length - 1] ?? end) : owedView ? 'Owing' : source === 'balance' ? 'Balance' : 'Now', value: `${last < 0 ? '−' : ''}${money0(Math.abs(last))}`, sub: accounts.length > 1 && source !== 'networth' ? `${accounts.length} accounts` : undefined },
-    { label: `Change · ${n} mo`, value: `${last - firstV < 0 ? '−' : '+'}${money0(Math.abs(last - firstV))}`, sub: `from ${money0(firstV)}` },
+    { label: past ? shortDate(dates[dates.length - 1] ?? end) : pct ? 'In use' : owedView ? 'Owing' : source === 'balance' ? 'Balance' : 'Now', value: show(last), sub: pct ? `of ${money0(limit)}` : accounts.length > 1 && source !== 'networth' ? `${accounts.length} accounts` : undefined },
+    { label: `Change · ${n} mo`, value: pct ? `${last - firstV < 0 ? '−' : '+'}${Math.abs(last - firstV)} pts` : `${last - firstV < 0 ? '−' : '+'}${money0(Math.abs(last - firstV))}`, sub: `from ${show(firstV)}` },
   ];
   if (source === 'carddebt') {
     const lim = accounts.filter((a) => a.credit_limit);
@@ -205,11 +282,30 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   }
   return {
     labels: dates.map((d) => shortDate(d)), period, from: dates[0] ?? now, to: end,
-    series: [{ name: owedView && source === 'balance' ? 'Owed' : source === 'balance' ? 'Balance' : SOURCES[source].title, values }],
-    breakdown, tiles, refLine: mean(values),
+    series: before ? [{ name: 'This period', values }, { name: 'Period before', values: before }] : [{ name: owedView && source === 'balance' ? 'Owed' : source === 'balance' ? 'Balance' : SOURCES[source].title, values }],
+    breakdown, tiles, refLine: mean(values), percent: pct,
     title: source === 'balance' && accounts.length === 1 ? accounts[0].name : undefined,
     drill: (i) => (i === 0 ? null : { from: addDays(dates[i], -6), to: dates[i], accountIds: ids }),
   };
+}
+
+/**
+ * What was spent after this day of the month in each of the `back` months before `cur`, averaged:
+ * what "the rest of the month" usually costs. Rent paid on the 1st adds nothing by the 2nd.
+ */
+async function restOfMonth(categoryIds: string[] | null, accountIds: string[], cur: string, back: number, day: number): Promise<number> {
+  if (back < 1) return 0;
+  let sum = 0;
+  for (let p = 0; p < 10; p++) {
+    let q = supabase.from('transaction_lines').select('date, amount').eq('kind', 'expense').gte('date', addMonths(cur, -back)).lt('date', cur).order('date').range(p * 1000, p * 1000 + 999);
+    if (categoryIds) q = q.in('category_id', categoryIds);
+    if (accountIds.length) q = q.in('account_id', accountIds);
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    for (const r of (data ?? []) as { date: string; amount: number }[]) if (Number(r.date.slice(8, 10)) > day) sum -= Number(r.amount);
+    if (!data || data.length < 1000) break;
+  }
+  return Math.max(0, sum / back);
 }
 
 const accountIcon = (a: Account) => a.icon ?? (a.type === 'credit' ? '💳' : a.type === 'loan' ? '🧾' : a.type === 'investment' ? '📈' : '🏦');

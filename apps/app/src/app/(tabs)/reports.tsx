@@ -10,8 +10,9 @@ import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import { addMonths, formatMoney, monthEnd, monthName, todayIn } from '@budget-app/core';
 // Month totals cover whole months; ranges here always start on the 1st and end today or at a month end.
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { WatchPage } from '@/components/WatchPage';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Sheet } from '@/components/Forms';
@@ -26,12 +27,14 @@ import {
 import { useTheme, type Theme } from '@/lib/theme';
 
 type Tab = string; // 'categories' | 'cashflow' | 'merchants' | a custom tab's id
-const BUILT_IN = [{ id: 'categories', name: 'Categories' }, { id: 'cashflow', name: 'Cash flow' }];
+const BUILT_IN = [{ id: 'categories', name: 'Categories' }, { id: 'cashflow', name: 'Cash flow' }, { id: 'watch', name: 'Watch' }];
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
 
 export default function Reports() {
   const t = useTheme();
-  const [tab, setTab] = useState<Tab>('categories');
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<Tab>(params.tab === 'watch' ? 'watch' : 'categories');
+  useEffect(() => { if (params.tab === 'watch') setTab('watch'); }, [params.tab]);
   const [picked, setPicked] = useState<Range>(() => rangeByKey('month'));
   const [cats, setCats] = useState<Category[]>([]);
   const [rows, setRows] = useState<CategoryMonth[]>([]);
@@ -99,7 +102,8 @@ export default function Reports() {
       </Pressable>
     </ScrollView>
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-      {!custom && <DateRangeButton value={picked} onChange={setPicked} />}
+      {!custom && tab !== 'watch' && <DateRangeButton value={picked} onChange={setPicked} />}
+      {tab === 'watch' && <WatchPage />}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {custom && (
         <>
