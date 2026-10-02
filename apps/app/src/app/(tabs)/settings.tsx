@@ -12,6 +12,7 @@ import { currency } from '@budget-app/core';
 import { COMMON_CURRENCIES, clearSampleData, loadSampleData, saveCurrency } from '@/lib/setup';
 import { useConfirm } from '@/components/Confirm';
 import { toast } from '@/lib/toast';
+import { setPanel } from '@/lib/panels';
 import { canExport, exportEverything } from '@/lib/exportAll';
 import { setThemeMode, useTheme, useThemeMode } from '@/lib/theme';
 import type { PlaidItem } from '@/lib/types';
@@ -142,6 +143,16 @@ export default function Settings() {
 
       <Text style={[styles.h, { color: t.text }]}>Planner</Text>
       <PlannerSettings />
+
+      {Platform.OS === 'web' && (
+        <>
+          <Text style={[styles.h, { color: t.text }]}>Keyboard shortcuts</Text>
+          <Card style={{ gap: 12 }}>
+            <Text style={{ color: t.muted }}>On a computer, press ? anywhere to see the shortcuts, or open the guide here.</Text>
+            <Button title="Show keyboard shortcuts" kind="plain" onPress={() => setPanel('shortcuts')} />
+          </Card>
+        </>
+      )}
 
       <Text style={[styles.h, { color: t.text }]}>Account</Text>
       <Card style={{ gap: 12 }}>

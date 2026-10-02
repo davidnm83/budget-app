@@ -22,7 +22,7 @@ const TABS: { name: string; title: string; icon: keyof typeof Ionicons.glyphMap;
 ];
 const PAGES: [string, string][] = [
   ['credit', 'Credit cards'], ['watch', 'Spending watch'], ['loans', 'Car & loans'], ['reports', 'Reports'],
-  ['categories', 'Categories'], ['merchants', 'Merchants'], ['settings', 'Settings'], ['bills', 'Bills & income'], ['page/[id]', 'Page'],
+  ['categories', 'Categories'], ['merchants', 'Merchants'], ['rules', 'Rules'], ['settings', 'Settings'], ['bills', 'Bills & income'], ['page/[id]', 'Page'],
 ];
 // Reached from Settings, so they go back there.
 const FROM_SETTINGS: [string, string][] = [['import', 'Import a bank file'], ['history-import', 'Import from another app']];

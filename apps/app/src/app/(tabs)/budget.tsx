@@ -645,7 +645,7 @@ function YearView(d: Data) {
                       <Pressable key={i} style={styles.yCellBox} disabled={!v}
                         onPress={() => drill(d, l.key.startsWith('g:') ? { categoryId: null, groupName: l.label, label: l.label } : { categoryId: l.key.slice(2), groupName: null, label: l.label }, months[i], monthEnd(months[i]))}>
                         <Text style={{ color: over ? t.danger : v ? t.text : t.muted, textAlign: 'right', fontSize: 13 }}>{v ? money0(v) : '–'}</Text>
-                        {b !== undefined && <Text style={{ color: t.muted, textAlign: 'right', fontSize: 12 }}>{over ? '! ' : ''}of {money0(b)}</Text>}
+                        {b !== undefined && <Text style={{ color: t.muted, textAlign: 'right', fontSize: 12 }}>of {money0(b)}</Text>}
                       </Pressable>
                     );
                   })}

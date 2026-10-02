@@ -28,6 +28,7 @@ const PAGES: Item[] = [
 const SETUP: Item[] = [
   { icon: 'pricetags-outline', label: 'Categories', href: '/categories' },
   { icon: 'storefront-outline', label: 'Merchants', href: '/merchants' },
+  { icon: 'funnel-outline', label: 'Rules', href: '/rules' },
   { icon: 'settings-outline', label: 'Settings', href: '/settings' },
 ];
 const TABS = ['/', '/transactions', '/planner', '/budget', '/accounts'];
@@ -109,13 +110,6 @@ function MenuBody({ go, tabs, active, fit }: { go: (href: string) => void; tabs?
           <Text style={{ color: t.muted, fontSize: 14 }}>{i.label}</Text>
         </Pressable>
       ))}
-      {tabs && (
-        <Pressable onPress={() => setPanel('shortcuts')} style={({ hovered }: any) => [styles.itemSmall, hovered && { backgroundColor: t.bg }]}>
-          <Ionicons name="keypad-outline" size={17} color={t.muted} />
-          <Text style={{ color: t.muted, fontSize: 14, flex: 1 }}>Keyboard shortcuts</Text>
-          <Text style={[styles.kbd, { color: t.muted, borderColor: t.line }]}>?</Text>
-        </Pressable>
-      )}
     </>
   );
 }

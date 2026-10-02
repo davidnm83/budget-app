@@ -33,6 +33,7 @@ interface M { merchant: string; txns: number; total: number; last_date: string }
 export default function Merchants() {
   const t = useTheme();
   const wide = useWide();
+  const [room, setRoom] = useState(1200); // width available to the list and the summary beside it
   const [rows, setRows] = useState<M[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState('');
@@ -125,8 +126,9 @@ export default function Merchants() {
         <Segmented value={sort} onChange={setSort} options={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Most used' }, { value: 'recent', label: 'Recent' }, { value: 'name', label: 'A–Z' }]} />
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       </View>
-      <View style={[{ flex: 1 }, wide && styles.split]}>
-      <View style={{ flex: 1 }}>
+      <View style={[{ flex: 1 }, wide && styles.split]} onLayout={(e) => setRoom(e.nativeEvent.layout.width)}>
+      {/* The list keeps its width; the summary beside it is what narrows, and steps aside when there's no room for it. */}
+      <View style={wide ? styles.main : { flex: 1 }}>
       <FlatList {...LIST} data={shown} keyExtractor={(r) => r.merchant} contentContainerStyle={styles.list}
         ListEmptyComponent={loaded ? <EmptyState icon="storefront-outline" title={q.trim() ? 'No merchants match' : 'No merchants yet'} text={q.trim() ? 'Try a shorter search or a wider date range.' : 'They appear here once you have transactions.'} /> : <RowsSkeleton />}
         renderItem={({ item }) => (
@@ -141,7 +143,7 @@ export default function Merchants() {
           </Pressable>
         )} />
       </View>
-      {wide && <TopPane t={t} rows={rows} label={range.label} />}
+      {wide && room >= 760 && <TopPane t={t} rows={rows} label={range.label} />}
       </View>
       {edit && (
         <Sheet title="Merchant" onClose={() => setEdit(null)} footer={<Button title={merging ? `Merge into ${merging.merchant}` : 'Save name'} onPress={save} busy={busy} disabled={!target} />}>
@@ -204,7 +206,7 @@ function TopPane({ t, rows, label }: { t: Theme; rows: M[]; label: string }) {
   const out = -spent.reduce((s, r) => s + r.total, 0), inn = rows.filter((r) => r.total > 0).reduce((s, r) => s + r.total, 0);
   const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
   return (
-    <ScrollView style={{ width: 380 }} contentContainerStyle={{ paddingRight: 12, paddingBottom: UNDER_BAR, gap: 12 }}>
+    <ScrollView style={styles.side} contentContainerStyle={{ paddingRight: 12, paddingBottom: UNDER_BAR, gap: 12 }}>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         <Tile t={t} label="Merchants" value={rows.length.toLocaleString()} sub={label} />
         <Tile t={t} label="Spent" value={money0(out)} />
@@ -231,6 +233,8 @@ function TopPane({ t, rows, label }: { t: Theme; rows: M[]; label: string }) {
 }
 
 const styles = StyleSheet.create({
+  main: { flexGrow: 1, flexShrink: 0, flexBasis: 460, minWidth: 460 },
+  side: { flexGrow: 0, flexShrink: 1, flexBasis: 380, minWidth: 0 },
   split: { flexDirection: 'row', gap: 12, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   filter: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, minHeight: 38, maxWidth: 220 },
