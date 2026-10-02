@@ -1,6 +1,7 @@
 // Bills & income (BIL): this month's due dates, paid or upcoming, matched to transactions
 // automatically; the list of schedules; and suggestions spotted in your history.
 import { PAGE_MAX } from '@/lib/layout';
+import { UNDER_BAR } from '@/lib/layout';
 import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
@@ -225,10 +226,10 @@ function Section({ t, title, dues, now, accountName, onEdit }: {
 
 const styles = StyleSheet.create({
   banner: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
-  page: { padding: 16, gap: 10, paddingBottom: 96, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
+  page: { padding: 16, gap: 10, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   h: { fontSize: 12, fontWeight: '700', marginTop: 6, letterSpacing: 0.5, textTransform: 'uppercase' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, padding: 10, gap: 2 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
-  fab: { position: 'absolute', right: 20, bottom: 28, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
+  fab: { position: 'absolute', right: 20, bottom: 92, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
 });

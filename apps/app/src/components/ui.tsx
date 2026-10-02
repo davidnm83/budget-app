@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
-import { EASE, RISE } from '@/lib/motion';
+import { EASE, PRESS, RISE } from '@/lib/motion';
 import { useTheme } from '@/lib/theme';
 
 export function Button({ title, onPress, kind = 'primary', disabled, busy, style }: {
@@ -14,7 +14,7 @@ export function Button({ title, onPress, kind = 'primary', disabled, busy, style
       accessibilityRole="button"
       onPress={onPress}
       disabled={disabled || busy}
-      style={({ pressed }) => [styles.btn, { backgroundColor: bg, borderColor: kind === 'primary' ? t.accent : t.line, opacity: disabled ? 0.5 : pressed ? 0.75 : 1 }, style]}>
+      style={({ pressed }) => [styles.btn, PRESS, { backgroundColor: bg, borderColor: kind === 'primary' ? t.accent : t.line, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 }, pressed && { transform: [{ scale: 0.97 }] }, style]}>
       {busy ? <ActivityIndicator color={fg} /> : <Text style={[styles.btnText, { color: fg }]}>{title}</Text>}
     </Pressable>
   );
@@ -34,12 +34,12 @@ export function Empty({ text }: { text: string }) {
 }
 
 const styles = StyleSheet.create({
-  btn: { borderRadius: 10, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
+  btn: { borderRadius: 12, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
   btnText: { fontSize: 15, fontWeight: '600' },
-  card: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 14 },
+  card: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: 14 },
   step: { width: 44, height: 40, alignItems: 'center', justifyContent: 'center' },
-  seg: { flexDirection: 'row', borderWidth: 1, borderRadius: 10, padding: 2 },
-  segItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 36, borderRadius: 8 },
+  seg: { flexDirection: 'row', borderWidth: 1, borderRadius: 12, padding: 3 },
+  segItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 36, borderRadius: 9 },
   chip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, minHeight: 32, justifyContent: 'center' },
 });
 

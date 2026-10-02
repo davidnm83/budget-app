@@ -1,6 +1,7 @@
 // Your own pages (NAV-2, NAV-3): a page is a name, an emoji and widgets you choose and order.
 // /page/new offers ready-made starting points (Car, Debt, Monthly check-in) or a blank page.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { UNDER_BAR } from '@/lib/layout';
 import { router, Tabs, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -100,7 +101,7 @@ export default function CustomPage() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 12, gap: 10, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
+  page: { padding: 12, gap: 10, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   edit: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, minHeight: 40 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15 },
 });

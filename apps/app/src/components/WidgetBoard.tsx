@@ -3,6 +3,7 @@
 // every widget gets a strip of controls: drag (or the arrows) to reorder, width, chart height,
 // settings and remove. Each change is saved to the account as it is made.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { riseAfter } from '@/lib/motion';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
@@ -152,7 +153,7 @@ function Cell({ wide, full, editing, index, t, isOver, onDragStart, onDragOver, 
     return () => { el.removeEventListener('dragstart', start); el.removeEventListener('dragover', overFn); el.removeEventListener('drop', drop); el.removeEventListener('dragend', end); };
   }, [editing, index]);
   return (
-    <View ref={ref} style={[styles.cell, wide && (full ? { flexBasis: '100%' } : { flexBasis: '45%', flexGrow: 1, minWidth: 0 }), editing && { borderRadius: 14, outlineWidth: 2, outlineStyle: isOver ? 'solid' : 'dashed', outlineColor: isOver ? t.accent : t.line, outlineOffset: 2 } as any]}>
+    <View ref={ref} style={[styles.cell, !editing && riseAfter(index), wide && (full ? { flexBasis: '100%' } : { flexBasis: '45%', flexGrow: 1, minWidth: 0 }), editing && { borderRadius: 14, outlineWidth: 2, outlineStyle: isOver ? 'solid' : 'dashed', outlineColor: isOver ? t.accent : t.line, outlineOffset: 2 } as any]}>
       {children}
     </View>
   );

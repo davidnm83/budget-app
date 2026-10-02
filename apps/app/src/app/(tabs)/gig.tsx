@@ -3,6 +3,7 @@
 // the earnings, active time and orders; $/hour, $/active hour, % active, $/km, after gas.
 // Settings: gas (L/100 km × $/L), and when each app pays out, which feeds the planner.
 import { PAGE_MAX } from '@/lib/layout';
+import { UNDER_BAR } from '@/lib/layout';
 import { BarChart } from '@/components/Charts';
 import { PageBoard } from '@/components/PageBoard';
 import { makeEntry } from '@/components/Widgets';
@@ -548,7 +549,7 @@ const PLATFORM_COLORS: Record<string, string> = { doordash: '#e5533d', uber: '#3
 const CHART_H = 150;
 
 const styles = StyleSheet.create({
-  page: { padding: 12, gap: 10, paddingBottom: 96, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
+  page: { padding: 12, gap: 10, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { flexGrow: 1, flexBasis: '30%', minWidth: 96, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
   h: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
@@ -566,5 +567,5 @@ const styles = StyleSheet.create({
   iconBtn: { width: 38, height: 38, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   part: { gap: 10, borderWidth: 1, borderRadius: 12, padding: 12 },
   tCell: { textAlign: 'right', fontSize: 13, fontVariant: ['tabular-nums'], paddingRight: 6 },
-  fab: { position: 'absolute', right: 20, bottom: 28, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 4 },
+  fab: { position: 'absolute', right: 20, bottom: 92, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 4 },
 });

@@ -37,7 +37,7 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
   const y = useRef(new Animated.Value(height)).current;
   useEffect(() => {
     if (!visible) { y.setValue(height); return; }
-    Animated.timing(y, { toValue: 0, duration: 220, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    Animated.timing(y, { toValue: 0, duration: 280, easing: Easing.bezier(0.2, 0.9, 0.2, 1), useNativeDriver: true }).start();
   }, [visible]);
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -54,8 +54,8 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
 }
 
 const styles = StyleSheet.create({
-  phoneScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet: { borderTopLeftRadius: 18, borderTopRightRadius: 18, overflow: 'hidden', flexShrink: 1, cursor: 'auto' as any },
+  phoneScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'flex-end', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' } as any,
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: '0 -8px 30px rgba(0,0,0,0.18)' as any, overflow: 'hidden', flexShrink: 1, cursor: 'auto' as any },
   grabber: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 8 },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   panel: { width: '100%', borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', cursor: 'auto' as any },

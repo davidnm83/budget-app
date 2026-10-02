@@ -1,6 +1,7 @@
 // Categories (TXN-7): your list, grouped. Add, rename, pick an emoji, move to another group,
 // change the type, hide, or merge one into another. Tap a group name to rename the group.
 import { PAGE_MAX } from '@/lib/layout';
+import { UNDER_BAR } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { categoryIcon, groupIcon } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
@@ -186,7 +187,7 @@ function GroupEditor({ name, icon: initialIcon, onClose, onSaved }: { name: stri
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 12, gap: 12, paddingBottom: 96, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
+  page: { padding: 12, gap: 12, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   groupHead: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 4 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 },
   icon: { width: 24, fontSize: 18, textAlign: 'center' },
@@ -195,5 +196,5 @@ const styles = StyleSheet.create({
   emojis: { flexDirection: 'row', flexWrap: 'wrap', gap: 2 },
   emoji: { width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  fab: { position: 'absolute', right: 20, bottom: 28, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 4 },
+  fab: { position: 'absolute', right: 20, bottom: 92, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 4 },
 });

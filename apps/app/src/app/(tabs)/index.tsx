@@ -5,6 +5,7 @@
 //   4. Net worth: today and the change since the 1st
 // Plus any widgets you add (Customize at the bottom); the order and choice are kept per user.
 import { PAGE_MAX } from '@/lib/layout';
+import { UNDER_BAR } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   addDays, buildBudgetMonth, formatMoney, monthEnd, monthName, shortDate, weekStart as mondayOf,
@@ -98,7 +99,7 @@ export default function Home() {
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <TopBar>
         <View>
-          <Text style={{ color: t.text, fontSize: 20, fontWeight: '700' }}>{DAYS[d.getUTCDay()]}</Text>
+          <Text style={{ color: t.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.3 }}>{DAYS[d.getUTCDay()]}</Text>
           <Text style={{ color: t.muted, fontSize: 12 }}>{monthName(now.slice(0, 7) + '-01', false)} {d.getUTCDate()}</Text>
         </View>
       </TopBar>
@@ -224,7 +225,7 @@ function NetWorthCard({ t, n }: { t: Theme; n: HomeData['net'] }) {
 }
 
 const styles = StyleSheet.create({
-  page: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: 40, gap: 10, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
+  page: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: UNDER_BAR, gap: 10, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 12, gap: 8 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },

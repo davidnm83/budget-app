@@ -20,5 +20,5 @@ export function Tile({ t, label, value, sub, color, warn, strong }: {
 }
 
 const styles = StyleSheet.create({
-  tile: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 96, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, gap: 2 },
+  tile: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 96, borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, gap: 2 },
 });

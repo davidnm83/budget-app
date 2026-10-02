@@ -1,6 +1,7 @@
 // Spending watch (VIEW-5, Fina's "Expense improvement tracker"): pick the categories you're trying
 // to bring down and see each one's last 6 months, its 3-month average and where this month is heading.
 import { PAGE_MAX } from '@/lib/layout';
+import { UNDER_BAR } from '@/lib/layout';
 import { categoryIcon, monthEnd, monthName } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -60,5 +61,5 @@ export default function Watch() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 12, gap: 10, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
+  page: { padding: 12, gap: 10, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
 });

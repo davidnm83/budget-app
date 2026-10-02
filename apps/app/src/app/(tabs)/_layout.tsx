@@ -4,11 +4,10 @@ import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MenuButton } from '@/components/Menu';
-import { LIFT } from '@/components/ui';
 import { refreshPlannerBadge, usePlannerBadge } from '@/lib/badges';
 import { useWide } from '@/lib/layout';
-import { EASE } from '@/lib/motion';
-import { useTheme } from '@/lib/theme';
+import { EASE, PRESS } from '@/lib/motion';
+import { useScheme, useTheme } from '@/lib/theme';
 
 // Every signed-in page lives here, so the navigation bar stays put wherever you are.
 //   • The five tabs have no header: each starts with its own TopBar.
@@ -33,7 +32,7 @@ export default function TabLayout() {
   const wide = useWide();
   const overdue = usePlannerBadge();
   useEffect(() => { refreshPlannerBadge(); }, []);
-  const header = { headerShown: true, headerStyle: { backgroundColor: t.card }, headerTintColor: t.text, headerShadowVisible: false, headerTitleAlign: 'left' as const };
+  const header = { headerShown: true, headerStyle: { backgroundColor: t.bg, borderBottomWidth: 0 }, headerTintColor: t.text, headerShadowVisible: false, headerTitleAlign: 'left' as const, headerTitleStyle: { fontSize: 20, fontWeight: '700' as const } };
   return (
     <Tabs backBehavior="history" tabBar={(p: any) => (wide ? null : <FloatingBar {...p} />)}
       screenOptions={{ headerShown: false, animation: 'fade', sceneStyle: { backgroundColor: t.bg } }}>
@@ -57,9 +56,12 @@ function FloatingBar({ state, descriptors, navigation }: any) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const current = state.routes[state.index]?.name;
+  const dark = useScheme() === 'dark';
   return (
-    <View style={{ backgroundColor: t.bg, paddingBottom: Math.max(insets.bottom, 10), paddingTop: 6, alignItems: 'center' }}>
-      <View style={[styles.bar, LIFT, { backgroundColor: t.card, borderColor: t.line }]}>
+    <View pointerEvents="box-none" style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      {/* Content fades out as it passes under the bar, down to the edge of the screen. */}
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundImage: `linear-gradient(to top, ${t.bg} 0%, ${t.bg}d9 35%, ${t.bg}00 100%)` } as any]} />
+      <View style={[styles.bar, { backgroundColor: t.card + (dark ? 'cc' : 'd9'), borderColor: t.line, backdropFilter: 'blur(18px) saturate(1.4)', WebkitBackdropFilter: 'blur(18px) saturate(1.4)' } as any]}>
         {TABS.map((x) => {
           const route = state.routes.find((r: any) => r.name === x.name);
           if (!route) return null;
@@ -67,8 +69,8 @@ function FloatingBar({ state, descriptors, navigation }: any) {
           const badge = descriptors[route.key].options.tabBarBadge;
           return (
             <Pressable key={x.name} accessibilityRole="tab" accessibilityLabel={x.title} accessibilityState={{ selected: on }} hitSlop={4}
-              onPress={() => navigation.navigate(x.name)} style={styles.item}>
-              <View style={[styles.pill, EASE, { backgroundColor: on ? t.accent + '22' : 'transparent' }]}>
+              onPress={() => navigation.navigate(x.name)} style={({ pressed }) => [styles.item, PRESS, pressed && { transform: [{ scale: 0.88 }] }]}>
+              <View style={[styles.pill, EASE, { backgroundColor: on ? t.accent + '26' : 'transparent', transform: [{ scale: on ? 1 : 0.9 }] }]}>
                 <Ionicons name={on ? x.on : x.icon} size={23} color={on ? t.accent : t.muted} />
               </View>
               {badge != null && <View style={[styles.badge, { backgroundColor: t.danger, borderColor: t.card }]}><Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>{badge}</Text></View>}
@@ -81,7 +83,8 @@ function FloatingBar({ state, descriptors, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 2, borderWidth: StyleSheet.hairlineWidth, borderRadius: 28, paddingHorizontal: 8, height: 56, boxShadow: '0 4px 16px rgba(0,0,0,0.12)' as any },
+  dock: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', paddingTop: 28 },
+  bar: { flexDirection: 'row', alignItems: 'center', gap: 2, borderWidth: StyleSheet.hairlineWidth, borderRadius: 28, paddingHorizontal: 8, height: 56, boxShadow: '0 8px 28px rgba(0,0,0,0.16), 0 1px 3px rgba(0,0,0,0.08)' as any },
   item: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
   pill: { width: 48, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   badge: { position: 'absolute', top: 6, right: 4, minWidth: 18, height: 18, borderRadius: 9, borderWidth: 2, paddingHorizontal: 3, alignItems: 'center', justifyContent: 'center' },

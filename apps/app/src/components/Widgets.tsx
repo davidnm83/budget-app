@@ -21,7 +21,7 @@ import { costPerKm, loadGigSettings, loadShifts } from '@/lib/gig';
 import { loadAccounts, loadEntries, loadRecurring, today } from '@/lib/plan';
 import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from '@/lib/reports';
-import { RISE } from '@/lib/motion';
+import { PRESS, RISE } from '@/lib/motion';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
 import { loadWatch, type Watched } from '@/lib/watch';
@@ -78,7 +78,7 @@ export function CardShell({ t, title: own, link, onPress, children, after }: { t
   const title = useContext(TitleOverride) ?? own;
   return (
     <>
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, LIFT, RISE, { backgroundColor: t.card, borderColor: t.line, opacity: pressed && onPress ? 0.85 : 1 }]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, LIFT, RISE, PRESS, { backgroundColor: t.card, borderColor: t.line }, pressed && onPress ? { transform: [{ scale: 0.985 }] } : null]}>
       <View style={styles.between}>
         <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title.toUpperCase()}</Text>
         {link && <Text style={{ color: t.accent, fontSize: 12 }}>{link} ›</Text>}
@@ -550,7 +550,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 14, gap: 10, flexGrow: 1 },
+  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 16, padding: 14, gap: 10, flexGrow: 1 },
   trow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth },
   tcell: { width: 84, textAlign: 'right', fontVariant: ['tabular-nums'] },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },

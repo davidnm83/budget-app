@@ -1,4 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
+import { UNDER_BAR } from '@/lib/layout';
 import { useCallback, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import PlaidLinkButton from '@/components/PlaidLinkButton';
@@ -86,7 +87,7 @@ export default function Settings() {
 }
 
 const styles = StyleSheet.create({
-  page: { padding: 16, paddingBottom: 48, maxWidth: 640, width: '100%', alignSelf: 'center' },
+  page: { padding: 16, paddingBottom: UNDER_BAR, maxWidth: 640, width: '100%', alignSelf: 'center' },
   h: { fontSize: 18, fontWeight: '700', marginTop: 16, marginBottom: 8 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
 });

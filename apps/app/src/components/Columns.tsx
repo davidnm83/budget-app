@@ -1,5 +1,6 @@
 // Cards in one column on phones, two on wide screens (alternating, so the order still reads left to right).
 import { Children, type ReactNode } from 'react';
+import { PULSE } from '@/lib/motion';
 import { View } from 'react-native';
 import { useWide } from '@/lib/layout';
 
@@ -17,7 +18,7 @@ export function Columns({ children, gap = 10 }: { children: ReactNode; gap?: num
 /** Grey bars standing in for content that's loading. */
 export function Skeleton({ color, lines = 2 }: { color: string; lines?: number }) {
   return (
-    <View style={{ gap: 8, paddingVertical: 2 }} accessibilityLabel="Loading">
+    <View style={[{ gap: 8, paddingVertical: 2 }, PULSE]} accessibilityLabel="Loading">
       {Array.from({ length: lines }, (_, i) => <View key={i} style={{ height: i === 0 ? 22 : 12, width: i === 0 ? '45%' : `${85 - i * 20}%`, borderRadius: 6, backgroundColor: color }} />)}
     </View>
   );

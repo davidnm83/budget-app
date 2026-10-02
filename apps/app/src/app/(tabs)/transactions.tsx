@@ -3,6 +3,7 @@
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import { Sheet } from '@/components/Forms';
+import { UNDER_BAR } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { seedTxn } from '@/lib/txnCache';
 import { PAGE_MAX, useWide } from '@/lib/layout';
@@ -202,6 +203,7 @@ export default function Transactions() {
           ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.line, marginLeft: 52 }} />}
           ListEmptyComponent={empty}
           ListFooterComponent={footer}
+          contentContainerStyle={{ paddingBottom: UNDER_BAR }}
         />
       ) : (
         <FlatList
@@ -212,6 +214,7 @@ export default function Transactions() {
           ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.line, marginLeft: 52 }} />}
           ListEmptyComponent={empty}
           ListFooterComponent={footer}
+          contentContainerStyle={{ paddingBottom: UNDER_BAR }}
         />
       )}
       </View>

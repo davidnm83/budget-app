@@ -2,6 +2,7 @@
 // (or merge it into another by giving it that name) and the change is remembered as a rule, so
 // future transactions from the bank get the same name.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { UNDER_BAR } from '@/lib/layout';
 import { addMonths, formatMoney, monthEnd, monthOf, shortDate } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -168,7 +169,7 @@ const styles = StyleSheet.create({
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   filter: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, minHeight: 38, maxWidth: 220 },
   head: { padding: 12, gap: 8, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
-  list: { paddingHorizontal: 12, paddingBottom: 48, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
+  list: { paddingHorizontal: 12, paddingBottom: UNDER_BAR, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   search: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },

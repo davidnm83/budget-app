@@ -112,7 +112,7 @@ export default function ImportScreen() {
   const dates = file?.parsed.rows.map((r) => r.date).sort() ?? [];
 
   return (
-    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={{ padding: 16, gap: 12 }}>
+    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 116 }}>
       {!canPickFiles && <Text style={{ color: t.danger }}>CSV import is only in the web version for now.</Text>}
 
       <Card style={{ gap: 8 }}>

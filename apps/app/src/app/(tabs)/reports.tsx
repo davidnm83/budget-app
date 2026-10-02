@@ -2,6 +2,7 @@
 // spending by merchant, for a chosen date range; tap anything for its transactions. Plus your own
 // tabs, each a set of widgets you pick (kept in user_prefs.report_tabs).
 import { PAGE_MAX } from '@/lib/layout';
+import { UNDER_BAR } from '@/lib/layout';
 import { addMonths, formatMoney, monthEnd, monthName, todayIn } from '@budget-app/core';
 // Month totals cover whole months; ranges here always start on the 1st and end today or at a month end.
 import { router, useFocusEffect } from 'expo-router';
@@ -256,7 +257,7 @@ const styles = StyleSheet.create({
   tab: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 7 },
   editTab: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, minHeight: 40 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15 },
-  page: { paddingHorizontal: 12, paddingTop: 4, gap: 10, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
+  page: { paddingHorizontal: 12, paddingTop: 4, gap: 10, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   h: { fontSize: 12, fontWeight: '700', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
