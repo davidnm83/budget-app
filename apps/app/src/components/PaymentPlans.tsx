@@ -115,6 +115,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
   const [costCat, setCostCat] = useState<string | null>(from.interestCategoryId ?? null);
   const [payFrom, setPayFrom] = useState<string | null>(from.payingAccountId ?? null);
   const [post, setPost] = useState(from.postCharges ?? true);
+  const [postFee, setPostFee] = useState(from.postFee ?? true);
   const [txnId, setTxnId] = useState<string | null>(from.transactionId ?? null);
   const [past, setPast] = useState<'add' | 'skip'>(plan?.countFrom ? 'skip' : 'add');
   const [cats, setCats] = useState<{ id: string; name: string; group_name: string; kind: string; icon: string | null }[]>([]);
@@ -154,7 +155,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
     if (!draft) { setError('Check the amount, months, fee, interest and date.'); return; }
     setBusy(true); setError('');
     const input: PlanInput = { ...draft, description: description.trim(), accountId, transactionId: txnId, categoryId, interestCategoryId: costCat, payingAccountId: payFrom,
-      postCharges: post, countFrom: started && past === 'skip' ? (plan?.countFrom ?? addDays(now, 1)) : null, closedOn: plan?.closedOn ?? null };
+      postCharges: post, postFee, countFrom: started && past === 'skip' ? (plan?.countFrom ?? addDays(now, 1)) : null, closedOn: plan?.closedOn ?? null };
     try { if (plan) await updatePlan(plan, input); else await createPlan(input); toast(plan ? 'Plan saved' : 'Plan added'); onSaved(); onClose(); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
@@ -193,13 +194,24 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
       {(f > 0 || r > 0) && (
         <>
           {row('Category for the fee and interest', catLabel(costCat), 'Choose', () => setPick('cost'))}
-          <View style={styles.between}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ color: t.text }}>Add the fee and interest as transactions</Text>
-              <Text style={{ color: t.muted, fontSize: 12 }}>Turn off if your statement already lists them, so they aren’t counted twice.</Text>
+          {f > 0 && (
+            <View style={styles.between}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: t.text }}>Add the one-time fee as a transaction</Text>
+                <Text style={{ color: t.muted, fontSize: 12 }}>Turn off if the fee shows on your statement when the plan starts (many cards do this), so it isn’t counted twice. It still counts in the plan’s cost.</Text>
+              </View>
+              <Switch value={postFee} onValueChange={setPostFee} accessibilityLabel="Add the one-time fee as a transaction" />
             </View>
-            <Switch value={post} onValueChange={setPost} />
-          </View>
+          )}
+          {r > 0 && (
+            <View style={styles.between}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: t.text }}>Add the interest as transactions</Text>
+                <Text style={{ color: t.muted, fontSize: 12 }}>Turn off if your statement lists the plan’s interest each month.</Text>
+              </View>
+              <Switch value={post} onValueChange={setPost} accessibilityLabel="Add the interest as transactions" />
+            </View>
+          )}
         </>
       )}
       {cash.length > 0 && (
