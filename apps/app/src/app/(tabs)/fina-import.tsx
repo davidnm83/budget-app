@@ -155,7 +155,7 @@ export default function FinaImport() {
             {result.accountsCreated} new accounts · {result.categoriesAdded} new categories{result.categoriesHidden ? ` · ${result.categoriesHidden} starter categories hidden` : ''}{result.merchantRules ? ` · ${result.merchantRules} merchant names learned` : ''}
           </Text>
           <Text style={{ color: t.muted }}>New accounts start without a balance: tap one on the Accounts tab to set it.</Text>
-          <Button title="See your budget" onPress={() => router.replace('/budget')} />
+          <Button title="See your budget" onPress={() => router.navigate('/budget')} />
         </Card>
       )}
     </ScrollView>

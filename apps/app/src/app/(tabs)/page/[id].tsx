@@ -1,7 +1,7 @@
 // Your own pages (NAV-2, NAV-3): a page is a name, an emoji and widgets you choose and order.
 // /page/new offers ready-made starting points (Car, Debt, Monthly check-in) or a blank page.
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, Tabs, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
@@ -44,14 +44,14 @@ export default function CustomPage() {
   const create = async (tpl: (typeof TEMPLATES)[number]) => {
     setEditing(!tpl.widgets.length); // a blank page opens ready to add widgets
     const p: Page = { id: `p${Date.now().toString(36)}`, name: tpl.name === 'Blank page' ? 'My page' : tpl.name, icon: tpl.icon, widgets: tpl.widgets };
-    try { await save([...(pages ?? []), p]); router.replace(`/page/${p.id}` as any); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try { await save([...(pages ?? []), p]); router.navigate(`/page/${p.id}` as any); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
 
   if (id === 'new') {
     return (
       <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}>
-        <Stack.Screen options={{ title: 'New page' }} />
+        <Tabs.Screen options={{ title: 'New page' }} />
         <Text style={{ color: t.muted, fontSize: 13 }}>Start from a ready-made page or a blank one. You can rename it and change its widgets afterwards; it shows in the menu.</Text>
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
         {TEMPLATES.map((tpl) => (
@@ -71,7 +71,7 @@ export default function CustomPage() {
   }
   return (
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}>
-      <Stack.Screen options={{ title: page ? `${page.icon} ${page.name}` : 'Page' }} />
+      <Tabs.Screen options={{ title: page ? `${page.icon} ${page.name}` : 'Page' }} />
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {pages && !page && <Empty text="This page no longer exists." />}
       {page && (
@@ -86,7 +86,7 @@ export default function CustomPage() {
       {renaming && page && (
         <Sheet title="This page" onClose={() => setRenaming(false)}
           footer={<View style={{ flexDirection: 'row', gap: 8 }}>
-            <Button title="Delete page" kind="danger" onPress={async () => { await save(pages!.filter((p) => p.id !== page.id)); setRenaming(false); router.back(); }} />
+            <Button title="Delete page" kind="danger" onPress={async () => { await save(pages!.filter((p) => p.id !== page.id)); setRenaming(false); router.navigate('/'); }} />
             <Button title="Save" style={{ flex: 1 }} onPress={async () => { await save(pages!.map((p) => (p.id === page.id ? { ...p, name: name.trim() || 'My page', icon: icon || '📄' } : p))); setRenaming(false); }} />
           </View>}>
           <View style={{ flexDirection: 'row', gap: 8 }}>

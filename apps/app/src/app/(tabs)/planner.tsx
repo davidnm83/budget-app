@@ -14,7 +14,7 @@ import { refreshPlannerBadge, setPlannerBadge } from '@/lib/badges';
 import { supabase } from '@/lib/supabase';
 import { IconButton, TopBar } from '@/components/TopBar';
 import { Card, Chip, Empty, Segmented } from '@/components/ui';
-import Bills from '@/app/bills';
+import Bills from './bills';
 import { loadWeek, today, type PlannerData } from '@/lib/plan';
 import { useTheme, type Theme } from '@/lib/theme';
 

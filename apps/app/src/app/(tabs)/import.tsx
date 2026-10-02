@@ -177,7 +177,7 @@ export default function ImportScreen() {
       {!!done && (
         <Card style={{ gap: 8 }}>
           <Text style={{ color: t.text }}>{done}</Text>
-          <Button title="Review them" onPress={() => router.replace('/transactions' as any)} />
+          <Button title="Review them" onPress={() => router.navigate('/transactions' as any)} />
         </Card>
       )}
     </ScrollView>

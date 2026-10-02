@@ -1,4 +1,4 @@
-// The menu: Home at the top, then your pages (built-in and custom, in the order you choose),
+// The menu: your pages (built-in and custom, in the order you choose),
 // with setup at the bottom. The same button sits in every tab's top strip, in the top tab bar on
 // wide screens, and in place of the back arrow on menu pages, so any page is two taps away.
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -31,7 +31,7 @@ const TABS = ['/', '/transactions', '/planner', '/budget', '/accounts'];
 
 /** The tabs, shown in the sidebar on wide screens (there the sidebar replaces the top tab bar). */
 const TAB_ITEMS: Item[] = [
-  { icon: 'grid-outline', label: 'Overview', href: '/' },
+  { icon: 'home-outline', label: 'Home', href: '/' },
   { icon: 'list', label: 'Transactions', href: '/transactions' },
   { icon: 'calendar-outline', label: 'Planner', href: '/planner' },
   { icon: 'pie-chart-outline', label: 'Budget', href: '/budget' },
@@ -73,12 +73,7 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
           {i.href === '/planner' && overdue > 0 && <View style={[styles.badge, { backgroundColor: t.danger }]}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{overdue}</Text></View>}
           {i.href === '/transactions' && toReview > 0 && <View style={[styles.badge, { backgroundColor: t.danger }]}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{toReview > 99 ? '99+' : toReview}</Text></View>}
         </Pressable>
-      )) : (
-        <Pressable onPress={() => go('/')} style={({ pressed }) => [styles.item, (pressed || TABS.includes(path)) && { backgroundColor: t.line }]}>
-          <Ionicons name="home-outline" size={20} color={t.text} />
-          <Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>Home</Text>
-        </Pressable>
-      )}
+      )) : null}
       <View style={[styles.between, { paddingHorizontal: 16, marginTop: 10, marginBottom: 4 }]}>
         <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>PAGES</Text>
         <Pressable onPress={() => setSorting(!sorting)} hitSlop={8}><Text style={{ color: t.accent, fontSize: 12 }}>{sorting ? 'Done' : 'Reorder'}</Text></Pressable>
@@ -117,11 +112,8 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
   );
 }
 
-function navigateTo(href: string, path: string) {
-  if (TABS.includes(href)) { if (router.canDismiss()) router.dismissAll(); router.navigate(href as any); }
-  else if (TABS.includes(path)) router.push(href as any);
-  else router.replace(href as any);
-}
+// Every page sits beside the tabs now, so going anywhere is one plain step.
+function navigateTo(href: string, _path: string) { router.navigate(href as any); }
 
 /** The sidebar toggle: a page outline with a strip down its left side (filled in while the sidebar is open). */
 function PanelIcon({ color, open }: { color: string; open?: boolean }) {
