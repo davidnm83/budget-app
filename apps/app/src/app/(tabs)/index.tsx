@@ -97,7 +97,7 @@ export default function Home() {
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <TopBar>
         <View>
-          <Text style={{ color: t.text, fontSize: 18, fontWeight: '700' }}>{DAYS[d.getUTCDay()]}</Text>
+          <Text style={{ color: t.text, fontSize: 20, fontWeight: '700' }}>{DAYS[d.getUTCDay()]}</Text>
           <Text style={{ color: t.muted, fontSize: 12 }}>{monthName(now.slice(0, 7) + '-01', false)} {d.getUTCDate()}</Text>
         </View>
       </TopBar>

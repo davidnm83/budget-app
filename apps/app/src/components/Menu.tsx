@@ -89,8 +89,8 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
             <Text style={{ color: t.text, fontSize: tabs ? 15 : 16, flex: 1 }} numberOfLines={1}>{i.label}</Text>
             {sorting && (
               <>
-                <Pressable onPress={() => move(i.href, -1)} hitSlop={6} accessibilityLabel={`Move ${i.label} up`}><Ionicons name="chevron-up" size={20} color={t.accent} /></Pressable>
-                <Pressable onPress={() => move(i.href, 1)} hitSlop={6} accessibilityLabel={`Move ${i.label} down`}><Ionicons name="chevron-down" size={20} color={t.accent} /></Pressable>
+                <Pressable onPress={() => move(i.href, -1)} hitSlop={10} accessibilityLabel={`Move ${i.label} up`}><Ionicons name="chevron-up" size={24} color={t.accent} /></Pressable>
+                <Pressable onPress={() => move(i.href, 1)} hitSlop={10} accessibilityLabel={`Move ${i.label} down`}><Ionicons name="chevron-down" size={24} color={t.accent} /></Pressable>
               </>
             )}
           </Pressable>
@@ -193,7 +193,7 @@ export function MenuButton({ plain }: { plain?: boolean }) {
 }
 
 const styles = StyleSheet.create({
-  iconBtn: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  iconBtn: { width: 42, height: 42, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', flexDirection: 'row' },
   badge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
   expand: { position: 'absolute', top: 10, left: 6, zIndex: 20 },

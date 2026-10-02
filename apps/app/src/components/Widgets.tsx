@@ -16,7 +16,7 @@ import { Field, Sheet } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
 import { loadTxnsFor } from '@/lib/accountTxns';
 import { useTxnSheet } from '@/components/TxnSheet';
-import { Bar, Button, Chip, Segmented } from '@/components/ui';
+import { Bar, Button, Chip, LIFT, Segmented } from '@/components/ui';
 import { costPerKm, loadGigSettings, loadShifts } from '@/lib/gig';
 import { loadAccounts, loadEntries, loadRecurring, today } from '@/lib/plan';
 import { savePrefs } from '@/lib/prefs';
@@ -63,7 +63,7 @@ export const DEFAULT_BUDGET: string[] = [];
 export function CardShell({ t, title, link, onPress, children, after }: { t: Theme; title: string; link?: string; onPress?: () => void; children: ReactNode; after?: ReactNode }) {
   return (
     <>
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, { backgroundColor: t.card, borderColor: t.line, opacity: pressed && onPress ? 0.85 : 1 }]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, LIFT, { backgroundColor: t.card, borderColor: t.line, opacity: pressed && onPress ? 0.85 : 1 }]}>
       <View style={styles.between}>
         <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title.toUpperCase()}</Text>
         {link && <Text style={{ color: t.accent, fontSize: 12 }}>{link} ›</Text>}
@@ -629,7 +629,7 @@ function WidgetSettings({ kind, cfg, onDone, onClose }: { kind: 'spend' | 'accou
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 12, gap: 8 },
+  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 14, gap: 10 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

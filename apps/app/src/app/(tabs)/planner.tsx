@@ -167,7 +167,7 @@ function Row({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string
     <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && { backgroundColor: t.line }]}>
       <Ionicons name={icon} size={17} color={color} />
       <View style={{ flex: 1 }}>
-        <Text style={{ color: t.text, fontSize: 14, fontStyle: r.kind === 'actual' ? 'italic' : 'normal' }} numberOfLines={1}>{r.description}</Text>
+        <Text style={{ color: t.text, fontSize: 15, fontWeight: r.kind === 'actual' ? '400' : '600' }} numberOfLines={1}>{r.description}</Text>
         <Text style={{ color: r.overdue ? t.danger : t.muted, fontSize: 12 }} numberOfLines={1}>
           {r.kind === 'actual' ? 'unplanned' : matched ? `planned ${formatMoney(r.planned!)}` : r.overdue ? 'not posted yet' : 'planned'}{account ? ` · ${account}` : ''}
         </Text>
@@ -190,5 +190,5 @@ const styles = StyleSheet.create({
   tile: { flexGrow: 1, flexBasis: '22%', minWidth: 80, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
   warn: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: 1, borderRadius: 10, padding: 10 },
   day: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 16, paddingRight: 12, paddingVertical: 6 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 16, paddingRight: 12, paddingVertical: 9 },
 });

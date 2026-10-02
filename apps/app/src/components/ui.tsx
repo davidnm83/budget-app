@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { useTheme } from '@/lib/theme';
 
@@ -18,9 +19,12 @@ export function Button({ title, onPress, kind = 'primary', disabled, busy, style
   );
 }
 
+/** A soft lift for cards, so they read as surfaces without heavy borders. */
+export const LIFT = { boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 1px 6px rgba(0,0,0,0.03)' } as any;
+
 export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
   const t = useTheme();
-  return <View style={[styles.card, { backgroundColor: t.card, borderColor: t.line }, style]}>{children}</View>;
+  return <View style={[styles.card, LIFT, { backgroundColor: t.card, borderColor: t.line }, style]}>{children}</View>;
 }
 
 export function Empty({ text }: { text: string }) {
@@ -31,10 +35,11 @@ export function Empty({ text }: { text: string }) {
 const styles = StyleSheet.create({
   btn: { borderRadius: 10, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
   btnText: { fontSize: 15, fontWeight: '600' },
-  card: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, padding: 16 },
+  card: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 14 },
+  step: { width: 44, height: 40, alignItems: 'center', justifyContent: 'center' },
   seg: { flexDirection: 'row', borderWidth: 1, borderRadius: 10, padding: 2 },
-  segItem: { flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8 },
-  chip: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 5 },
+  segItem: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 36, borderRadius: 8 },
+  chip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, minHeight: 32, justifyContent: 'center' },
 });
 
 /** A thin horizontal bar: `value` of `max`, 4px rounded end. Over 100% fills in `overColor`. */
@@ -82,10 +87,10 @@ export function Stepper({ label, onPrev, onNext, nextDisabled }: { label: string
   const t = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Pressable onPress={onPrev} hitSlop={12} accessibilityLabel="Previous"><Text style={{ color: t.accent, fontSize: 22, paddingHorizontal: 12 }}>‹</Text></Pressable>
-      <Text style={{ color: t.text, fontSize: 17, fontWeight: '600' }}>{label}</Text>
-      <Pressable onPress={onNext} disabled={nextDisabled} hitSlop={12} accessibilityLabel="Next">
-        <Text style={{ color: nextDisabled ? t.line : t.accent, fontSize: 22, paddingHorizontal: 12 }}>›</Text>
+      <Pressable onPress={onPrev} hitSlop={8} accessibilityLabel="Previous" style={styles.step}><Ionicons name="chevron-back" size={22} color={t.accent} /></Pressable>
+      <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>{label}</Text>
+      <Pressable onPress={onNext} disabled={nextDisabled} hitSlop={8} accessibilityLabel="Next" style={styles.step}>
+        <Ionicons name="chevron-forward" size={22} color={nextDisabled ? t.line : t.accent} />
       </Pressable>
     </View>
   );

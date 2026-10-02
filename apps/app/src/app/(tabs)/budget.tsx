@@ -76,12 +76,11 @@ export default function BudgetTab() {
   const data = { t, cats, groupIcons, widgets, setWidgets, gigGas, refresh, showTxns, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-    <TopBar>
-      <View style={{ flex: 1 }}>
-        <Segmented<View_> value={view} onChange={setView}
-          options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
-      </View>
-    </TopBar>
+    <TopBar title="Budget" />
+    <View style={styles.viewSwitch}>
+      <Segmented<View_> value={view} onChange={setView}
+        options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
+    </View>
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
@@ -671,6 +670,7 @@ function YearView(d: Data) {
 }
 
 const styles = StyleSheet.create({
+  viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   page: { paddingHorizontal: 12, paddingTop: 4, gap: 8, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { flexGrow: 1, flexBasis: '22%', minWidth: 78, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },

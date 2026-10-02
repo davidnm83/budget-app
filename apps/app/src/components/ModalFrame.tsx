@@ -14,9 +14,16 @@ export function ModalFrame({ visible = true, onClose, children, fit, width = 560
   const insets = useSafeAreaInsets();
   const wide = useWide();
   if (!wide) {
+    // Phones: a sheet that rises from the bottom. Forms take only the height they need; lists
+    // (pickers) take most of the screen. The page behind stays visible so you keep your place.
     return (
-      <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-        <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>{children}</View>
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+        <Pressable style={styles.phoneScrim} onPress={onClose}>
+          <Pressable onPress={() => {}} style={[styles.sheet, { backgroundColor: t.bg, marginTop: insets.top + 24 }, fit ? { maxHeight: '100%' } : { flex: 1 }]}>
+            <View style={[styles.grabber, { backgroundColor: t.line }]} />
+            {children}
+          </Pressable>
+        </Pressable>
       </Modal>
     );
   }
@@ -32,6 +39,9 @@ export function ModalFrame({ visible = true, onClose, children, fit, width = 560
 }
 
 const styles = StyleSheet.create({
+  phoneScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet: { borderTopLeftRadius: 18, borderTopRightRadius: 18, overflow: 'hidden', flexShrink: 1, cursor: 'auto' as any },
+  grabber: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 8 },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   panel: { width: '100%', borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', cursor: 'auto' as any },
 });

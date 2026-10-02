@@ -17,10 +17,11 @@ export function TopBar({ children, title }: { children?: ReactNode; title?: stri
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const wide = useWide();
+  if (wide && title && !children) return <View style={{ height: 8 }} />; // the sidebar already says where you are
   return (
     <View style={[styles.bar, { paddingTop: insets.top + 8, backgroundColor: t.bg }]}>
       <MenuButton />
-      {title ? <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: children ? 0 : 1 }}>{title}</Text> : null}
+      {title ? <Text style={{ color: t.text, fontSize: 20, fontWeight: '700', flex: children ? 0 : 1 }}>{title}</Text> : null}
       {children ? <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>{children}</View> : null}
     </View>
   );
@@ -43,8 +44,8 @@ export function IconButton({ icon, onPress, on, badge, label }: { icon: keyof ty
 }
 
 const styles = StyleSheet.create({
-  bar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingBottom: 8, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
-  iconBtn: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  bar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingBottom: 8, minHeight: 56, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
+  iconBtn: { width: 42, height: 42, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   badge: { position: 'absolute', top: -5, right: -5, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, alignItems: 'center', justifyContent: 'center' },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', flexDirection: 'row' },
   drawer: { width: 270, maxWidth: '80%', height: '100%', paddingBottom: 24 },
