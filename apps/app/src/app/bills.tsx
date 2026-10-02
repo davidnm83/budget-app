@@ -13,6 +13,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { BillForm } from '@/components/Forms';
 import { Button, Card, Empty, Stepper } from '@/components/ui';
 import { loadAccounts, loadPosted, loadRecurring, today } from '@/lib/plan';
+import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 import type { Account } from '@/lib/types';
@@ -31,9 +32,10 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
   const [suggestions, setSuggestions] = useState<RecurringSuggestion[] | null>(null);
   const [ownMonth, setMonth] = useState(monthOf(today()));
   const month = monthProp ?? ownMonth;
-  const [dismissed, setDismissed] = useState<string[]>(readDismissed);
-  const fresh = (suggestions ?? []).filter((x) => !dismissed.includes(sugKey(x)));
-  const dismiss = () => { const all = [...new Set([...dismissed, ...fresh.map(sugKey)])]; setDismissed(all); try { globalThis.localStorage?.setItem(DISMISS_KEY, JSON.stringify(all)); } catch { /* lasts until reload */ } };
+  const [dismissed, setDismissed] = useState<string[] | null>(null); // null until loaded, so the banner doesn't flash
+  useEffect(() => { loadPrefs().then((p) => setDismissed(p.dismissed_suggestions ?? [])).catch(() => setDismissed([])); }, []);
+  const fresh = dismissed ? (suggestions ?? []).filter((x) => !dismissed.includes(sugKey(x))) : [];
+  const dismiss = () => { const all = [...new Set([...(dismissed ?? []), ...fresh.map(sugKey)])]; setDismissed(all); savePrefs({ dismissed_suggestions: all }).catch(() => {}); };
   const [bills, setBills] = useState<Recurring[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [cats, setCats] = useState<{ id: string; name: string; group_name: string; icon: string | null }[]>([]);
@@ -180,9 +182,7 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
   );
 }
 
-const DISMISS_KEY = 'budget.billSuggestionsDismissed';
 const sugKey = (x: RecurringSuggestion) => `${x.kind}|${x.name}`;
-function readDismissed(): string[] { try { return JSON.parse(globalThis.localStorage?.getItem(DISMISS_KEY) ?? '[]'); } catch { return []; } }
 
 /** A suggestion's next due date: step its schedule forward from the last time it happened. */
 function nextDue(s: RecurringSuggestion): string {

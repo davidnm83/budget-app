@@ -4,11 +4,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, usePathname } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { loadPrefs, savePrefs, type Page } from '@/lib/prefs';
 import { supabase } from '@/lib/supabase';
-import { useWide } from '@/lib/layout';
+import { PAGE_MAX, useWide } from '@/lib/layout';
+import { usePlannerBadge } from '@/lib/badges';
 import { setSidebar, useSidebar } from '@/lib/sidebar';
 import { useTheme } from '@/lib/theme';
 import { afterClose, useBackToClose } from '@/lib/useBackToClose';
@@ -44,6 +45,7 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
   const [pages, setPages] = useState<Page[]>([]);
   const [order, setOrder] = useState<string[]>([]);
   const [toReview, setToReview] = useState(0);
+  const overdue = usePlannerBadge();
   const [sorting, setSorting] = useState(false);
   useEffect(() => { if (tabs) supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('reviewed', false).then((r) => setToReview(r.count ?? 0)); }, [tabs, path]);
   // Reload when shown and when the page changes (a custom page may have been added or renamed).
@@ -67,6 +69,7 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
         <Pressable key={i.href} onPress={() => go(i.href)} accessibilityRole="link" style={({ pressed, hovered }: any) => [styles.item, (pressed || hovered) && { backgroundColor: t.bg }, here(i.href) && { backgroundColor: t.line }]}>
           <Ionicons name={i.icon!} size={20} color={here(i.href) ? t.accent : t.text} />
           <Text style={{ color: here(i.href) ? t.accent : t.text, fontSize: 15, fontWeight: '600', flex: 1 }}>{i.label}</Text>
+          {i.href === '/planner' && overdue > 0 && <View style={[styles.badge, { backgroundColor: t.danger }]}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{overdue}</Text></View>}
           {i.href === '/transactions' && toReview > 0 && <View style={[styles.badge, { backgroundColor: t.danger }]}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{toReview > 99 ? '99+' : toReview}</Text></View>}
         </Pressable>
       )) : (
@@ -125,7 +128,15 @@ export function Sidebar() {
   const path = usePathname();
   const wide = useWide();
   const open = useSidebar();
-  if (!wide || !open) return null;
+  if (!wide) return null;
+  if (!open) {
+    return (
+      <Pressable onPress={() => setSidebar(true)} accessibilityLabel="Show sidebar" hitSlop={6}
+        style={({ hovered }: any) => [styles.iconBtn, styles.expand, { borderWidth: 0 }, hovered && { backgroundColor: t.line }]}>
+        <Ionicons name="chevron-forward" size={20} color={t.muted} />
+      </Pressable>
+    );
+  }
   return (
     <View style={[styles.sidebar, { backgroundColor: t.card, borderColor: t.line }]}>
       <View style={[styles.between, { paddingLeft: 16, paddingRight: 8, height: 52 }]}>
@@ -145,16 +156,19 @@ export function MenuButton({ plain }: { plain?: boolean }) {
   const path = usePathname();
   const wide = useWide();
   const sidebar = useSidebar();
+  const { width } = useWindowDimensions();
   const [open, setOpen] = useState(false);
   useBackToClose(open, () => setOpen(false));
   useEffect(() => { if (wide) setOpen(false); }, [wide]);
-  if (wide && sidebar) return null; // the sidebar is the menu
+  // Wide screens: the sidebar is the menu. Hidden, its expand button floats at the window's top
+  // left; leave room for it where a page's own bar would sit underneath.
+  if (wide) return sidebar || (!plain && width >= PAGE_MAX + 96) ? null : <View style={{ width: 32 }} />;
   // Close the menu (and its history entry) first. From a tab a page opens on top; from another
   // menu page it takes that page's place, so pages don't pile up behind each other.
   const go = (href: string) => { setOpen(false); afterClose(() => navigateTo(href, path)); };
   return (
     <>
-      <Pressable onPress={() => (wide ? setSidebar(true) : setOpen(true))} accessibilityLabel={wide ? 'Show sidebar' : 'Menu'} hitSlop={8}
+      <Pressable onPress={() => setOpen(true)} accessibilityLabel="Menu" hitSlop={8}
         style={[styles.iconBtn, plain ? { borderWidth: 0 } : { borderColor: t.line, backgroundColor: t.card }]}>
         <Ionicons name="menu" size={plain ? 24 : 20} color={t.text} />
       </Pressable>
@@ -173,6 +187,7 @@ const styles = StyleSheet.create({
   iconBtn: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', flexDirection: 'row' },
   badge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
+  expand: { position: 'absolute', top: 10, left: 6, zIndex: 20 },
   sidebar: { width: 232, borderRightWidth: 1, paddingBottom: 12 },
   drawer: { width: 280, maxWidth: '82%', height: '100%', paddingBottom: 24 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12 },

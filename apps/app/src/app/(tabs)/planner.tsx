@@ -7,7 +7,8 @@ import { addDays, addMonths, formatMoney, monthName, monthOf, shortDate, weekSta
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { BillForm, PlanEntryForm, Sheet } from '@/components/Forms';
+import { BillForm, PlanEntryForm } from '@/components/Forms';
+import { refreshPlannerBadge, setPlannerBadge } from '@/lib/badges';
 import { supabase } from '@/lib/supabase';
 import { IconButton, TopBar } from '@/components/TopBar';
 import { Card, Chip, Empty, Segmented } from '@/components/ui';
@@ -28,13 +29,11 @@ export default function Planner() {
   const [form, setForm] = useState<any | null>(null);
   const [view, setView] = useState<'week' | 'month' | 'all'>('week');
   const [month, setMonth] = useState(monthOf(today()));
-  // One + for every view: it asks whether the new thing happens once or repeats.
-  const [adding, setAdding] = useState(false);
+  // One + in the same place for every view: a one-off in Week, a repeating bill in Month and All bills.
   const [newBill, setNewBill] = useState(false);
   const [cats, setCats] = useState<any[]>([]);
   const [billsKey, setBillsKey] = useState(0);
   const addBill = async () => {
-    setAdding(false);
     if (!cats.length) setCats((await supabase.from('categories').select('id, name, group_name, icon').eq('is_hidden', false).order('sort')).data ?? []);
     setNewBill(true);
   };
@@ -44,7 +43,7 @@ export default function Planner() {
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
-    try { setData(await loadWeek(week, only)); }
+    try { const d = await loadWeek(week, only); setData(d); if (week === mondayOf(today()) && !only) setPlannerBadge(d.view?.summary.overdue ?? 0); else refreshPlannerBadge(); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, [week, only]);
@@ -79,7 +78,7 @@ export default function Planner() {
             : view === 'month' ? (month === monthOf(now) ? 'This month' : 'Tap for this month') : 'Everything that repeats'}</Text>
         </Pressable>
         <Pressable onPress={() => (view === 'week' ? setWeek(addDays(week, 7)) : setMonth(addMonths(month, 1)))} disabled={view === 'all'} style={{ opacity: view === 'all' ? 0 : 1 }} hitSlop={10} accessibilityLabel={view === 'week' ? 'Next week' : 'Next month'}><Ionicons name="chevron-forward" size={22} color={t.accent} /></Pressable>
-        <IconButton icon="add" label="Add to the plan" onPress={() => setAdding(true)} />
+        <IconButton icon="add" label={view === 'week' ? 'Plan a one-off' : 'Add a bill or income'} onPress={() => (view === 'week' ? setForm({ date: week > now ? week : now, description: '', amount: null, account_id: planAccounts[0]?.id ?? null }) : addBill())} />
       </TopBar>
       <View style={styles.viewSwitch}>
         <Segmented value={view} onChange={setView} options={[{ value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }, { value: 'all', label: 'All bills' }]} />
@@ -154,12 +153,6 @@ export default function Planner() {
       </ScrollView>
       )}
 
-      {adding && (
-        <Sheet title="Add to the plan" onClose={() => setAdding(false)}>
-          <AddChoice t={t} icon="calendar-number-outline" title="One-off" note="A single payment or income on one date." onPress={() => { setAdding(false); setForm({ date: view === 'week' && week > now ? week : now, description: '', amount: null, account_id: planAccounts[0]?.id ?? null }); }} />
-          <AddChoice t={t} icon="repeat" title="Repeating bill or income" note="Weekly, every two weeks, monthly or yearly." onPress={addBill} />
-        </Sheet>
-      )}
       {newBill && data && <BillForm initial={{ kind: 'bill', frequency: 'monthly', start_date: now }} accounts={data.accounts} categories={cats} onClose={() => setNewBill(false)} onSaved={() => { load(); setBillsKey((k) => k + 1); }} />}
       {form && data && <PlanEntryForm initial={form} accounts={data.accounts} onClose={() => setForm(null)} onSaved={load} />}
     </View>
@@ -188,21 +181,7 @@ function Row({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string
 }
 
 
-function AddChoice({ t, icon, title, note, onPress }: { t: Theme; icon: keyof typeof Ionicons.glyphMap; title: string; note: string; onPress: () => void }) {
-  return (
-    <Pressable onPress={onPress} style={({ pressed, hovered }: any) => [styles.choice, { borderColor: t.line, backgroundColor: pressed || hovered ? t.line : t.card }]}>
-      <Ionicons name={icon} size={24} color={t.accent} />
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{title}</Text>
-        <Text style={{ color: t.muted, fontSize: 13 }}>{note}</Text>
-      </View>
-      <Ionicons name="chevron-forward" size={18} color={t.muted} />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  choice: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 12, padding: 14 },
   viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   page: { padding: 12, gap: 10, paddingBottom: 40, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

@@ -1,5 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router';
+import { useEffect } from 'react';
+import { refreshPlannerBadge, usePlannerBadge } from '@/lib/badges';
 import { useWide } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
 
@@ -9,12 +11,14 @@ import { useTheme } from '@/lib/theme';
 export default function TabLayout() {
   const t = useTheme();
   const wide = useWide();
+  const overdue = usePlannerBadge();
+  useEffect(() => { refreshPlannerBadge(); }, []);
   return (
     <Tabs tabBar={wide ? () => null : undefined}
       screenOptions={{ headerShown: false, tabBarActiveTintColor: t.accent, sceneStyle: { backgroundColor: t.bg }, tabBarPosition: wide ? 'top' : 'bottom', tabBarStyle: { backgroundColor: t.card } }}>
       <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" color={color} size={size} /> }} />
       <Tabs.Screen name="transactions" options={{ title: 'Transactions', tabBarIcon: ({ color, size }) => <Ionicons name="list" color={color} size={size} /> }} />
-      <Tabs.Screen name="planner" options={{ title: 'Planner', tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} /> }} />
+      <Tabs.Screen name="planner" options={{ title: 'Planner', tabBarBadge: overdue || undefined, tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} /> }} />
       <Tabs.Screen name="budget" options={{ title: 'Budget', tabBarIcon: ({ color, size }) => <Ionicons name="pie-chart-outline" color={color} size={size} /> }} />
       <Tabs.Screen name="accounts" options={{ title: 'Accounts', tabBarIcon: ({ color, size }) => <Ionicons name="wallet-outline" color={color} size={size} /> }} />
     </Tabs>
