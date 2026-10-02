@@ -2,6 +2,7 @@
 // fixed order, a legend whenever there is more than one series, and a readout line that shows
 // the values under the pointer (hover on a computer, tap on a phone).
 import { useState } from 'react';
+import { useWide } from '@/lib/layout';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { GROW, SPIN } from '@/lib/motion';
@@ -64,6 +65,7 @@ function Readout({ t, labels, series, sel, format, hint, col }: { t: Theme; labe
 function Frame({ t, labels, series, height = 140, format, onPick, free, colors, refLine, stacked, also = [], children }: PlotProps & { free?: boolean; stacked?: boolean; also?: number[]; children: (w: number, h: number, min: number, max: number, sel: number | null) => React.ReactNode }) {
   const [w, setW] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
+  const wide = useWide(); // with a mouse, hovering reads a point out and one click opens it; on a phone the first tap reads it out
   const all = [...(stacked ? labels.map((_, i) => series.reduce((x, s) => x + (s.values[i] ?? 0), 0)) : series.flatMap((s) => s.values)), ...(refLine != null ? [refLine] : []), ...also];
   const col = (i: number) => colors?.[i] ?? t.series[i];
   const lo = Math.min(0, ...all), hi = Math.max(0, ...all);
@@ -80,7 +82,7 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, colors, 
   const ticks = min < 0 && max > 0 ? [max, 0, min] : [max, (max + min) / 2, min];
   return (
     <View style={{ gap: 4 }}>
-      <Readout t={t} labels={labels} series={series} sel={sel} format={format} col={col} hint={onPick && sel != null ? 'tap again for details' : undefined} />
+      <Readout t={t} labels={labels} series={series} sel={sel} format={format} col={col} hint={onPick && sel != null && !wide ? 'tap again for details' : undefined} />
       <View style={{ flexDirection: 'row', gap: 6 }}>
         <View style={{ height, justifyContent: 'space-between', alignItems: 'flex-end' }}>
           {ticks.map((v, i) => <Text key={i} style={{ color: t.muted, fontSize: 10, fontVariant: ['tabular-nums'], lineHeight: 12, marginTop: i === 0 ? -6 : 0, marginBottom: i === 2 ? -6 : 0 }}>{format(v)}</Text>)}
@@ -93,7 +95,7 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, colors, 
               {labels.map((l, i) => (
                 <Pressable key={i} style={{ flex: 1 }} accessibilityLabel={`${l}: ${series.map((s) => `${s.name} ${format(s.values[i] ?? 0)}`).join(', ')}`}
                   onHoverIn={() => setSel(i)} onHoverOut={() => setSel((c) => (c === i ? null : c))}
-                  onPress={() => { if (sel === i && onPick) onPick(i); else setSel(i); }} />
+                  onPress={() => { if ((wide || sel === i) && onPick) onPick(i); else setSel(i); }} />
               ))}
             </View>
           </View>

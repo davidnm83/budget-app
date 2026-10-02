@@ -6,6 +6,8 @@
 //   • Transactions — the latest 100.
 // The overview is built from small blocks so they can be reused on custom pages later.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Sheet } from '@/components/Forms';
+import { TransactionEditor } from '@/components/TransactionEditor';
 import { PICTURE_HINT, pickPicture } from '@/lib/imageUpload';
 import { bankLogo, customPicture, fillsCircle, savePicture, setPictureFill, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
@@ -58,6 +60,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
   const [list, setList] = useState<{ id: string; date: string; amount: number; display_name: string; category_name: string | null }[]>([]);
   useBackToClose(!!account, onClose);
   const [showTxns, txnSheet] = useTxnSheet();
+  const [txnOpen, setTxnOpen] = useState<string | null>(null);
 
   useEffect(() => {
     if (!account) return;
@@ -117,6 +120,11 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
           </ScrollView>
         )}
         {txnSheet}
+        {txnOpen && (
+          <Sheet title="Transaction" scroll={false} onClose={() => setTxnOpen(null)}>
+            <TransactionEditor key={txnOpen} id={txnOpen} onOpen={setTxnOpen} onDone={() => { setTxnOpen(null); onChanged(); }} />
+          </Sheet>
+        )}
         {tab === 'details' && <DetailsTab t={t} account={account} accounts={accounts} onChanged={onChanged} onClose={onClose} />}
         {tab === 'txns' && (
           <FlatList
@@ -124,7 +132,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
             keyExtractor={(r) => r.id}
             ListFooterComponent={list.length >= 100 ? <Button title="See all in Transactions" kind="plain" style={{ margin: 16 }} onPress={() => { onClose(); afterClose(() => router.navigate('/transactions' as any)); }} /> : null}
             renderItem={({ item }) => (
-              <Pressable onPress={() => { seedTxn(item); onClose(); afterClose(() => router.push({ pathname: '/transaction/[id]', params: { id: item.id } })); }}
+              <Pressable onPress={() => { seedTxn(item); setTxnOpen(item.id); }}
                 style={[styles.txn, { borderColor: t.line, backgroundColor: t.card }]}>
                 <Text style={{ color: t.muted, width: 52, fontSize: 13 }}>{shortDate(item.date)}</Text>
                 <View style={{ flex: 1 }}>

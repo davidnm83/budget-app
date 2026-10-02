@@ -1,19 +1,22 @@
-// The menu: your pages (built-in and custom, in the order you choose),
-// with setup at the bottom. The same button sits in every tab's top strip, in the top tab bar on
-// wide screens, and in place of the back arrow on menu pages, so any page is two taps away.
+// The menu: your pages (built-in and custom, in the order you choose), with setup at the bottom.
+// On a phone it lives in the More sheet (the last button on the floating bar) under the search
+// box; on a wide screen it is the sidebar, which tucks away to a strip of icons.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { RISE } from '@/lib/motion';
 import { router, usePathname } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useEffect, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Sheet } from '@/components/Forms';
+import { SearchBox } from '@/components/Search';
+import { setPanel, usePanel } from '@/lib/panels';
+import { SHORTCUTS } from '@/lib/shortcuts';
 import { loadPrefs, savePrefs, type Page } from '@/lib/prefs';
 import { supabase } from '@/lib/supabase';
-import { PAGE_MAX, useWide } from '@/lib/layout';
+import { useWide } from '@/lib/layout';
 import { refreshPlannerBadge, usePlannerBadge } from '@/lib/badges';
 import { setSidebar, useSidebar } from '@/lib/sidebar';
 import { useTheme } from '@/lib/theme';
-import { afterClose, useBackToClose } from '@/lib/useBackToClose';
+import { afterClose } from '@/lib/useBackToClose';
 
 type Item = { icon?: keyof typeof Ionicons.glyphMap; emoji?: string; label: string; href: string };
 const PAGES: Item[] = [
@@ -107,6 +110,13 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
           <Text style={{ color: t.muted, fontSize: 14 }}>{i.label}</Text>
         </Pressable>
       ))}
+      {tabs && (
+        <Pressable onPress={() => setPanel('shortcuts')} style={({ hovered }: any) => [styles.itemSmall, hovered && { backgroundColor: t.bg }]}>
+          <Ionicons name="keypad-outline" size={17} color={t.muted} />
+          <Text style={{ color: t.muted, fontSize: 14, flex: 1 }}>Keyboard shortcuts</Text>
+          <Text style={[styles.kbd, { color: t.muted, borderColor: t.line }]}>?</Text>
+        </Pressable>
+      )}
       <Pressable onPress={() => supabase.auth.signOut()} style={styles.itemSmall}>
         <Ionicons name="log-out-outline" size={17} color={t.muted} />
         <Text style={{ color: t.muted, fontSize: 14 }}>Sign out</Text>
@@ -127,78 +137,146 @@ function PanelIcon({ color, open }: { color: string; open?: boolean }) {
   );
 }
 
-/** Wide screens: the menu as a permanent column on the left, with a button to tuck it away. */
+/** Sets a hover name on an element (web), for the icon-only strip. */
+function useTitle(label: string) {
+  const ref = useRef<View>(null);
+  useEffect(() => { (ref.current as any)?.setAttribute?.('title', label); }, [label]);
+  return ref;
+}
+function StripIcon({ item, on, onPress, badge }: { item: Item; on: boolean; onPress: () => void; badge?: number }) {
+  const t = useTheme();
+  const ref = useTitle(item.label);
+  return (
+    <Pressable ref={ref} onPress={onPress} accessibilityLabel={item.label} style={({ hovered, pressed }: any) => [styles.stripItem, (hovered || pressed) && { backgroundColor: t.bg }, on && { backgroundColor: t.line }]}>
+      {item.emoji ? <Text style={{ fontSize: 17, opacity: on ? 1 : 0.75 }}>{item.emoji}</Text> : <Ionicons name={item.icon!} size={20} color={on ? t.accent : t.muted} />}
+      {!!badge && <View style={[styles.stripDot, { backgroundColor: t.danger, borderColor: t.card }]} />}
+    </Pressable>
+  );
+}
+
+/** Wide screens: the menu as a column on the left. Tucked away it is a quiet strip of icons. */
 export function Sidebar() {
   const t = useTheme();
   const path = usePathname();
   const wide = useWide();
   const open = useSidebar();
+  const m = useMenuItems(wide);
+  const overdue = usePlannerBadge();
+  const tipExpand = useTitle('Show sidebar ( [ )');
+  const tipSearch = useTitle('Search (Ctrl K)');
   if (!wide) return null;
-  // Always there on wide screens: its width eases between open and tucked away, and the button
-  // to bring it back fades in at the window's top left.
+  const go = (href: string) => navigateTo(href, path);
   return (
-    <>
-    <Pressable onPress={() => setSidebar(true)} accessibilityLabel="Show sidebar" hitSlop={6} disabled={open}
-      style={({ hovered }: any) => [styles.iconBtn, styles.expand, { borderWidth: 0, opacity: open ? 0 : 1 }, hovered && { backgroundColor: t.line }]}>
-      <PanelIcon color={t.muted} />
-    </Pressable>
-    <View style={[styles.sidebarWrap, { width: open ? 232 : 0, borderRightWidth: open ? 1 : 0, borderColor: t.line, backgroundColor: t.card }]}>
-    <View style={[styles.sidebar, { backgroundColor: t.card, opacity: open ? 1 : 0 }]}>
-      <View style={[styles.between, { paddingLeft: 16, paddingRight: 8, height: 52 }]}>
-        <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>Budget</Text>
-        <Pressable onPress={() => setSidebar(false)} accessibilityLabel="Hide sidebar" hitSlop={6} style={({ hovered }: any) => [styles.iconBtn, { borderWidth: 0 }, hovered && { backgroundColor: t.bg }]}>
-          <PanelIcon color={t.muted} open />
-        </Pressable>
-      </View>
-      <MenuBody tabs active go={(href) => navigateTo(href, path)} />
+    <View style={[styles.sidebarWrap, { width: open ? 232 : 56, borderRightWidth: 1, borderColor: t.line, backgroundColor: t.card }]}>
+      {open ? (
+        <View style={[styles.sidebar, { backgroundColor: t.card }]}>
+          <View style={[styles.between, { paddingLeft: 16, paddingRight: 8, height: 52 }]}>
+            <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>Budget</Text>
+            <Pressable onPress={() => setSidebar(false)} accessibilityLabel="Hide sidebar" hitSlop={6} style={({ hovered }: any) => [styles.iconBtn, { borderWidth: 0 }, hovered && { backgroundColor: t.bg }]}>
+              <PanelIcon color={t.muted} open />
+            </Pressable>
+          </View>
+          <Pressable onPress={() => setPanel('search')} accessibilityLabel="Search" style={({ hovered }: any) => [styles.searchBtn, { borderColor: t.line, backgroundColor: hovered ? t.line : t.bg }]}>
+            <Ionicons name="search" size={16} color={t.muted} />
+            <Text style={{ color: t.muted, fontSize: 14, flex: 1 }}>Search</Text>
+            <Text style={[styles.kbd, { color: t.muted, borderColor: t.line }]}>Ctrl K</Text>
+          </Pressable>
+          <MenuBody tabs active go={go} />
+        </View>
+      ) : (
+        <ScrollView style={{ width: 55 }} contentContainerStyle={styles.strip} showsVerticalScrollIndicator={false}>
+          <Pressable ref={tipExpand} onPress={() => setSidebar(true)} accessibilityLabel="Show sidebar" style={({ hovered }: any) => [styles.stripItem, hovered && { backgroundColor: t.bg }]}>
+            <PanelIcon color={t.muted} />
+          </Pressable>
+          <Pressable ref={tipSearch} onPress={() => setPanel('search')} accessibilityLabel="Search" style={({ hovered }: any) => [styles.stripItem, hovered && { backgroundColor: t.bg }]}>
+            <Ionicons name="search" size={19} color={t.muted} />
+          </Pressable>
+          <View style={[styles.stripRule, { backgroundColor: t.line }]} />
+          {TAB_ITEMS.map((i) => <StripIcon key={i.href} item={i} on={path === i.href} onPress={() => go(i.href)} badge={i.href === '/planner' ? overdue : i.href === '/transactions' ? m.toReview : 0} />)}
+          <View style={[styles.stripRule, { backgroundColor: t.line }]} />
+          {m.items.map((i) => <StripIcon key={i.href} item={i} on={path === i.href} onPress={() => go(i.href)} />)}
+          <View style={[styles.stripRule, { backgroundColor: t.line }]} />
+          {SETUP.map((i) => <StripIcon key={i.href} item={i} on={path === i.href} onPress={() => go(i.href)} />)}
+        </ScrollView>
+      )}
     </View>
-    </View>
-    </>
   );
 }
 
-export function MenuButton({ plain }: { plain?: boolean }) {
-  const t = useTheme();
-  const insets = useSafeAreaInsets();
+/** Your pages in menu order, and the to-review count. */
+function useMenuItems(active: boolean) {
   const path = usePathname();
+  const [pages, setPages] = useState<Page[]>([]);
+  const [order, setOrder] = useState<string[]>([]);
+  const [toReview, setToReview] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    loadPrefs().then((p) => { setPages(p.pages ?? []); setOrder(p.menu_order ?? []); }).catch(() => {});
+    supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('reviewed', false).then((r) => setToReview(r.count ?? 0));
+  }, [active, path]);
+  const all: Item[] = [...PAGES, ...pages.map((p) => ({ emoji: p.icon, label: p.name, href: `/page/${p.id}` }))];
+  const rank = (h: string) => { const i = order.indexOf(h); return i < 0 ? 1000 + all.findIndex((x) => x.href === h) : i; };
+  return { items: [...all].sort((a, b) => rank(a.href) - rank(b.href)), toReview };
+}
+
+/**
+ * The panels any page can open: on a phone the "More" sheet (search on top, the menu below);
+ * on a computer the search pop-up; and the keyboard shortcut guide.
+ */
+export function Panels() {
+  const t = useTheme();
   const wide = useWide();
-  const sidebar = useSidebar();
-  const { width } = useWindowDimensions();
-  const [open, setOpen] = useState(false);
-  useBackToClose(open, () => setOpen(false));
-  useEffect(() => { if (wide) setOpen(false); }, [wide]);
-  // Wide screens: the sidebar is the menu. Hidden, its expand button floats at the window's top
-  // left; leave room for it where a page's own bar would sit underneath.
-  if (wide) return sidebar || (!plain && width >= PAGE_MAX + 96) ? null : <View style={{ width: 32 }} />;
-  // Close the menu (and its history entry) first. From a tab a page opens on top; from another
-  // menu page it takes that page's place, so pages don't pile up behind each other.
-  const go = (href: string) => { setOpen(false); afterClose(() => navigateTo(href, path)); };
+  const panel = usePanel();
+  const m = useMenuItems(panel === 'more' || panel === 'search');
+  useEffect(() => { if (wide && panel === 'more') setPanel('search'); }, [wide, panel]);
+  const close = () => setPanel(null);
+  const go = (href: string) => { close(); afterClose(() => router.navigate(href as any)); };
+  const pages = [...TAB_ITEMS, ...m.items, ...SETUP, { icon: 'add-circle-outline' as const, label: 'New page', href: '/page/new' }];
+  if (panel === 'shortcuts') {
+    const groups = [...new Set(SHORTCUTS.map((x) => x.group))];
+    return (
+      <Sheet title="Keyboard shortcuts" onClose={close}>
+        {groups.map((g) => (
+          <View key={g} style={{ gap: 6 }}>
+            <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{g.toUpperCase()}</Text>
+            {SHORTCUTS.filter((x) => x.group === g).map((x) => (
+              <View key={x.keys.join('+') + x.does} style={styles.between}>
+                <Text style={{ color: t.text, fontSize: 14, flex: 1 }}>{x.does}</Text>
+                <View style={{ flexDirection: 'row', gap: 4 }}>{x.keys.map((k) => <Text key={k} style={[styles.kbd, { color: t.text, borderColor: t.line, backgroundColor: t.card }]}>{k}</Text>)}</View>
+              </View>
+            ))}
+          </View>
+        ))}
+        <Text style={{ color: t.muted, fontSize: 12 }}>“G then H” means press G, let go, then press H. Shortcuts pause while you’re typing in a box.</Text>
+      </Sheet>
+    );
+  }
+  if (panel !== 'more' && panel !== 'search') return null;
   return (
-    <>
-      <Pressable onPress={() => setOpen(true)} accessibilityLabel="Menu" hitSlop={8}
-        style={[styles.iconBtn, plain ? { borderWidth: 0 } : { borderColor: t.line, backgroundColor: t.card }]}>
-        <Ionicons name="menu" size={plain ? 24 : 20} color={t.text} />
-      </Pressable>
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.scrim} onPress={() => setOpen(false)}>
-          <Pressable style={[styles.drawer, { backgroundColor: t.card, paddingTop: insets.top + 12 }]} onPress={() => {}}>
-            <MenuBody active={open} go={go} />
-          </Pressable>
-        </Pressable>
-      </Modal>
-    </>
+    <SheetFrame onClose={close} title={wide ? 'Search' : 'More'}>
+      <SearchBox pages={pages} onGo={go} autoFocus={wide}
+        empty={wide ? <Text style={{ color: t.muted, padding: 16 }}>Type to search pages, categories, merchants and transactions.</Text>
+          : <View style={{ flex: 1, paddingBottom: 12 }}><MenuBody active go={go} /></View>} />
+    </SheetFrame>
   );
+}
+
+function SheetFrame({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return <Sheet title={title} onClose={onClose} scroll={false}><View style={{ flex: 1, minHeight: 420, paddingTop: 10 }}>{children}</View></Sheet>;
 }
 
 const styles = StyleSheet.create({
   iconBtn: { width: 42, height: 42, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', flexDirection: 'row' },
   badge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
-  expand: { position: 'absolute', top: 10, left: 6, zIndex: 20 },
+  strip: { alignItems: 'center', paddingVertical: 6, gap: 2 },
+  stripItem: { width: 42, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  stripRule: { width: 24, height: StyleSheet.hairlineWidth, marginVertical: 6 },
+  stripDot: { position: 'absolute', top: 7, right: 8, width: 9, height: 9, borderRadius: 5, borderWidth: 1.5 },
+  searchBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 10, marginHorizontal: 12, marginBottom: 8, paddingHorizontal: 10, height: 36 },
+  kbd: { fontSize: 11, fontWeight: '600', borderWidth: 1, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, overflow: 'hidden' },
   sidebarWrap: { overflow: 'hidden', transitionProperty: 'width', transitionDuration: '240ms', transitionTimingFunction: 'cubic-bezier(0.2, 0.9, 0.2, 1)' } as any,
-  sidebar: { width: 231, flex: 1, paddingBottom: 12, transitionProperty: 'opacity', transitionDuration: '200ms' } as any,
+  sidebar: { width: 231, flex: 1, paddingBottom: 12 },
   mark: { position: 'absolute', left: 0, top: 9, bottom: 9, width: 3, borderTopRightRadius: 3, borderBottomRightRadius: 3 },
-  drawer: { width: 280, maxWidth: '82%', height: '100%', paddingBottom: 24 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12 },
   itemSmall: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 9 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

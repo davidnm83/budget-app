@@ -1,6 +1,8 @@
 // Bills & income (BIL): this month's due dates, paid or upcoming, matched to transactions
 // automatically; the list of schedules; and suggestions spotted in your history.
 import { PAGE_MAX } from '@/lib/layout';
+import { toast } from '@/lib/toast';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -36,7 +38,12 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
   const [dismissed, setDismissed] = useState<string[] | null>(null); // null until loaded, so the banner doesn't flash
   useEffect(() => { loadPrefs().then((p) => setDismissed(p.dismissed_suggestions ?? [])).catch(() => setDismissed([])); }, []);
   const fresh = dismissed ? (suggestions ?? []).filter((x) => !dismissed.includes(sugKey(x))) : [];
-  const dismiss = () => { const all = [...new Set([...(dismissed ?? []), ...fresh.map(sugKey)])]; setDismissed(all); savePrefs({ dismissed_suggestions: all }).catch(() => {}); };
+  const dismiss = () => {
+    const before = dismissed ?? [];
+    const all = [...new Set([...before, ...fresh.map(sugKey)])];
+    setDismissed(all); savePrefs({ dismissed_suggestions: all }).catch(() => {});
+    toast('Suggestions dismissed', { undo: async () => { setDismissed(before); await savePrefs({ dismissed_suggestions: before }); } });
+  };
   const [bills, setBills] = useState<Recurring[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [cats, setCats] = useState<{ id: string; name: string; group_name: string; icon: string | null }[]>([]);
@@ -68,6 +75,7 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
     }
   }, [month]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  usePullRefresh(load);
   // Look for repeating payments once, quietly, after the bills have loaded.
   const looked = useRef(false);
   useEffect(() => { if (!loading && !looked.current && accounts.length) { looked.current = true; findSuggestions(bills).catch(() => setSuggestions([])); } }, [loading, accounts.length]);

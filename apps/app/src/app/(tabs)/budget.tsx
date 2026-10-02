@@ -1,6 +1,8 @@
 // Budget tab (BUD-1, 2, 4, 5, 6): this month's budget, past months in a collapsed archive by year,
 // comparisons with other months or years, and a year view of budget vs actual by month.
 import { PAGE_MAX } from '@/lib/layout';
+import { deleteWithUndo } from '@/lib/toast';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import { seedTxn } from '@/lib/txnCache';
 import { Tile } from '@/components/Tile';
@@ -74,6 +76,7 @@ export default function BudgetTab() {
     }
   }, [month]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  usePullRefresh(load);
 
   const [showTxns, txnSheet] = useTxnSheet();
   const data = { t, cats, groupIcons, widgets, setWidgets, gigGas, refresh, showTxns, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
@@ -430,8 +433,8 @@ function BudgetEditor({ d, line, onClose }: { d: Data; line: BudgetLine; onClose
   };
   const remove = async () => {
     if (!budget) return;
-    const { error } = await supabase.from('budgets').delete().eq('id', budget.id);
-    if (error) d.setError(error.message); else { onClose(); d.reload(); }
+    const error = await deleteWithUndo('budgets', budget.id, 'Budget removed');
+    if (error) d.setError(error); else { onClose(); d.reload(); }
   };
   return (
     <Sheet title={`${line.label} · ${monthName(month)}`} onClose={onClose}

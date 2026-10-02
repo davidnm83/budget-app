@@ -1,6 +1,7 @@
 // Loans (car loan, student loan): balance, payoff estimate, interest and payments to date, the
 // balance over the past year, and the payments and interest entries themselves.
 import { PAGE_MAX } from '@/lib/layout';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import { addDays, balanceHistory, formatMoney, isInterestRow, shortDate } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
@@ -37,6 +38,7 @@ export default function Loans() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
   useFocusEffect(useCallback(() => { load(); setRefresh((r) => r + 1); }, [load]));
+  usePullRefresh(load);
 
   // Car loans first: that's what this page is mostly for.
   const loans = accounts.filter((a) => a.type === 'loan')

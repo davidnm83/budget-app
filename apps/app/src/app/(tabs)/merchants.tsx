@@ -2,6 +2,9 @@
 // (or merge it into another by giving it that name) and the change is remembered as a rule, so
 // future transactions from the bank get the same name.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { toast } from '@/lib/toast';
+import { useConfirm } from '@/components/Confirm';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { customPicture, fillsCircle, merchantLogo, movePicture, savePicture, setPictureFill, useLogoVersion } from '@/lib/logos';
 import { PICTURE_HINT, pickPicture } from '@/lib/imageUpload';
 import { Logo } from '@/components/Logo';
@@ -34,6 +37,7 @@ export default function Merchants() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showTxns, txnSheet] = useTxnSheet();
+  const [confirm, confirmSheet] = useConfirm();
   // Filters: a date range (empty = all time) and accounts (empty = all).
   const [range, setRange] = useState<{ label: string; from: string; to: string }>({ label: 'All time', from: '', to: '' });
   const [accountIds, setAccountIds] = useState<string[]>([]);
@@ -56,6 +60,7 @@ export default function Merchants() {
     else setError(''), setRows(((data ?? []) as any[]).map((r) => ({ merchant: r.merchant, txns: Number(r.txns), total: Number(r.total), last_date: r.last_date })));
   }, [range.from, range.to, accountIds.join(',')]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  usePullRefresh(load);
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -75,8 +80,14 @@ export default function Merchants() {
     return key.length < 4 ? [] : rows.filter((r) => r.merchant !== edit.merchant && r.merchant.toLowerCase().replace(/[^a-z]/g, '').startsWith(key)).slice(0, 5);
   }, [edit, rows]);
 
-  const save = async () => {
+  const save = () => {
     if (!edit || !target || target === edit.merchant) { setEdit(null); return; }
+    if (merging) confirm({ title: 'Merge merchants', action: 'Merge', message: `Move all ${edit.txns} transactions from “${edit.merchant}” into “${merging.merchant}”? New transactions from the bank will get that name too.`, run: apply });
+    else apply();
+  };
+  const apply = async () => {
+    if (!edit) return;
+    const old = edit.merchant;
     setBusy(true); setError('');
     try {
       const to = merging ? merging.merchant : target;
@@ -88,6 +99,12 @@ export default function Merchants() {
       const r = await supabase.from('merchant_rules').upsert({ match: edit.merchant, merchant: to, source: 'manual' }, { onConflict: 'user_id,match' });
       if (r.error) throw new Error(r.error.message);
       await movePicture(edit.merchant, to).catch(() => {});
+      // A plain rename can be put back; a merge was confirmed first.
+      toast(merging ? `Merged into ${to}` : `Renamed to ${to}`, merging ? {} : { undo: async () => {
+        await supabase.from('transactions').update({ merchant: old }).eq('merchant', to);
+        await supabase.from('merchant_rules').delete().eq('match', old).eq('merchant', to);
+        await movePicture(to, old).catch(() => {});
+      } });
       setEdit(null);
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -170,6 +187,7 @@ export default function Merchants() {
       )}
       <MultiPicker visible={pick === 'accounts'} title="Accounts" onClose={() => setPick(null)} selected={accountIds} onChange={setAccountIds}
         items={accounts.map((a) => ({ id: a.id, label: `${a.icon ?? ''} ${a.name}${a.mask ? ` ••${a.mask}` : ''}`.trim(), group: a.type ?? undefined }))} />
+      {confirmSheet}
       {txnSheet}
     </View>
   );

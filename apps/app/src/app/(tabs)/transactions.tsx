@@ -3,6 +3,8 @@
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import { Sheet } from '@/components/Forms';
+import { toast } from '@/lib/toast';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { merchantLogo, useLogos, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { PANEL } from '@/lib/motion';
@@ -63,11 +65,12 @@ function activeCount(f: Filters) {
 export default function Transactions() {
   const t = useTheme();
   const navigation = useNavigation();
-  const params = useLocalSearchParams<{ mode?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; q?: string }>();
   const [mode, setMode] = useState<Mode>(params.mode === 'review' ? 'review' : 'all');
   // Home's "To review" card opens this tab straight on the transactions to review.
   useEffect(() => { if (params.mode === 'review' || params.mode === 'all') setMode(params.mode); }, [params.mode]);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(params.q ?? '');
+  useEffect(() => { if (params.q) setSearch(params.q); }, [params.q]);
   const wide = useWide();
   const [sel, setSel] = useState<string | null>(null);
   const searchRef = useRef<TextInput>(null);
@@ -132,9 +135,10 @@ export default function Transactions() {
     return () => window.removeEventListener('keydown', onKey);
   }, [sel, rows]);
   useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  usePullRefresh(reload);
   useEffect(() => { navigation.setOptions({ tabBarBadge: toReview || undefined }); }, [navigation, toReview]);
 
-  const setReviewed = async (ids: string[], reviewed: boolean) => {
+  const setReviewed = async (ids: string[], reviewed: boolean, quiet = false) => {
     if (mode === 'review' && reviewed) setRows((r) => r.filter((x) => !ids.includes(x.id)));
     else setRows((r) => r.map((x) => (ids.includes(x.id) ? { ...x, reviewed } : x)));
     setToReview((n) => Math.max(0, n + (reviewed ? -ids.length : ids.length)));
@@ -142,6 +146,7 @@ export default function Transactions() {
     const { error } = await supabase.from('transactions')
       .update({ reviewed, reviewed_at: reviewed ? new Date().toISOString() : null }).in('id', ids);
     if (error) { setError(error.message); reload(); }
+    else if (!quiet) toast(reviewed ? (ids.length > 1 ? `${ids.length} marked reviewed` : 'Marked reviewed') : 'Marked not reviewed', { undo: async () => { await supabase.from('transactions').update({ reviewed: !reviewed, reviewed_at: !reviewed ? new Date().toISOString() : null }).in('id', ids); } });
   };
 
   const byDate = filters.sort === 'newest' || filters.sort === 'oldest';

@@ -3,6 +3,7 @@
 // transactions are categorised the same way, and can apply it to unreviewed ones too (TXN-5).
 // Bank transactions keep the bank's original date and amount beside your changes (TXN-12).
 import { categoryIcon, formatMoney, normalizeDescription, parseMoney, round2, searchPattern, shortDate, toIsoDate } from '@budget-app/core';
+import { toast } from '@/lib/toast';
 import { merchantLogo, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { router } from 'expo-router';
@@ -177,8 +178,13 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       }
     }
     setBusy(false);
-    if (error) setError(error.message);
-    else onDone();
+    if (error) { setError(error.message); return; }
+    // Undo puts the transaction's own fields back. Splits and newly made rules are left as they are.
+    const before = { merchant: txn.merchant, category_id: txn.category_id, category_source: txn.category_source, notes: txn.notes, tags: txn.tags ?? [], date: txn.date, amount: txn.amount,
+      reviewed: txn.reviewed, is_transfer: txn.is_transfer, original_date: txn.original_date ?? null, original_amount: txn.original_amount ?? null };
+    const id = txn.id;
+    toast('Saved', split || hadSplit ? {} : { undo: async () => { const r = await supabase.from('transactions').update(before).eq('id', id); if (r.error) throw new Error(r.error.message); } });
+    onDone();
   };
 
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.bg }];

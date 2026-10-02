@@ -1,6 +1,7 @@
 // Spending watch (VIEW-5, Fina's "Expense improvement tracker"): pick the categories you're trying
 // to bring down and see each one's last 6 months, its 3-month average and where this month is heading.
 import { PAGE_MAX } from '@/lib/layout';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import { categoryIcon, monthEnd, monthName } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
@@ -29,6 +30,7 @@ export default function Watch() {
     try { setData(await loadWatch(today())); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
   useFocusEffect(useCallback(() => { load(); setRefresh((r) => r + 1); }, [load]));
+  usePullRefresh(load);
   const selected = data?.list.map((w) => w.category.id) ?? [];
   const change = async (ids: string[]) => { await savePrefs({ watch_categories: ids }); load(); };
 

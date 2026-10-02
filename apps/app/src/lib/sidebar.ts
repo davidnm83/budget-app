@@ -14,3 +14,4 @@ export function setSidebar(v: boolean) {
 export function useSidebar(): boolean {
   return useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => open, () => true);
 }
+export const toggleSidebar = () => setSidebar(!open);

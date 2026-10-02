@@ -1,5 +1,6 @@
 // Pop-up forms for a recurring bill/income and for a one-off planned entry.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { deleteWithUndo, toast } from '@/lib/toast';
 import { addDays, categoryIcon, formatMoney, parseMoney, round2, shortDate, toIsoDate, type Frequency, type Recurring } from '@budget-app/core';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -80,7 +81,7 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
         description: name.trim(), amount: round2(kind === 'bill' ? -Math.abs(a) : Math.abs(a)), date: s, account_id: accountId, category_id: categoryId,
       });
       setBusy(false);
-      if (error) setError(error.message); else { onSaved(); onClose(); }
+      if (error) setError(error.message); else { toast('Saved'); onSaved(); onClose(); }
       return;
     }
     setBusy(true);
@@ -91,12 +92,12 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
     };
     const { error } = initial.id ? await supabase.from('recurring').update(row).eq('id', initial.id) : await supabase.from('recurring').insert(row);
     setBusy(false);
-    if (error) setError(error.message); else { onSaved(); onClose(); }
+    if (error) setError(error.message); else { toast('Saved'); onSaved(); onClose(); }
   };
   const remove = async () => {
     if (!initial.id) return;
-    const { error } = await supabase.from('recurring').delete().eq('id', initial.id);
-    if (error) setError(error.message); else { onSaved(); onClose(); }
+    const error = await deleteWithUndo('recurring', initial.id, `${initial.name || 'Bill'} deleted`);
+    if (error) setError(error); else { onSaved(); onClose(); }
   };
 
   return (
@@ -201,7 +202,7 @@ export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
   const setMatch = async (txnId: string | null) => {
     const { error } = await upsert({ description: initial.description, amount: initial.amount ?? 0, date: initial.date, account_id: initial.account_id,
       to_account_id: initial.to_account_id ?? null, matched_transaction_id: txnId, skipped: false });
-    if (error) setError(error.message); else { onSaved(); onClose(); }
+    if (error) setError(error.message); else { toast('Saved'); onSaved(); onClose(); }
   };
 
   const upsert = async (patch: Record<string, unknown>) => {
@@ -215,13 +216,16 @@ export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
     if (!description.trim() || isNaN(a) || !d || !accountId) { setError('Fill in a description, amount, date and account.'); return; }
     const { error } = await upsert({ description: description.trim(), amount: dir === 'in' ? Math.abs(a) : -Math.abs(a), date: d, account_id: accountId,
       to_account_id: dir === 'transfer' ? toId : null, skipped: false });
-    if (error) setError(error.message); else { onSaved(); onClose(); }
+    if (error) setError(error.message); else { toast('Saved'); onSaved(); onClose(); }
   };
   const skip = async () => {
-    const { error } = recurring
-      ? await upsert({ description: initial.description, amount: initial.amount ?? 0, date: initial.date, account_id: initial.account_id, skipped: true })
-      : await supabase.from('plan_entries').delete().eq('id', initial.id!);
-    if (error) setError(error.message); else { onSaved(); onClose(); }
+    if (!recurring) {
+      const err = await deleteWithUndo('plan_entries', initial.id!, 'Entry removed');
+      if (err) setError(err); else { onSaved(); onClose(); }
+      return;
+    }
+    const { error } = await upsert({ description: initial.description, amount: initial.amount ?? 0, date: initial.date, account_id: initial.account_id, skipped: true });
+    if (error) setError(error.message); else { toast('Skipped this time'); onSaved(); onClose(); }
   };
   const plan = accounts.filter((a) => a.plan_include);
 

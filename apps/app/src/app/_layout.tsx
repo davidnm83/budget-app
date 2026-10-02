@@ -1,8 +1,11 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { installPullRefresh } from '@/lib/pullRefresh';
+import { installShortcuts } from '@/lib/shortcuts';
+import { PullIndicator, Toaster } from '@/components/Overlays';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { Platform, View } from 'react-native';
-import { Sidebar } from '@/components/Menu';
+import { Panels, Sidebar } from '@/components/Menu';
 import { useScheme } from '@/lib/theme';
 import { SessionProvider, useSession } from '@/lib/session';
 
@@ -28,6 +31,9 @@ function RootStack() {
       </Stack.Protected>
     </Stack>
     </View>
+    {!!session && <PullIndicator />}
+    {!!session && <Panels />}
+    <Toaster />
     </View>
   );
 }
@@ -48,7 +54,8 @@ function useNoAutofill() {
       if (el.tagName === 'INPUT' && (el.getAttribute('type') ?? 'text') === 'text') el.setAttribute('type', 'search');
     };
     const css = document.createElement('style');
-    css.textContent = '[tabindex="0"],[role="button"],[role="tab"],[role="link"]{transition:background-color .16s ease-out,border-color .16s ease-out,box-shadow .2s ease-out,transform .14s cubic-bezier(.2,.8,.2,1),opacity .16s ease-out}'
+    css.textContent = 'html,body{overscroll-behavior-y:contain}'
+      + '[tabindex="0"],[role="button"],[role="tab"],[role="link"]{transition:background-color .16s ease-out,border-color .16s ease-out,box-shadow .2s ease-out,transform .14s cubic-bezier(.2,.8,.2,1),opacity .16s ease-out}'
       + '@media (hover:hover){*{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,.35) transparent}}'
       + '@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}input[type=search]{-webkit-appearance:none;appearance:none}input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-search-decoration{-webkit-appearance:none;display:none}';
     document.head.appendChild(css);
@@ -56,7 +63,8 @@ function useNoAutofill() {
     mark(document);
     const obs = new MutationObserver((list) => list.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) { fix(n as Element); mark(n as Element); } })));
     obs.observe(document.body, { childList: true, subtree: true });
-    return () => { obs.disconnect(); css.remove(); };
+    const stopPull = installPullRefresh(), stopKeys = installShortcuts();
+    return () => { obs.disconnect(); css.remove(); stopPull(); stopKeys(); };
   }, []);
 }
 

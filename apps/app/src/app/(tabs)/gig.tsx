@@ -3,6 +3,9 @@
 // the earnings, active time and orders; $/hour, $/active hour, % active, $/km, after gas.
 // Settings: gas (L/100 km × $/L), and when each app pays out, which feeds the planner.
 import { PAGE_MAX } from '@/lib/layout';
+import { toast } from '@/lib/toast';
+import { deleteWithUndo } from '@/lib/toast';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import { BarChart } from '@/components/Charts';
 import { PageBoard } from '@/components/PageBoard';
@@ -74,6 +77,7 @@ export default function Gig() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
   useFocusEffect(useCallback(() => { load(); setRefresh((r) => r + 1); }, [load]));
+  usePullRefresh(load);
 
   const now = today();
   const sum = useMemo(() => summarizePayouts(payouts, now, 12, 6), [payouts, now]);
@@ -373,8 +377,8 @@ function ShiftForm({ initial, settings, rules, onClose, onSaved }: { initial: Pa
     finally { setBusy(false); }
   };
   const remove = async () => {
-    const { error } = await supabase.from('gig_shifts').delete().eq('id', initial.id!);
-    if (error) setError(error.message); else { onSaved(); onClose(); }
+    const error = await deleteWithUndo('gig_shifts', initial.id!, 'Shift deleted', { table: 'gig_shift_parts', key: 'shift_id' });
+    if (error) setError(error); else { onSaved(); onClose(); }
   };
 
   return (

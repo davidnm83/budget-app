@@ -8,7 +8,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
-import { MenuButton } from '@/components/Menu';
 import { PAGE_MAX, useWide } from '@/lib/layout';
 import { loadPrefs, type Page } from '@/lib/prefs';
 import { useTheme } from '@/lib/theme';
@@ -21,7 +20,6 @@ export function TopBar({ children, title }: { children?: ReactNode; title?: stri
   if (wide && title && !children) return <View style={{ height: 8 }} />; // the sidebar already says where you are
   return (
     <View style={[styles.bar, { paddingTop: insets.top + 8, backgroundColor: t.bg }]}>
-      <MenuButton />
       {title ? <Text style={{ color: t.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.3, flex: children ? 0 : 1 }}>{title}</Text> : null}
       {children ? <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>{children}</View> : null}
     </View>

@@ -3,7 +3,7 @@
 //   fit: the panel is only as tall as its content (forms); otherwise it takes most of the height (lists).
 import { useEffect, useRef, type ReactNode } from 'react';
 import { POP } from '@/lib/motion';
-import { Animated, Easing, Modal, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, Modal, PanResponder, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWide } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
@@ -36,6 +36,17 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const y = useRef(new Animated.Value(height)).current;
+  // Drag the strip at the top down to close; a short drag springs back.
+  const pan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_e, g) => g.dy > 4,
+    onPanResponderMove: (_e, g) => { y.setValue(Math.max(0, g.dy)); },
+    onPanResponderRelease: (_e, g) => {
+      if (g.dy > 110 || g.vy > 0.9) closeRef.current();
+      else Animated.spring(y, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+    },
+  })).current;
+  const closeRef = useRef(onClose); closeRef.current = onClose;
   useEffect(() => {
     if (!visible) { y.setValue(height); return; }
     Animated.timing(y, { toValue: 0, duration: 280, easing: Easing.bezier(0.2, 0.9, 0.2, 1), useNativeDriver: true }).start();
@@ -45,7 +56,7 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
       <Pressable style={styles.phoneScrim} onPress={onClose}>
         <Animated.View style={[styles.sheet, { backgroundColor: t.bg, marginTop: insets.top + 24, transform: [{ translateY: y }] }, fit ? { maxHeight: '100%' } : { flex: 1 }]}>
           <Pressable onPress={() => {}} style={[{ cursor: 'auto' as any }, fit ? { flexShrink: 1 } : { flex: 1 }]}>
-            <View style={[styles.grabber, { backgroundColor: t.line }]} />
+            <View {...pan.panHandlers} style={styles.grabZone} accessibilityLabel="Drag down to close"><View style={[styles.grabber, { backgroundColor: t.muted }]} /></View>
             {children}
           </Pressable>
         </Animated.View>
@@ -57,7 +68,8 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
 const styles = StyleSheet.create({
   phoneScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'flex-end', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' } as any,
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: '0 -8px 30px rgba(0,0,0,0.18)' as any, overflow: 'hidden', flexShrink: 1, cursor: 'auto' as any },
-  grabber: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 8 },
-  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' } as any,
+  grabZone: { height: 26, alignItems: 'center', justifyContent: 'center', cursor: 'grab', touchAction: 'none' } as any,
+  grabber: { width: 40, height: 5, borderRadius: 3, opacity: 0.45 },
+  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)' } as any,
   panel: { width: '100%', borderRadius: 20, boxShadow: '0 24px 60px rgba(0,0,0,0.28)' as any, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', cursor: 'auto' as any },
 });

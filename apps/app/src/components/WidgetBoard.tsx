@@ -3,6 +3,7 @@
 // every widget gets a strip of controls: drag (or the arrows) to reorder, width, chart height,
 // settings and remove. Each change is saved to the account as it is made.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { toast } from '@/lib/toast';
 import { riseAfter } from '@/lib/motion';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -87,7 +88,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing
                     <Text style={{ color: t.accent, fontSize: 12, fontWeight: '700' }}>{cfg.h === 's' ? 'Short' : cfg.h === 'l' ? 'Tall' : 'Medium'}</Text>
                   </Pressable>}
                   {WIDGETS.some((w) => w.key === keyOf(e)) && <Tool t={t} icon="settings-outline" label="Widget settings" onPress={() => setSettings({ index: i, key: keyOf(e), cfg: k === 'spend' ? { source: 'spending', ...cfg } : cfg })} />}
-                  <Tool t={t} icon="close" label="Remove widget" onPress={() => onChange(entries.filter((_, n) => n !== i))} />
+                  <Tool t={t} icon="close" label="Remove widget" onPress={() => { const before = entries; onChange(entries.filter((_, n) => n !== i)); toast('Widget removed', { undo: () => onChange(before) }); }} />
                 </View>
               )}
               <View style={[{ flexGrow: 1 }, editing && { opacity: drag === i ? 0.4 : 1 }]} pointerEvents={editing ? 'none' : 'auto'}>

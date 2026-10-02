@@ -2,6 +2,7 @@
 // statement and the interest it would cost if unpaid, plus total card debt and utilisation over
 // the past year. Tap a card for its full page.
 import { PAGE_MAX } from '@/lib/layout';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { bankLogo, customPicture, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { UNDER_BAR } from '@/lib/layout';
@@ -43,6 +44,7 @@ export default function Credit() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
   useFocusEffect(useCallback(() => { load(); setRefresh((r) => r + 1); }, [load]));
+  usePullRefresh(load);
 
   const now = today();
   const cards = accounts.filter((a) => a.type === 'credit');

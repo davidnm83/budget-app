@@ -1,6 +1,10 @@
 // Categories (TXN-7): your list, grouped. Add, rename, pick an emoji, move to another group,
 // change the type, hide, or merge one into another. Tap a group name to rename the group.
 import { PAGE_MAX } from '@/lib/layout';
+import { afterClose } from '@/lib/useBackToClose';
+import { toast } from '@/lib/toast';
+import { useConfirm } from '@/components/Confirm';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { EmojiField } from '@/components/EmojiPicker';
 import { UNDER_BAR } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -39,6 +43,7 @@ export default function Categories() {
     setCounts(m);
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  usePullRefresh(load);
 
   const groups = useMemo(() => {
     const m = new Map<string, Cat[]>();
@@ -95,6 +100,7 @@ function CategoryEditor({ initial, cats, count, onClose, onSaved }: { initial: P
   const [kind, setKind] = useState<Cat['kind']>(initial.kind ?? 'expense');
   const [hidden, setHidden] = useState(!!initial.is_hidden);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [confirm, confirmSheet] = useConfirm();
   const [error, setError] = useState('');
   const groups = [...new Set(cats.map((c) => c.group_name))];
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
@@ -111,12 +117,16 @@ function CategoryEditor({ initial, cats, count, onClose, onSaved }: { initial: P
     const to = ids[ids.length - 1];
     setMergeOpen(false);
     if (!to || !initial.id) return;
-    try { await mergeCategories(initial.id, to); onSaved(); onClose(); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    const target = cats.find((c) => c.id === to)?.name ?? 'the other category';
+    afterClose(() => confirm({
+      title: 'Merge categories', action: 'Merge',
+      message: `Move every transaction, budget and rule from “${initial.name}” into “${target}”, then delete “${initial.name}”?`,
+      run: async () => { try { await mergeCategories(initial.id!, to); toast(`Merged into ${target}`); onSaved(); onClose(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } },
+    }));
   };
   const remove = async () => {
     const { error } = await supabase.from('categories').delete().eq('id', initial.id!);
-    if (error) setError(error.message); else { onSaved(); onClose(); }
+    if (error) setError(error.message); else { toast('Saved'); onSaved(); onClose(); }
   };
 
   return (
@@ -145,6 +155,7 @@ function CategoryEditor({ initial, cats, count, onClose, onSaved }: { initial: P
         </>
       )}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+      {confirmSheet}
       <MultiPicker visible={mergeOpen} title={`Merge ${initial.name ?? ''} into`} onClose={() => setMergeOpen(false)} selected={[]} onChange={merge}
         items={cats.filter((c) => c.id !== initial.id).map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))} />
     </Sheet>

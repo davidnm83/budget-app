@@ -3,10 +3,10 @@ import { router, Tabs, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MenuButton } from '@/components/Menu';
 import { refreshPlannerBadge, usePlannerBadge } from '@/lib/badges';
 import { useWide } from '@/lib/layout';
 import { EASE, ENTER, PRESS } from '@/lib/motion';
+import { setPanel } from '@/lib/panels';
 import { useScheme, useTheme } from '@/lib/theme';
 
 // Every signed-in page lives here, so the navigation bar stays put wherever you are.
@@ -38,7 +38,7 @@ export default function TabLayout() {
       screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: t.bg } }}>
       {TABS.map((x) => <Tabs.Screen key={x.name} name={x.name} options={{ title: x.title, tabBarBadge: x.name === 'planner' ? overdue || undefined : undefined }} />)}
       {PAGES.map(([name, title]) => (
-        <Tabs.Screen key={name} name={name} options={{ title, ...header, headerLeft: () => <View style={{ marginLeft: 8, marginRight: 4 }}><MenuButton plain /></View> }} />
+        <Tabs.Screen key={name} name={name} options={{ title, ...header }} />
       ))}
       {FROM_SETTINGS.map(([name, title]) => (
         <Tabs.Screen key={name} name={name} options={{ title, ...header, headerLeft: () => (
@@ -64,6 +64,7 @@ function FloatingBar({ state, descriptors, navigation }: any) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const current = state.routes[state.index]?.name;
+  const onTab = TABS.some((x) => x.name === current);
   const dark = useScheme() === 'dark';
   return (
     <View pointerEvents="box-none" style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 12) }]}>
@@ -85,6 +86,13 @@ function FloatingBar({ state, descriptors, navigation }: any) {
             </Pressable>
           );
         })}
+        <Pressable accessibilityRole="button" accessibilityLabel="More: search and all pages" hitSlop={4} onPress={() => setPanel('more')}
+          style={({ pressed }) => [styles.item, PRESS, pressed && { transform: [{ scale: 0.88 }] }]}>
+          {/* Lit while you're on a page that isn't one of the five tabs. */}
+          <View style={[styles.pill, EASE, { backgroundColor: onTab ? 'transparent' : t.accent + '26', transform: [{ scale: onTab ? 0.9 : 1 }] }]}>
+            <Ionicons name={onTab ? 'ellipsis-horizontal' : 'ellipsis-horizontal-circle'} size={24} color={onTab ? t.muted : t.accent} />
+          </View>
+        </Pressable>
       </View>
     </View>
   );
@@ -93,7 +101,7 @@ function FloatingBar({ state, descriptors, navigation }: any) {
 const styles = StyleSheet.create({
   dock: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center', paddingTop: 28 },
   bar: { flexDirection: 'row', alignItems: 'center', gap: 2, borderWidth: StyleSheet.hairlineWidth, borderRadius: 28, paddingHorizontal: 8, height: 56, boxShadow: '0 8px 28px rgba(0,0,0,0.16), 0 1px 3px rgba(0,0,0,0.08)' as any },
-  item: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
-  pill: { width: 48, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  item: { width: 52, height: 56, alignItems: 'center', justifyContent: 'center' },
+  pill: { width: 46, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   badge: { position: 'absolute', top: 6, right: 4, minWidth: 18, height: 18, borderRadius: 9, borderWidth: 2, paddingHorizontal: 3, alignItems: 'center', justifyContent: 'center' },
 });

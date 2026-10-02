@@ -1,4 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { setLogosEnabled, useLogos } from '@/lib/logos';
 import { UNDER_BAR } from '@/lib/layout';
 import { useCallback, useState } from 'react';
@@ -34,6 +35,7 @@ export default function Settings() {
     else setItems((data ?? []) as PlaidItem[]);
   }, []);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  usePullRefresh(load);
 
   const done = (m: string) => { setMsg(m); load(); };
   const remove = async (it: PlaidItem) => {

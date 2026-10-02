@@ -2,6 +2,7 @@
 // spending by merchant, for a chosen date range; tap anything for its transactions. Plus your own
 // tabs, each a set of widgets you pick (kept in user_prefs.report_tabs).
 import { PAGE_MAX } from '@/lib/layout';
+import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import { addMonths, formatMoney, monthEnd, monthName, todayIn } from '@budget-app/core';
 // Month totals cover whole months; ranges here always start on the 1st and end today or at a month end.
@@ -80,6 +81,7 @@ export default function Reports() {
     }
   }, [rk]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  usePullRefresh(load);
 
   // Drill-down: the transactions behind a number, in a slide-over.
   const open = (q: Record<string, string>) => {
@@ -98,7 +100,7 @@ export default function Reports() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={styles.tabBar}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, minHeight: 56 }} contentContainerStyle={styles.tabBar}>
       {[...BUILT_IN, ...tabs].map((x) => (
         <Pressable key={x.id} onPress={() => setTab(x.id)} onLongPress={() => { const c = tabs.find((y) => y.id === x.id); if (c) { setTabName(c.name); setEditTab(c); } }}
           style={[styles.tab, { borderColor: tab === x.id ? t.accent : t.line, backgroundColor: tab === x.id ? t.accent : t.card }]}>
@@ -253,7 +255,7 @@ function ByMerchant({ t, list, open }: { t: Theme; list: MerchantTotal[]; open: 
 }
 
 const styles = StyleSheet.create({
-  tabBar: { gap: 6, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6 },
+  tabBar: { gap: 6, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6, alignItems: 'center' },
   tab: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 7 },
   editTab: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, minHeight: 40 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15 },
