@@ -4,7 +4,8 @@ import { PAGE_MAX } from '@/lib/layout';
 import { categoryIcon, monthEnd, monthName } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { PageBoard } from '@/components/PageBoard';
 import { MultiPicker } from '@/components/Picker';
 import { Button, Card } from '@/components/ui';
 import { WatchCard } from '@/components/WatchCard';
@@ -21,11 +22,12 @@ export default function Watch() {
   const [data, setData] = useState<{ list: Watched[]; chosen: boolean; cats: Category[] } | null>(null);
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
   const [showTxns, txnSheet] = useTxnSheet();
   const load = useCallback(async () => {
     try { setData(await loadWatch(today())); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(); setRefresh((r) => r + 1); }, [load]));
   const selected = data?.list.map((w) => w.category.id) ?? [];
   const change = async (ids: string[]) => { await savePrefs({ watch_categories: ids }); load(); };
 
@@ -37,10 +39,18 @@ export default function Watch() {
         {data && !data.chosen ? ' These are suggestions until you pick your own.' : ''}
       </Text>
       <Button title="Choose categories" kind="plain" onPress={() => setPicking(true)} />
-      {data?.list.map((w) => <WatchCard key={w.category.id} t={t} w={w}
+      {data && (
+        <PageBoard page="watch" refresh={refresh} defaults={['watch:list']} blocks={[
+          { key: 'watch:list', title: 'Watched categories', about: 'Each category’s last 6 months against its average', render: () => (
+            <View style={{ gap: 10 }}>
+              {data?.list.map((w) => <WatchCard key={w.category.id} t={t} w={w}
         onMonth={(m) => showTxns({ title: `${w.category.name} · ${monthName(m)}`, from: m, to: monthEnd(m), categoryIds: [w.category.id], noTransfers: true })} />)}
+              {!data.list.length && <Card><Text style={{ color: t.muted }}>Nothing on the list yet.</Text></Card>}
+            </View>
+          ) },
+        ]} />
+      )}
       {txnSheet}
-      {data && !data.list.length && <Card><Text style={{ color: t.muted }}>Nothing on the list yet.</Text></Card>}
       {data && (
         <MultiPicker visible={picking} title="Watch list" onClose={() => setPicking(false)} selected={selected} onChange={change}
           items={data.cats.filter((c) => c.kind === 'expense' && !c.hidden).map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group }))} />

@@ -14,7 +14,7 @@ import { afterClose } from '@/lib/useBackToClose';
 const HOME_ONLY = ['review', 'week', 'budget', 'networth'];
 const isChart = (e: string) => keyOf(e) === 'chart';
 
-export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing, onEditing, special, extra }: {
+export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing, onEditing, special, extra, blocks = [] }: {
   entries: string[]; onChange: (next: string[]) => void; place: 'home' | 'page' | 'budget' | 'report'; refresh: number;
   /** The month the page is showing, for widgets that follow it. */
   anchor?: string;
@@ -23,6 +23,8 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing
   special?: (key: string) => ReactNode | undefined;
   /** Extra controls at the end of the edit bar (a page's name and delete). */
   extra?: ReactNode;
+  /** Blocks that belong to this page only (drawn through `special`). */
+  blocks?: WidgetDef[];
 }) {
   const t = useTheme();
   const wide = useWide();
@@ -30,8 +32,10 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing
   const [settings, setSettings] = useState<{ index: number | null; key: string; cfg: WidgetCfg } | null>(null);
   const [drag, setDrag] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
-  const avail = WIDGETS.filter((w) => (place === 'home' ? w.home : place === 'budget' ? w.budget : !HOME_ONLY.includes(w.key)));
-  const known = entries.map((e, i) => ({ e, i })).filter(({ e }) => WIDGETS.some((w) => w.key === keyOf(e)));
+  const defs = [...blocks, ...WIDGETS];
+  const labelOf = (e: string) => blocks.find((b) => b.key === parseEntry(e)[0])?.title ?? entryLabel(e);
+  const avail = [...blocks, ...WIDGETS.filter((w) => (place === 'home' ? w.home : place === 'budget' ? w.budget : !HOME_ONLY.includes(w.key)))];
+  const known = entries.map((e, i) => ({ e, i })).filter(({ e }) => defs.some((w) => w.key === keyOf(e)));
 
   const move = (from: number, to: number) => {
     if (from === to || to < 0 || to >= entries.length) return;
@@ -65,7 +69,6 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing
   );
   return (
     <>
-      {editing && bar}
       <View style={[styles.board, wide && { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch' }]}>
         {known.map(({ e, i }) => {
           const [k, cfg] = parseEntry(e);
@@ -76,7 +79,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing
               {editing && (
                 <View style={[styles.tools, { backgroundColor: t.card, borderColor: t.line }]}>
                   {Platform.OS === 'web' && wide && <Ionicons name="reorder-three" size={20} color={t.muted} style={{ cursor: 'grab' } as any} />}
-                  <Text style={{ color: t.text, fontSize: 12, fontWeight: '600', flex: 1 }} numberOfLines={1}>{entryLabel(e)}</Text>
+                  <Text style={{ color: t.text, fontSize: 12, fontWeight: '600', flex: 1 }} numberOfLines={1}>{labelOf(e)}</Text>
                   <Tool t={t} icon={wide ? 'chevron-back' : 'chevron-up'} label="Move earlier" onPress={() => move(i, i - 1)} off={i === 0} />
                   <Tool t={t} icon={wide ? 'chevron-forward' : 'chevron-down'} label="Move later" onPress={() => move(i, i + 1)} off={i === entries.length - 1} />
                   {wide && <Tool t={t} icon={full ? 'contract-outline' : 'expand-outline'} label={full ? 'Make half width' : 'Make full width'} onPress={() => patch(i, { w: full ? 'half' : 'full' })} />}

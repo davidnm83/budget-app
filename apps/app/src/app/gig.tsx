@@ -3,6 +3,8 @@
 // the earnings, active time and orders; $/hour, $/active hour, % active, $/km, after gas.
 // Settings: gas (L/100 km × $/L), and when each app pays out, which feeds the planner.
 import { PAGE_MAX } from '@/lib/layout';
+import { PageBoard } from '@/components/PageBoard';
+import { makeEntry } from '@/components/Widgets';
 import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
@@ -28,6 +30,8 @@ const pct = (x: number | null) => (x == null ? '–' : `${Math.round(x * 100)}%`
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const EMPTY: GigSettings = { cost_per_km: null, weekly_target: null, fuel_price: null, fuel_efficiency: null, plan_ahead: false, exclude_gig_gas: false };
 
+const GIG_DEFAULT = [makeEntry('gig:tiles', { w: 'full' }), makeEntry('gig:weeks', { w: 'full' }), 'gig:months', 'gig:platforms'];
+
 export default function Gig() {
   const t = useTheme();
   const [view, setView] = useState<'earnings' | 'shifts'>('earnings');
@@ -43,6 +47,7 @@ export default function Gig() {
   const [editing, setEditing] = useState<Partial<ShiftRow> | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
 
   const load = useCallback(async () => {
     const now = today();
@@ -66,7 +71,7 @@ export default function Gig() {
       setGas90(-((gas.data ?? []) as any[]).reduce((x, y) => x + Number(y.amount), 0));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(); setRefresh((r) => r + 1); }, [load]));
 
   const now = today();
   const sum = useMemo(() => summarizePayouts(payouts, now, 12, 6), [payouts, now]);
@@ -87,7 +92,7 @@ export default function Gig() {
         </View>
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
         {view === 'earnings'
-          ? <Earnings t={t} sum={sum} target={settings.weekly_target} hasCategory={hasCategory} onSettings={() => setShowSettings(true)}
+          ? <Earnings refresh={refresh} t={t} sum={sum} target={settings.weekly_target} hasCategory={hasCategory} onSettings={() => setShowSettings(true)}
               onRange={(title, from, to) => showTxns({ title, from, to, categoryIds: gigIds, kind: 'income' })} />
           : <Shifts t={t} shifts={shifts} cpk={cpk} onEdit={setEditing} onSettings={() => setShowSettings(true)} />}
       </ScrollView>
@@ -108,8 +113,8 @@ export default function Gig() {
 }
 
 // ───────────────────────── earnings ─────────────────────────
-function Earnings({ t, sum, target, hasCategory, onSettings, onRange }: {
-  t: Theme; sum: ReturnType<typeof summarizePayouts>; target: number | null; hasCategory: boolean; onSettings: () => void;
+function Earnings({ t, sum, target, hasCategory, onSettings, onRange, refresh }: {
+  refresh: number; t: Theme; sum: ReturnType<typeof summarizePayouts>; target: number | null; hasCategory: boolean; onSettings: () => void;
   onRange: (title: string, from: string, to: string) => void;
 }) {
   const maxWeek = Math.max(1, target ?? 0, ...sum.weeks.map((w) => w.total));
@@ -118,7 +123,10 @@ function Earnings({ t, sum, target, hasCategory, onSettings, onRange }: {
   return (
     <>
       {!hasCategory && <Card><Text style={{ color: t.text }}>Make a category called “Gig work” (Categories in the menu) and put your payouts in it; they show up here.</Text></Card>}
-      <View style={styles.tiles}>
+      <PageBoard page="gig" refresh={refresh} defaults={GIG_DEFAULT} blocks={[
+        { key: 'gig:tiles', title: 'Payout totals', about: 'This week against your target, last week, this month and this year', render: () => (
+          <View style={{ gap: 10 }}>
+            <View style={styles.tiles}>
         <Tile t={t} label="This week" value={money0(sum.thisWeek)} sub={target ? `of ${money0(target)} target` : `avg ${money0(sum.avgWeek)}/wk`}
           color={target ? (sum.thisWeek >= target ? t.accent : t.series2) : undefined} />
         <Tile t={t} label="Last week" value={money0(sum.lastWeek)} />
@@ -135,8 +143,10 @@ function Earnings({ t, sum, target, hasCategory, onSettings, onRange }: {
           </Text>
         </View>
       )}
-
-      <Card style={{ gap: 8 }}>
+          </View>
+        ) },
+        { key: 'gig:weeks', title: 'Last 12 weeks', about: 'Weekly payouts by app, with your target line', render: () => (
+          <Card style={{ gap: 8 }}>
         <View style={styles.between}>
           <Text style={[styles.h, { color: t.muted }]}>Last 12 weeks</Text>
           <Pressable onPress={onSettings} hitSlop={8}><Text style={{ color: t.accent, fontSize: 12 }}>{target ? 'Change target' : 'Set a weekly target'}</Text></Pressable>
@@ -165,8 +175,9 @@ function Earnings({ t, sum, target, hasCategory, onSettings, onRange }: {
         </View>
         <Text style={{ color: t.muted, fontSize: 12 }}>Average of the last 8 full weeks: {formatMoney(sum.avgWeek)} · tap a week for its payouts</Text>
       </Card>
-
-      <Card style={{ padding: 0 }}>
+        ) },
+        { key: 'gig:months', title: 'Payouts by month', about: 'Each month’s payouts by app', render: () => (
+          <Card style={{ padding: 0 }}>
         <Text style={[styles.h, { color: t.muted, paddingHorizontal: 12, paddingTop: 10 }]}>By month</Text>
         <View style={[styles.mRow, { borderColor: t.line }]}>
           <Text style={[styles.mCell, { color: t.muted, flex: 1.2, textAlign: 'left' }]}>Month</Text>
@@ -181,8 +192,9 @@ function Earnings({ t, sum, target, hasCategory, onSettings, onRange }: {
           </Pressable>
         ))}
       </Card>
-
-      {sum.platforms.length > 0 && (
+        ) },
+        { key: 'gig:platforms', title: 'This year by app', about: 'Each app’s share of this year’s payouts', render: () => (
+          sum.platforms.length > 0 ? (
         <Card style={{ gap: 8 }}>
           <Text style={[styles.h, { color: t.muted }]}>This year by platform</Text>
           {sum.platforms.map((p) => (
@@ -196,8 +208,9 @@ function Earnings({ t, sum, target, hasCategory, onSettings, onRange }: {
               </View>
             </View>
           ))}
-        </Card>
-      )}
+        </Card>) : null
+        ) },
+      ]} />
     </>
   );
 }

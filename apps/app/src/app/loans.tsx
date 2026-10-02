@@ -6,12 +6,16 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AccountSheet, BalanceChart, LoanBlock } from '@/components/AccountSheet';
+import { PageBoard } from '@/components/PageBoard';
+import { makeEntry } from '@/components/Widgets';
 import { useTxnSheet } from '@/components/TxnSheet';
 import { Button, Card, Segmented } from '@/components/ui';
 import { loadTxnsFor, type Row } from '@/lib/accountTxns';
 import { loadAccounts, today } from '@/lib/plan';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
+
+const LOANS_DEFAULT = [makeEntry('loan:summary', { w: 'full' }), makeEntry('loan:chart', { w: 'full' }), 'loan:payments', 'loan:interest'];
 
 export default function Loans() {
   const t = useTheme();
@@ -20,6 +24,7 @@ export default function Loans() {
   const [pick, setPick] = useState<string | null>(null);
   const [open, setOpen] = useState<Account | null>(null);
   const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
   const [showTxns, txnSheet] = useTxnSheet();
 
   const load = useCallback(async () => {
@@ -30,7 +35,7 @@ export default function Loans() {
       setTxns(await loadTxnsFor(loans.map((l) => l.id), '1900-01-01'));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(); setRefresh((r) => r + 1); }, [load]));
 
   // Car loans first: that's what this page is mostly for.
   const loans = accounts.filter((a) => a.type === 'loan')
@@ -46,18 +51,24 @@ export default function Loans() {
       {!loan && <Card><Text style={{ color: t.muted }}>No loan accounts yet.</Text></Card>}
       {loan && (
         <>
-          <Pressable onPress={() => setOpen(loan)}>
-            <Text style={{ color: t.muted, fontSize: 12 }}>OWING · {loan.name}{loan.mask ? ` ••${loan.mask}` : ''}</Text>
-            <Text style={{ color: t.text, fontSize: 28, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{formatMoney(Math.abs(signedBalance(loan)))}</Text>
-            <Text style={{ color: t.accent, fontSize: 12 }}>Account details and payment settings ›</Text>
-          </Pressable>
-          <LoanBlock t={t} a={loan} txns={mine} />
-          {mine.length > 0 && (
-            <Card><BalanceChart t={t} points={balanceHistory(signedBalance(loan), mine.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)}
-              onPick={(from, to) => showTxns({ title: `${loan.name} · week of ${shortDate(from)}`, from, to, accountIds: [loan.id] })} /></Card>
-          )}
-          <List t={t} title="Payments" rows={mine.filter((x) => x.amount > 0)} />
-          <List t={t} title="Interest" rows={mine.filter((x) => x.amount < 0 && isInterestRow(x.name))} />
+          <PageBoard page="loans" refresh={refresh} defaults={LOANS_DEFAULT} blocks={[
+            { key: 'loan:summary', title: 'Loan summary', about: 'What’s owing, the payoff estimate, interest and payments so far', render: () => (
+              <View style={{ gap: 10 }}>
+                <Pressable onPress={() => setOpen(loan)}>
+                  <Text style={{ color: t.muted, fontSize: 12 }}>OWING · {loan.name}{loan.mask ? ` ••${loan.mask}` : ''}</Text>
+                  <Text style={{ color: t.text, fontSize: 28, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{formatMoney(Math.abs(signedBalance(loan)))}</Text>
+                  <Text style={{ color: t.accent, fontSize: 12 }}>Account details and payment settings ›</Text>
+                </Pressable>
+                <LoanBlock t={t} a={loan} txns={mine} />
+              </View>
+            ) },
+            { key: 'loan:chart', title: 'Balance, past year', about: 'The loan balance week by week', render: () => (mine.length > 0 ? (
+              <Card><BalanceChart t={t} points={balanceHistory(signedBalance(loan), mine.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)}
+                onPick={(from, to) => showTxns({ title: `${loan.name} · week of ${shortDate(from)}`, from, to, accountIds: [loan.id] })} /></Card>
+            ) : null) },
+            { key: 'loan:payments', title: 'Payments', about: 'Every payment made on the loan', render: () => <List t={t} title="Payments" rows={mine.filter((x) => x.amount > 0)} /> },
+            { key: 'loan:interest', title: 'Interest', about: 'Interest charged on the loan', render: () => <List t={t} title="Interest" rows={mine.filter((x) => x.amount < 0 && isInterestRow(x.name))} /> },
+          ]} />
         </>
       )}
       {txnSheet}

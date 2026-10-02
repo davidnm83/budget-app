@@ -7,6 +7,8 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AccountSheet, BalanceChart } from '@/components/AccountSheet';
+import { PageBoard } from '@/components/PageBoard';
+import { makeEntry } from '@/components/Widgets';
 import { useTxnSheet } from '@/components/TxnSheet';
 import { Bar, Card } from '@/components/ui';
 import { loadAccounts, today } from '@/lib/plan';
@@ -15,6 +17,7 @@ import { Tile } from '@/components/Tile';
 import { useTheme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
 
+const CREDIT_DEFAULT = [makeEntry('credit:tiles', { w: 'full' }), makeEntry('credit:cards', { w: 'full' }), 'credit:debt', 'credit:util'];
 const money0 = (n: number) => formatMoney(n).replace(/\.\d\d$/, '');
 
 export default function Credit() {
@@ -23,6 +26,7 @@ export default function Credit() {
   const [txns, setTxns] = useState<Row[]>([]);
   const [open, setOpen] = useState<Account | null>(null);
   const [error, setError] = useState('');
+  const [refresh, setRefresh] = useState(0);
   const [showTxns, txnSheet] = useTxnSheet();
 
   const load = useCallback(async () => {
@@ -33,7 +37,7 @@ export default function Credit() {
       setTxns(await loadTxnsFor(cards.map((c) => c.id), addDays(today(), -400)));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { load(); setRefresh((r) => r + 1); }, [load]));
 
   const now = today();
   const cards = accounts.filter((a) => a.type === 'credit');
@@ -71,15 +75,18 @@ export default function Credit() {
   return (
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-      <View style={styles.tiles}>
+      <PageBoard page="credit" refresh={refresh} defaults={CREDIT_DEFAULT} blocks={[
+        { key: 'credit:tiles', title: 'Card totals', about: 'Total owing, utilisation, next due and interest', render: () => (
+          <View style={styles.tiles}>
         <Tile t={t} label="Total owing" value={money0(totalOwed)} sub={`${cards.length} cards`} />
         <Tile t={t} label="Utilisation" value={util != null ? `${Math.round(util * 100)}%` : '–'} sub={totalLimit ? `of ${money0(totalLimit)} limit` : 'add limits'}
           color={util == null ? undefined : util > 0.7 ? t.danger : util > 0.3 ? t.series2 : t.accent} />
         <Tile t={t} label="Next due" value={nextDue ? formatMoney(nextDue.st!.leftToPay) : '–'} sub={nextDue ? `${nextDue.a.name} · ${shortDate(nextDue.cycle!.due)}` : 'nothing owing'} />
         <Tile t={t} label="Interest if unpaid" value={formatMoney(interestDue)} sub="this cycle, est." color={interestDue > 0 ? t.series2 : undefined} />
       </View>
-
-      <Card style={{ padding: 0 }}>
+        ) },
+        { key: 'credit:cards', title: 'Your cards', about: 'Each card’s balance, limit and statement', render: () => (
+          <Card style={{ padding: 0 }}>
         {perCard.map((c, i) => (
           <Pressable key={c.a.id} onPress={() => setOpen(c.a)} style={({ pressed }) => [styles.card, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }, pressed && { backgroundColor: t.line }]}>
             <View style={styles.between}>
@@ -102,11 +109,13 @@ export default function Credit() {
         ))}
         {!cards.length && <Text style={{ color: t.muted, padding: 12 }}>No credit cards yet.</Text>}
       </Card>
-
-      {debtTrend.length > 1 && <Card><BalanceChart t={t} points={debtTrend} title="TOTAL CARD DEBT, PAST YEAR"
-        onPick={(from, to) => showTxns({ title: `Cards · week of ${shortDate(from)}`, from, to, accountIds: cards.map((c) => c.id) })} /></Card>}
-
-      {utilTrend.length > 1 && (
+        ) },
+        { key: 'credit:debt', title: 'Card debt, past year', about: 'Total owed on cards week by week', render: () => (
+          debtTrend.length > 1 ? <Card><BalanceChart t={t} points={debtTrend} title="TOTAL CARD DEBT, PAST YEAR"
+        onPick={(from, to) => showTxns({ title: `Cards · week of ${shortDate(from)}`, from, to, accountIds: cards.map((c) => c.id) })} /></Card> : null
+        ) },
+        { key: 'credit:util', title: 'Utilisation at month end', about: 'How much of your limits was in use each month', render: () => (
+          utilTrend.length > 1 ? (
         <Card style={{ gap: 6 }}>
           <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>UTILISATION AT MONTH END</Text>
           <View style={styles.utilChart}>
@@ -122,8 +131,9 @@ export default function Credit() {
             ))}
           </View>
           <Text style={{ color: t.muted, fontSize: 12 }}>Under 30% is generally better for your credit score. Uses today’s limits. Tap a month for its card transactions.</Text>
-        </Card>
-      )}
+        </Card>) : null
+        ) },
+      ]} />
       {txnSheet}
       <AccountSheet account={open} accounts={accounts} onClose={() => setOpen(null)} onChanged={load} />
     </ScrollView>

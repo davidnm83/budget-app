@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { loadPrefs, savePrefs, type Page } from '@/lib/prefs';
 import { supabase } from '@/lib/supabase';
 import { PAGE_MAX, useWide } from '@/lib/layout';
-import { usePlannerBadge } from '@/lib/badges';
+import { refreshPlannerBadge, usePlannerBadge } from '@/lib/badges';
 import { setSidebar, useSidebar } from '@/lib/sidebar';
 import { useTheme } from '@/lib/theme';
 import { afterClose, useBackToClose } from '@/lib/useBackToClose';
@@ -31,7 +31,7 @@ const TABS = ['/', '/transactions', '/planner', '/budget', '/accounts'];
 
 /** The tabs, shown in the sidebar on wide screens (there the sidebar replaces the top tab bar). */
 const TAB_ITEMS: Item[] = [
-  { icon: 'home-outline', label: 'Overview', href: '/' },
+  { icon: 'grid-outline', label: 'Overview', href: '/' },
   { icon: 'list', label: 'Transactions', href: '/transactions' },
   { icon: 'calendar-outline', label: 'Planner', href: '/planner' },
   { icon: 'pie-chart-outline', label: 'Budget', href: '/budget' },
@@ -46,6 +46,7 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
   const [order, setOrder] = useState<string[]>([]);
   const [toReview, setToReview] = useState(0);
   const overdue = usePlannerBadge();
+  useEffect(() => { if (tabs) refreshPlannerBadge(); }, [tabs]); // also when the app opens on a menu page
   const [sorting, setSorting] = useState(false);
   useEffect(() => { if (tabs) supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('reviewed', false).then((r) => setToReview(r.count ?? 0)); }, [tabs, path]);
   // Reload when shown and when the page changes (a custom page may have been added or renamed).
