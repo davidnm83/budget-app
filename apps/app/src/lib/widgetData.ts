@@ -23,6 +23,8 @@ export const SOURCES: Record<Source, { title: string; about: string; views: Char
 
 /** Which ways each source can be split. The first is the default. */
 export const SPLITS: Record<Source, SplitBy[]> = { spending: ['category', 'group', 'account'], cashflow: [], networth: ['account', 'type'], carddebt: ['account'], balance: ['account'] };
+/** Sources that aren't about accounts, so the account picker is hidden for them. */
+export const NO_ACCOUNTS: Source[] = [];
 export const SPLIT_LABEL: Record<SplitBy, string> = { category: 'Category', group: 'Group', account: 'Account', type: 'Account type' };
 
 export interface ChartCfg {

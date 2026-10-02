@@ -26,7 +26,7 @@ import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
 import { loadWatch, type Watched } from '@/lib/watch';
 import { BarChart, Donut, LineChart } from '@/components/Charts';
-import { cfgCategories, loadChart, pickAccounts, SOURCES, SPLITS, SPLIT_LABEL, VIEW_LABEL, type ChartCfg, type ChartData, type ChartView, type Source, type SplitBy } from '@/lib/widgetData';
+import { cfgCategories, loadChart, NO_ACCOUNTS, pickAccounts, SOURCES, SPLITS, SPLIT_LABEL, VIEW_LABEL, type ChartCfg, type ChartData, type ChartView, type Source, type SplitBy } from '@/lib/widgetData';
 
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
 
@@ -440,9 +440,9 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
           <Field t={t} label="Over">
             <View style={chips}>{[1, 3, 6, 12, 24].map((m) => <Chip key={m} label={m === 1 ? 'This month' : `${m} months`} on={months === m} onPress={() => setMonths(m)} />)}</View>
           </Field>
-          <Field t={t} label="Accounts" hint={chosen.length ? pool.filter((a) => chosen.includes(a.id)).map((a) => a.name).join(' · ') : source === 'balance' ? 'Choose one account, or several to add together.' : source === 'carddebt' ? 'All cards. Choose cards to narrow it.' : 'All accounts. Choose accounts to narrow it.'}>
+          {!NO_ACCOUNTS.includes(source) && <Field t={t} label="Accounts" hint={chosen.length ? pool.filter((a) => chosen.includes(a.id)).map((a) => a.name).join(' · ') : source === 'balance' ? 'Choose one account, or several to add together.' : source === 'carddebt' ? 'All cards. Choose cards to narrow it.' : 'All accounts. Choose accounts to narrow it.'}>
             <Button kind="plain" title={chosen.length ? `${chosen.length} chosen · change` : 'Choose accounts'} onPress={() => setPickAcc(true)} />
-          </Field>
+          </Field>}
           {source === 'spending' && (
             <Field t={t} label="Categories" hint={selected.length ? data?.cats.filter((c) => selected.includes(c.id)).map((c) => c.name).join(' · ') : 'All spending. Choose categories to narrow it.'}>
               <Button kind="plain" title={selected.length ? `${selected.length} chosen · change` : 'Choose categories'} onPress={() => setPick(true)} />
