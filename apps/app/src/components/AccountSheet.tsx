@@ -6,6 +6,8 @@
 //   • Transactions — the latest 100.
 // The overview is built from small blocks so they can be reused on custom pages later.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { LineChart } from '@/components/Charts';
+import { seedTxn } from '@/lib/txnCache';
 export { Tile } from '@/components/Tile';
 import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
@@ -118,7 +120,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
             keyExtractor={(r) => r.id}
             ListFooterComponent={list.length >= 100 ? <Button title="See all in Transactions" kind="plain" style={{ margin: 16 }} onPress={() => { onClose(); afterClose(() => router.navigate('/transactions' as any)); }} /> : null}
             renderItem={({ item }) => (
-              <Pressable onPress={() => { onClose(); afterClose(() => router.push({ pathname: '/transaction/[id]', params: { id: item.id } })); }}
+              <Pressable onPress={() => { seedTxn(item); onClose(); afterClose(() => router.push({ pathname: '/transaction/[id]', params: { id: item.id } })); }}
                 style={[styles.txn, { borderColor: t.line, backgroundColor: t.card }]}>
                 <Text style={{ color: t.muted, width: 52, fontSize: 13 }}>{shortDate(item.date)}</Text>
                 <View style={{ flex: 1 }}>
@@ -465,39 +467,18 @@ const Small = ({ t, label, value, onChange }: { t: Theme; label: string; value: 
   </View>
 );
 
-/** Weekly balance for the past year as a thin-column area, low to high, with the range labelled. */
-/** Weekly balance bars. Hover or press shows the value; with `onPick`, a tap opens that week's transactions. */
-export function BalanceChart({ t, points, title = 'BALANCE, PAST YEAR', onPick }: { t: Theme; points: { date: string; balance: number }[]; title?: string; onPick?: (from: string, to: string) => void }) {
-  const { lo, hi } = useMemo(() => {
-    const vs = points.map((p) => p.balance);
-    const min = Math.min(...vs), max = Math.max(...vs);
-    const pad = (max - min) * 0.1 || Math.abs(max) * 0.1 || 1;
-    return { lo: min - pad, hi: max + pad };
-  }, [points]);
-  const [hover, setHover] = useState<number | null>(null);
-  const shown = hover == null ? points[points.length - 1] : points[hover];
+/** Weekly balance as a line. Hover or tap reads out a week; with `onPick`, a second tap opens that week's transactions. */
+export function BalanceChart({ t, points, title = 'BALANCE, PAST YEAR', onPick, height = 110 }: { height?: number; t: Theme; points: { date: string; balance: number }[]; title?: string; onPick?: (from: string, to: string) => void }) {
+  if (!points.length) return null;
+  const last = points[points.length - 1];
   return (
-    <View style={{ gap: 4 }}>
+    <View style={{ gap: 6 }}>
       <View style={styles.between}>
         <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title}</Text>
-        <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>{shortDate(shown.date)} {shown.date.slice(0, 4)} · {formatMoney(shown.balance)}</Text>
+        <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>now {formatMoney(last.balance)}</Text>
       </View>
-      <View style={{ flexDirection: 'row', gap: 6 }}>
-        <View style={[styles.chart, { borderColor: t.line }]}>
-          {points.map((p, i) => (
-            <Pressable key={p.date} onHoverIn={() => setHover(i)} onHoverOut={() => setHover(null)} onPressIn={() => setHover(i)}
-              onPress={onPick ? () => onPick(i > 0 ? addDays(points[i - 1].date, 1) : addDays(p.date, -6), p.date) : undefined}
-              style={{ flex: 1, height: '100%', justifyContent: 'flex-end' }}>
-              <View style={{ height: `${Math.max(2, ((p.balance - lo) / (hi - lo)) * 100)}%`, backgroundColor: hover === i ? t.accent : t.series1, opacity: hover === i ? 1 : 0.8, marginHorizontal: 0.5, borderTopLeftRadius: 2, borderTopRightRadius: 2 }} />
-            </Pressable>
-          ))}
-        </View>
-        <View style={{ justifyContent: 'space-between' }}>
-          <Text style={{ color: t.muted, fontSize: 12 }}>{money0(hi)}</Text>
-          <Text style={{ color: t.muted, fontSize: 12 }}>{money0(lo)}</Text>
-        </View>
-      </View>
-      {onPick && <Text style={{ color: t.muted, fontSize: 12 }}>Tap a bar for that week’s transactions.</Text>}
+      <LineChart t={t} height={height} labels={points.map((p) => shortDate(p.date))} series={[{ name: 'Balance', values: points.map((p) => p.balance) }]} format={money0}
+        onPick={onPick ? (i) => onPick(i > 0 ? addDays(points[i - 1].date, 1) : addDays(points[i].date, -6), points[i].date) : undefined} />
     </View>
   );
 }

@@ -1,6 +1,7 @@
 // Planner tab (PLN): Monday-to-Sunday week of planned bills, income and one-offs against what
 // actually posted, with a running balance and a warning before an account dips below its buffer.
 import { PAGE_MAX } from '@/lib/layout';
+import { seedTxn } from '@/lib/txnCache';
 import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { addDays, addMonths, formatMoney, monthName, monthOf, shortDate, weekStart as mondayOf, type WeekRow } from '@budget-app/core';
@@ -57,7 +58,7 @@ export default function Planner() {
   const label = `${shortDate(week)} – ${shortDate(addDays(week, 6))}`;
 
   const openRow = (r: WeekRow) => {
-    if (r.kind === 'actual' && r.txn) { router.push({ pathname: '/transaction/[id]', params: { id: r.txn.id } }); return; }
+    if (r.kind === 'actual' && r.txn) { seedTxn({ ...r.txn, account_name: name((r.txn as any).account_id ?? null) || undefined }); router.push({ pathname: '/transaction/[id]', params: { id: r.txn.id } }); return; }
     const p = r.item!;
     if (p.key.startsWith('gig:') && !r.txn) { router.push('/gig' as any); return; }
     setForm({

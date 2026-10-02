@@ -12,7 +12,6 @@ import { useTheme, type Theme } from '@/lib/theme';
 import { afterClose } from '@/lib/useBackToClose';
 
 const HOME_ONLY = ['review', 'week', 'budget', 'networth'];
-const isChart = (e: string) => keyOf(e) === 'chart';
 
 export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing, onEditing, special, extra, blocks = [] }: {
   entries: string[]; onChange: (next: string[]) => void; place: 'home' | 'page' | 'budget' | 'report'; refresh: number;
@@ -83,7 +82,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing
                   <Tool t={t} icon={wide ? 'chevron-back' : 'chevron-up'} label="Move earlier" onPress={() => move(i, i - 1)} off={i === 0} />
                   <Tool t={t} icon={wide ? 'chevron-forward' : 'chevron-down'} label="Move later" onPress={() => move(i, i + 1)} off={i === entries.length - 1} />
                   {wide && <Tool t={t} icon={full ? 'contract-outline' : 'expand-outline'} label={full ? 'Make half width' : 'Make full width'} onPress={() => patch(i, { w: full ? 'half' : 'full' })} />}
-                  {isChart(e) && <Pressable onPress={() => patch(i, { h: cfg.h === 's' ? 'm' : cfg.h === 'l' ? 's' : 'l' })} accessibilityLabel="Change height" hitSlop={6} style={[styles.size, { borderColor: t.line }]}>
+                  {defs.find((w) => w.key === keyOf(e))?.sizable && <Pressable onPress={() => patch(i, { h: cfg.h === 's' ? 'm' : cfg.h === 'l' ? 's' : 'l' })} accessibilityLabel="Change height" hitSlop={6} style={[styles.size, { borderColor: t.line }]}>
                     <Text style={{ color: t.accent, fontSize: 12, fontWeight: '700' }}>{cfg.h === 's' ? 'Short' : cfg.h === 'l' ? 'Tall' : 'Medium'}</Text>
                   </Pressable>}
                   {WIDGETS.find((w) => w.key === keyOf(e))?.config && <Tool t={t} icon="settings-outline" label="Widget settings" onPress={() => setSettings({ index: i, key: keyOf(e), cfg: k === 'spend' ? { source: 'spending', ...cfg } : cfg })} />}

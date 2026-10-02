@@ -7,6 +7,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AccountSheet, BalanceChart } from '@/components/AccountSheet';
+import { BarChart } from '@/components/Charts';
 import { PageBoard } from '@/components/PageBoard';
 import { makeEntry } from '@/components/Widgets';
 import { useTxnSheet } from '@/components/TxnSheet';
@@ -118,19 +119,11 @@ export default function Credit() {
           utilTrend.length > 1 ? (
         <Card style={{ gap: 6 }}>
           <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>UTILISATION AT MONTH END</Text>
-          <View style={styles.utilChart}>
-            {utilTrend.map((p) => (
-              <Pressable key={p.date} style={{ flex: 1, alignItems: 'center', gap: 2 }}
-                onPress={() => showTxns({ title: `Cards · ${monthName(p.date.slice(0, 7) + '-01')}`, from: p.date.slice(0, 7) + '-01', to: monthEnd(p.date.slice(0, 7) + '-01'), accountIds: cards.map((c) => c.id) })}>
-                <Text style={{ color: t.muted, fontSize: 9 }}>{Math.round(p.u * 100)}%</Text>
-                <View style={{ flex: 1, width: '70%', justifyContent: 'flex-end' }}>
-                  <View style={{ height: `${Math.min(100, p.u * 100)}%`, backgroundColor: p.u > 0.7 ? t.danger : p.u > 0.3 ? t.series2 : t.accent, borderRadius: 2 }} />
-                </View>
-                <Text style={{ color: t.muted, fontSize: 9 }}>{new Date(p.date + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' })}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <Text style={{ color: t.muted, fontSize: 12 }}>Under 30% is generally better for your credit score. Uses today’s limits. Tap a month for its card transactions.</Text>
+          <BarChart t={t} height={120} labels={utilTrend.map((p) => new Date(p.date + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' }))}
+                series={[{ name: 'Utilisation', values: utilTrend.map((p) => Math.round(p.u * 100)) }]} format={(n) => `${Math.round(n)}%`} refLine={30}
+                barColor={(i) => (utilTrend[i].u > 0.7 ? t.danger : utilTrend[i].u > 0.3 ? t.series2 : t.accent)}
+                onPick={(i) => { const m = utilTrend[i].date.slice(0, 7) + '-01'; showTxns({ title: `Cards · ${monthName(m)}`, from: m, to: monthEnd(m), accountIds: cards.map((c) => c.id) }); }} />
+          <Text style={{ color: t.muted, fontSize: 12 }}>Under 30% (the dashed line) is generally better for your credit score. Uses today’s limits.</Text>
         </Card>) : null
         ) },
       ]} />

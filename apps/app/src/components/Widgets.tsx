@@ -30,7 +30,9 @@ import { cfgCategories, loadChart, SOURCES, VIEW_LABEL, type ChartData, type Cha
 
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
 
-export interface WidgetDef { key: string; title: string; about: string; home: boolean; budget: boolean; config?: 'spend' | 'account' | 'chart' }
+export interface WidgetDef { key: string; title: string; about: string; home: boolean; budget: boolean; config?: 'spend' | 'account' | 'chart';
+  /** Has a chart or a list, so it can be short, medium or tall. Widgets that are only numbers have one height. */
+  sizable?: boolean }
 
 /** A placed widget is its key, or `key::{json settings}` for the ones with settings of their own (VIEW-15). */
 export interface WidgetCfg { title?: string; categoryIds?: string[]; group?: string; names?: string[]; months?: number; accountId?: string; accountMatch?: string; chart?: Chart;
@@ -56,14 +58,14 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'cash', title: 'Cash position', about: 'Cash, card debt, and what’s left after paying the cards', home: true, budget: true },
   { key: 'runway', title: 'Cash runway', about: 'How many days your cash lasts at your usual daily spending', home: true, budget: true },
   { key: 'avgspend', title: 'Average spending', about: 'Monthly average over 3, 6 or 12 months vs this month', home: true, budget: true },
-  { key: 'watch', title: 'Spending watch', about: 'Your watch-list categories against their average', home: true, budget: true },
+  { key: 'watch', title: 'Spending watch', about: 'Your watch-list categories against their average', home: true, budget: true, sizable: true },
   { key: 'credit', title: 'Credit cards', about: 'Card debt, utilisation and the next due date', home: true, budget: true },
   { key: 'gig', title: 'Gig work this week', about: 'Earnings, hours and $/hour so far this week', home: true, budget: true },
   { key: 'calendar', title: 'Bills calendar', about: 'This month’s bills and income on a calendar', home: true, budget: true },
   { key: 'nwtypes', title: 'Net worth by type', about: 'Cash, cards, loans and investments', home: true, budget: false },
-  { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or gig earnings, drawn the way you choose', home: true, budget: true, config: 'chart' },
-  { key: 'account', title: 'Account', about: 'One account: balance, past year, loan payoff', home: true, budget: true, config: 'account' },
-  { key: 'groups', title: 'Spending by group', about: 'This month by category group, with last month beside it', home: true, budget: true },
+  { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or gig earnings, drawn the way you choose', home: true, budget: true, config: 'chart', sizable: true },
+  { key: 'account', title: 'Account', about: 'One account: balance, past year, loan payoff', home: true, budget: true, config: 'account', sizable: true },
+  { key: 'groups', title: 'Spending by group', about: 'This month by category group, with last month beside it', home: true, budget: true, sizable: true },
 ];
 export const DEFAULT_HOME = ['review', 'week', 'budget', 'networth'];
 export const DEFAULT_BUDGET: string[] = [];
@@ -105,12 +107,12 @@ export function Widget({ k: entry, refresh = 0, anchor }: { k: string; refresh?:
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
     case 'avgspend': return <AvgSpending t={t} refresh={refresh} />;
-    case 'watch': return <WatchMini t={t} refresh={refresh} />;
+    case 'watch': return <WatchMini t={t} refresh={refresh} h={cfg.h} />;
     case 'credit': return <CreditMini t={t} refresh={refresh} />;
     case 'gig': return <GigWeek t={t} refresh={refresh} />;
     case 'calendar': return <BillsCalendar t={t} refresh={refresh} anchor={anchor} />;
     case 'nwtypes': return <NetWorthByType t={t} refresh={refresh} />;
-    case 'groups': return <SpendingByGroup t={t} refresh={refresh} anchor={anchor} />;
+    case 'groups': return <SpendingByGroup t={t} refresh={refresh} anchor={anchor} h={cfg.h} />;
     default: return null;
   }
 }
@@ -198,7 +200,7 @@ function AccountWidget({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: Wi
         {loan && <Mini t={t} label="Interest to date" value={money0(loan.interestToDate)} sub={`paid ${money0(loan.paymentsToDate)}`} />}
       </View>
       {txns.length > 0 && (
-        <BalanceChart t={t} points={balanceHistory(signedBalance(a), txns.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)}
+        <BalanceChart t={t} height={cfg.h === 's' ? 64 : cfg.h === 'l' ? 180 : 100} points={balanceHistory(signedBalance(a), txns.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)}
           onPick={(from, to) => showTxns({ title: `${a.name} · week of ${shortDate(from)}`, from, to, accountIds: [a.id] })} />
       )}
     </CardShell>
@@ -273,11 +275,11 @@ function AvgSpending({ t, refresh }: { t: Theme; refresh: number }) {
   );
 }
 
-function WatchMini({ t, refresh }: { t: Theme; refresh: number }) {
+function WatchMini({ t, refresh, h }: { t: Theme; refresh: number; h?: WidgetCfg['h'] }) {
   const { data } = useLoad(() => loadWatch(today()), [refresh]);
   const [showTxns, txnSheet] = useTxnSheet();
   const m = thisMonth();
-  const list: Watched[] = data ? [...data.list].sort((a, b) => (b.projected - b.avg3) - (a.projected - a.avg3)).slice(0, 4) : [];
+  const list: Watched[] = data ? [...data.list].sort((a, b) => (b.projected - b.avg3) - (a.projected - a.avg3)).slice(0, h === 's' ? 3 : h === 'l' ? 12 : 5) : [];
   return (
     <CardShell t={t} after={txnSheet} title="Spending watch" link="Watch list" onPress={() => router.push('/watch' as any)}>
       {!data ? <Skeleton color={t.track} /> : !list.length ? <Text style={{ color: t.muted }}>Pick categories on the watch list.</Text> : list.map((w) => {
@@ -410,7 +412,7 @@ function NetWorthByType({ t, refresh }: { t: Theme; refresh: number }) {
   );
 }
 
-function SpendingByGroup({ t, refresh, anchor }: { t: Theme; refresh: number; anchor?: Month }) {
+function SpendingByGroup({ t, refresh, anchor, h }: { t: Theme; refresh: number; anchor?: Month; h?: WidgetCfg['h'] }) {
   const [showTxns, txnSheet] = useTxnSheet();
   const cur = anchor ?? thisMonth(), last = addMonths(cur, -1);
   const { data } = useLoad(async () => {
@@ -427,7 +429,7 @@ function SpendingByGroup({ t, refresh, anchor }: { t: Theme; refresh: number; an
   const max = Math.max(1, ...(data ?? []).flatMap((g) => [g.now, g.prev]));
   return (
     <CardShell t={t} after={txnSheet} title={anchor && anchor !== thisMonth() ? `Spending by group · ${monthShort(cur)}` : 'Spending by group'} link="Reports" onPress={() => router.push('/reports')}>
-      {!data ? <Skeleton color={t.track} /> : data.slice(0, 10).map((g) => (
+      {!data ? <Skeleton color={t.track} /> : data.slice(0, h === 's' ? 5 : h === 'l' ? 30 : 10).map((g) => (
         <Pressable key={g.group} style={{ gap: 3 }} onPress={() => showTxns({ title: `${g.group} · ${monthShort(cur)}`, from: cur, to: monthEnd(cur), group: g.group, kind: 'expense' })}>
           <View style={styles.between}>
             <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{g.group}</Text>

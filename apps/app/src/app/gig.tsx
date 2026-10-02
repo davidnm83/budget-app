@@ -3,6 +3,7 @@
 // the earnings, active time and orders; $/hour, $/active hour, % active, $/km, after gas.
 // Settings: gas (L/100 km × $/L), and when each app pays out, which feeds the planner.
 import { PAGE_MAX } from '@/lib/layout';
+import { BarChart } from '@/components/Charts';
 import { PageBoard } from '@/components/PageBoard';
 import { makeEntry } from '@/components/Widgets';
 import { Tile } from '@/components/Tile';
@@ -117,7 +118,6 @@ function Earnings({ t, sum, target, hasCategory, onSettings, onRange, refresh }:
   refresh: number; t: Theme; sum: ReturnType<typeof summarizePayouts>; target: number | null; hasCategory: boolean; onSettings: () => void;
   onRange: (title: string, from: string, to: string) => void;
 }) {
-  const maxWeek = Math.max(1, target ?? 0, ...sum.weeks.map((w) => w.total));
   const colorOf = (key: string) => PLATFORM_COLORS[key] ?? t.muted;
   const used = [...new Set(sum.weeks.flatMap((w) => Object.keys(w.byPlatform)).concat(sum.months.flatMap((m) => Object.keys(m.byPlatform))))];
   return (
@@ -151,29 +151,10 @@ function Earnings({ t, sum, target, hasCategory, onSettings, onRange, refresh }:
           <Text style={[styles.h, { color: t.muted }]}>Last 12 weeks</Text>
           <Pressable onPress={onSettings} hitSlop={8}><Text style={{ color: t.accent, fontSize: 12 }}>{target ? 'Change target' : 'Set a weekly target'}</Text></Pressable>
         </View>
-        <View style={styles.chart}>
-          {sum.weeks.map((w) => (
-            <Pressable key={w.week} style={styles.barCol} onPress={() => onRange(`Gig pay · week of ${shortDate(w.week)}`, w.week, addDays(w.week, 6))}>
-              <Text style={{ color: t.muted, fontSize: 9 }} numberOfLines={1}>{w.total ? money0(w.total).replace('$', '') : ''}</Text>
-              <View style={{ flex: 1, width: '100%', justifyContent: 'flex-end' }}>
-                {Object.entries(w.byPlatform).sort().map(([k, v]) => (
-                  <View key={k} style={{ height: `${(v / maxWeek) * 100}%`, backgroundColor: colorOf(k), borderRadius: 2 }} />
-                ))}
-              </View>
-              <Text style={{ color: t.muted, fontSize: 9 }} numberOfLines={1}>{shortDate(w.week).replace(/^\w+ /, '')}</Text>
-            </Pressable>
-          ))}
-          {target ? <View style={{ position: 'absolute', left: 0, right: 0, bottom: 14 + (target / maxWeek) * (CHART_H - 28), borderTopWidth: 1, borderStyle: 'dashed', borderColor: t.text, opacity: 0.4 }} /> : null}
-        </View>
-        <View style={styles.legend}>
-          {used.map((k) => (
-            <View key={k} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: colorOf(k) }} />
-              <Text style={{ color: t.muted, fontSize: 12 }}>{platformByKey(k).name}</Text>
-            </View>
-          ))}
-        </View>
-        <Text style={{ color: t.muted, fontSize: 12 }}>Average of the last 8 full weeks: {formatMoney(sum.avgWeek)} · tap a week for its payouts</Text>
+          <BarChart t={t} stacked height={150} labels={sum.weeks.map((w) => shortDate(w.week))} format={money0} refLine={target ?? undefined}
+            series={used.map((k) => ({ name: platformByKey(k).name, values: sum.weeks.map((w) => w.byPlatform[k] ?? 0) }))} colors={used.map(colorOf)}
+            onPick={(i) => onRange(`Gig pay · week of ${shortDate(sum.weeks[i].week)}`, sum.weeks[i].week, addDays(sum.weeks[i].week, 6))} />
+        <Text style={{ color: t.muted, fontSize: 12 }}>Average of the last 8 full weeks: {formatMoney(sum.avgWeek)}{target ? ' · the dashed line is your target' : ''}</Text>
       </Card>
         ) },
         { key: 'gig:months', title: 'Payouts by month', about: 'Each month’s payouts by app', render: () => (

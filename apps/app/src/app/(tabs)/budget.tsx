@@ -1,6 +1,7 @@
 // Budget tab (BUD-1, 2, 4, 5, 6): this month's budget, past months in a collapsed archive by year,
 // comparisons with other months or years, and a year view of budget vs actual by month.
 import { PAGE_MAX } from '@/lib/layout';
+import { seedTxn } from '@/lib/txnCache';
 import { Tile } from '@/components/Tile';
 import {
   actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
@@ -399,7 +400,7 @@ function MonthTxns({ d, line, reload, onOpen, onAll }: { d: Data; line: BudgetLi
       {rows === null && <Text style={{ color: t.muted }}>Loading…</Text>}
       {rows?.length === 0 && <Text style={{ color: t.muted }}>None yet this month.</Text>}
       {rows?.map((r) => (
-        <Pressable key={r.transaction_id + r.amount} onPress={() => onOpen(r.transaction_id)} style={({ pressed }) => [styles.txn, { borderColor: t.line }, pressed && { backgroundColor: t.line }]}>
+        <Pressable key={r.transaction_id + r.amount} onPress={() => { seedTxn({ id: r.transaction_id, date: r.date, amount: r.amount, display_name: (r as any).merchant }); onOpen(r.transaction_id); }} style={({ pressed }) => [styles.txn, { borderColor: t.line }, pressed && { backgroundColor: t.line }]}>
           <Text style={{ color: t.muted, fontSize: 12, width: 48 }}>{shortDate(r.date)}</Text>
           <Text style={{ color: t.text, flex: 1, fontSize: 14 }} numberOfLines={1}>{r.merchant}</Text>
           <Text style={{ color: r.amount > 0 ? t.positive : t.text, fontSize: 14, fontVariant: ['tabular-nums'] }}>{formatMoney(r.amount)}</Text>

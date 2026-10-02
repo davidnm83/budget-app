@@ -13,6 +13,10 @@ interface PlotProps {
   format: (n: number) => string;
   /** Tap a point (second tap on phones, once it is selected) to open what's behind it. */
   onPick?: (i: number) => void;
+  /** Colours that belong to the series themselves (an app's colour); otherwise the fixed chart order is used. */
+  colors?: string[];
+  /** A dashed line across the plot (a target or an average). */
+  refLine?: number;
 }
 
 /** "Nice" top of the axis: 1, 2, 2.5 or 5 times a power of ten. */
@@ -25,13 +29,13 @@ function niceMax(v: number): number {
 /** Show at most ~6 x labels, always including the last. */
 const showLabel = (i: number, n: number) => { const step = Math.ceil(n / 6); return (n - 1 - i) % step === 0; };
 
-function Legend({ t, series }: { t: Theme; series: Series[] }) {
+function Legend({ t, series, col }: { t: Theme; series: Series[]; col: (i: number) => string }) {
   if (series.length < 2) return null;
   return (
     <View style={styles.legend}>
       {series.map((s, i) => (
         <View key={s.name} style={styles.legendItem}>
-          <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: t.series[i] }} />
+          <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: col(i) }} />
           <Text style={{ color: t.muted, fontSize: 12 }}>{s.name}</Text>
         </View>
       ))}
@@ -40,14 +44,14 @@ function Legend({ t, series }: { t: Theme; series: Series[] }) {
 }
 
 /** The line under the title that reads out one point: its label and each series' value. */
-function Readout({ t, labels, series, sel, format, hint }: { t: Theme; labels: string[]; series: Series[]; sel: number | null; format: (n: number) => string; hint?: string }) {
-  if (sel == null) return <Legend t={t} series={series} />;
+function Readout({ t, labels, series, sel, format, hint, col }: { t: Theme; labels: string[]; series: Series[]; sel: number | null; format: (n: number) => string; hint?: string; col: (i: number) => string }) {
+  if (sel == null) return <Legend t={t} series={series} col={col} />;
   return (
     <View style={styles.legend}>
       <Text style={{ color: t.text, fontSize: 12, fontWeight: '700' }}>{labels[sel]}</Text>
       {series.map((s, i) => (
         <View key={s.name} style={styles.legendItem}>
-          {series.length > 1 && <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: t.series[i] }} />}
+          {series.length > 1 && <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: col(i) }} />}
           <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>{series.length > 1 ? `${s.name} ` : ''}{format(s.values[sel] ?? 0)}</Text>
         </View>
       ))}
@@ -57,10 +61,11 @@ function Readout({ t, labels, series, sel, format, hint }: { t: Theme; labels: s
 }
 
 /** Shared frame: readout, y-axis labels, the plot, hit columns and x labels. */
-function Frame({ t, labels, series, height = 140, format, onPick, free, children }: PlotProps & { free?: boolean; children: (w: number, h: number, min: number, max: number, sel: number | null) => React.ReactNode }) {
+function Frame({ t, labels, series, height = 140, format, onPick, free, colors, refLine, stacked, also = [], children }: PlotProps & { free?: boolean; stacked?: boolean; also?: number[]; children: (w: number, h: number, min: number, max: number, sel: number | null) => React.ReactNode }) {
   const [w, setW] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
-  const all = series.flatMap((s) => s.values);
+  const all = [...(stacked ? labels.map((_, i) => series.reduce((x, s) => x + (s.values[i] ?? 0), 0)) : series.flatMap((s) => s.values)), ...(refLine != null ? [refLine] : []), ...also];
+  const col = (i: number) => colors?.[i] ?? t.series[i];
   const lo = Math.min(0, ...all), hi = Math.max(0, ...all);
   let max = niceMax(hi), min = lo < 0 ? -niceMax(-lo) : 0;
   // Lines show change, so they may leave zero out when the values sit far from it (a loan-heavy net worth).
@@ -75,7 +80,7 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, children
   const ticks = min < 0 && max > 0 ? [max, 0, min] : [max, (max + min) / 2, min];
   return (
     <View style={{ gap: 4 }}>
-      <Readout t={t} labels={labels} series={series} sel={sel} format={format} hint={onPick && sel != null ? 'tap again for details' : undefined} />
+      <Readout t={t} labels={labels} series={series} sel={sel} format={format} col={col} hint={onPick && sel != null ? 'tap again for details' : undefined} />
       <View style={{ flexDirection: 'row', gap: 6 }}>
         <View style={{ height, justifyContent: 'space-between', alignItems: 'flex-end' }}>
           {ticks.map((v, i) => <Text key={i} style={{ color: t.muted, fontSize: 10, fontVariant: ['tabular-nums'], lineHeight: 12, marginTop: i === 0 ? -6 : 0, marginBottom: i === 2 ? -6 : 0 }}>{format(v)}</Text>)}
@@ -83,6 +88,7 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, children
         <View style={{ flex: 1 }}>
           <View style={{ height }} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
             {w > 0 && <View style={GROW}>{children(w, height, min, max, sel)}</View>}
+            {refLine != null && max > min && <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: height - ((refLine - min) / (max - min)) * height, borderTopWidth: 1, borderStyle: 'dashed', borderColor: t.text, opacity: 0.45 }} />}
             <View style={[StyleSheet.absoluteFill, { flexDirection: 'row' }]}>
               {labels.map((l, i) => (
                 <Pressable key={i} style={{ flex: 1 }} accessibilityLabel={`${l}: ${series.map((s) => `${s.name} ${format(s.values[i] ?? 0)}`).join(', ')}`}
@@ -114,6 +120,7 @@ function Grid({ t, w, h, min, max }: { t: Theme; w: number; h: number; min: numb
 /** Change over time: one 2px line per series; a single series gets a soft fill to the baseline. */
 export function LineChart(props: PlotProps) {
   const { t, series, labels } = props;
+  const c = (k: number) => props.colors?.[k] ?? t.series[k];
   const n = labels.length;
   return (
     <Frame {...props} free>
@@ -131,9 +138,9 @@ export function LineChart(props: PlotProps) {
               const at = sel ?? last;
               return (
                 [
-                  series.length === 1 && n > 1 && zero ? <Path key={`${s.name}-a`} d={`${d} L${x(last).toFixed(1)},${y(0).toFixed(1)} L${x(0).toFixed(1)},${y(0).toFixed(1)} Z`} fill={t.series[k]} fillOpacity={0.12} /> : null,
-                  <Path key={`${s.name}-l`} d={d} stroke={t.series[k]} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" fill="none" />,
-                  <Circle key={`${s.name}-c`} cx={x(at)} cy={y(s.values[at] ?? 0)} r={4} fill={t.series[k]} stroke={t.card} strokeWidth={2} />,
+                  series.length === 1 && n > 1 && zero ? <Path key={`${s.name}-a`} d={`${d} L${x(last).toFixed(1)},${y(0).toFixed(1)} L${x(0).toFixed(1)},${y(0).toFixed(1)} Z`} fill={c(k)} fillOpacity={0.12} /> : null,
+                  <Path key={`${s.name}-l`} d={d} stroke={c(k)} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" fill="none" />,
+                  <Circle key={`${s.name}-c`} cx={x(at)} cy={y(s.values[at] ?? 0)} r={4} fill={c(k)} stroke={t.card} strokeWidth={2} />,
                 ]
               );
             })}
@@ -144,33 +151,49 @@ export function LineChart(props: PlotProps) {
   );
 }
 
-/** Amounts side by side: bars grow from the zero line, grouped when there are several series. */
-export function BarChart(props: PlotProps) {
-  const { t, series, labels } = props;
+/**
+ * Amounts side by side: bars grow from the zero line. Several series sit in a group, or on top of
+ * each other when `stacked`. `barColor` recolours single bars (a status colour); `outline` draws a
+ * dashed extension above one bar (where this month is heading).
+ */
+export function BarChart(props: PlotProps & { stacked?: boolean; barColor?: (i: number) => string | undefined; outline?: { i: number; value: number; color: string } }) {
+  const { t, series, labels, stacked, barColor, outline } = props;
   const n = labels.length;
+  const c = (k: number) => props.colors?.[k] ?? t.series[k];
   return (
-    <Frame {...props}>
+    <Frame {...props} also={outline ? [outline.value] : []}>
       {(w, h, min, max, sel) => {
         const slot = w / n;
-        const group = Math.min(slot * 0.72, 44 * series.length);
-        const bw = Math.max(2, (group - 2 * (series.length - 1)) / series.length);
+        const cols = stacked ? 1 : series.length;
+        const group = Math.min(slot * 0.72, 44 * cols);
+        const bw = Math.max(2, (group - 2 * (cols - 1)) / cols);
         const y = (v: number) => h - ((v - min) / (max - min)) * h;
         const r = Math.min(4, bw / 2);
+        const bar = (x0: number, from: number, to: number, round: boolean) => {
+          const top = y(Math.max(from, to)), bot = y(Math.min(from, to));
+          const hh = Math.max(1, bot - top), rr = round ? Math.min(r, hh) : 0;
+          return to >= from
+            ? `M${x0},${bot} L${x0},${top + rr} Q${x0},${top} ${x0 + rr},${top} L${x0 + bw - rr},${top} Q${x0 + bw},${top} ${x0 + bw},${top + rr} L${x0 + bw},${bot} Z`
+            : `M${x0},${top} L${x0},${bot - rr} Q${x0},${bot} ${x0 + rr},${bot} L${x0 + bw - rr},${bot} Q${x0 + bw},${bot} ${x0 + bw},${bot - rr} L${x0 + bw},${top} Z`;
+        };
+        const gap = (2 / h) * (max - min); // 2px of surface between stacked segments
         return (
           <Svg width={w} height={h}>
             <Grid t={t} w={w} h={h} min={min} max={max} />
-            {series.map((s, k) => s.values.map((v, i) => {
-              if (!v) return null;
-              const x0 = slot * i + (slot - group) / 2 + k * (bw + 2);
-              const top = y(Math.max(v, 0)), bot = y(Math.min(v, 0));
-              const hh = Math.max(1, bot - top);
-              const rr = Math.min(r, hh);
-              // Rounded at the data end, square on the baseline.
-              const d = v > 0
-                ? `M${x0},${bot} L${x0},${top + rr} Q${x0},${top} ${x0 + rr},${top} L${x0 + bw - rr},${top} Q${x0 + bw},${top} ${x0 + bw},${top + rr} L${x0 + bw},${bot} Z`
-                : `M${x0},${top} L${x0},${bot - rr} Q${x0},${bot} ${x0 + rr},${bot} L${x0 + bw - rr},${bot} Q${x0 + bw},${bot} ${x0 + bw},${bot - rr} L${x0 + bw},${top} Z`;
-              return <Path key={`${k}-${i}`} d={d} fill={t.series[k]} fillOpacity={sel == null || sel === i ? 1 : 0.45} />;
-            }))}
+            {labels.map((_, i) => {
+              const x = slot * i + (slot - group) / 2;
+              const dim = sel == null || sel === i ? 1 : 0.45;
+              if (stacked) {
+                let acc = 0;
+                const live = series.map((s, k) => ({ k, v: s.values[i] ?? 0 })).filter((p) => p.v > 0);
+                return live.map((p, j) => { const from = acc; acc += p.v; return <Path key={`${p.k}-${i}`} d={bar(x, from + (j ? gap : 0), acc, j === live.length - 1)} fill={c(p.k)} fillOpacity={dim} />; });
+              }
+              return series.map((s, k) => (s.values[i] ? <Path key={`${k}-${i}`} d={bar(x + k * (bw + 2), 0, s.values[i], true)} fill={barColor?.(i) ?? c(k)} fillOpacity={dim} /> : null));
+            })}
+            {outline && outline.value > (series[0]?.values[outline.i] ?? 0) && (() => {
+              const x = slot * outline.i + (slot - group) / 2;
+              return <Path d={bar(x, series[0].values[outline.i] ?? 0, outline.value, true)} fill="none" stroke={outline.color} strokeWidth={1.5} strokeDasharray="4 3" />;
+            })()}
           </Svg>
         );
       }}
