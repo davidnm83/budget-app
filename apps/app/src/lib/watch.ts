@@ -1,6 +1,7 @@
 // Spending watch list (VIEW-5): chosen categories, month by month, against their usual level.
 import { actualFor, addMonths, monthEnd, type Month } from '@budget-app/core';
 import { loadPrefs, type WatchCharts } from './prefs';
+import { supabase } from './supabase';
 import { loadBudgets, loadCategories, loadCategoryMonths, thisMonth, type Category } from './reports';
 
 export interface Watched {
@@ -28,7 +29,24 @@ export async function loadWatch(today: string, months = 6): Promise<{ list: Watc
   const now = thisMonth();
   const first = addMonths(now, -(months - 1));
   const rows = await loadCategoryMonths(first, now);
-  const day = Number(today.slice(8, 10)), daysIn = Number(monthEnd(now).slice(8, 10));
+  const day = Number(today.slice(8, 10));
+  // What was spent AFTER this day of the month in each of the 3 months before, per category.
+  // That is what "the rest of the month" usually costs: nothing for rent already paid on the 1st,
+  // most of the month's groceries when it's only the 2nd.
+  const allIds = [...new Set([...ids, ...(prefs.watch_charts?.custom ?? []).flatMap((c) => c.ids)])];
+  const priorMonths = Array.from({ length: Math.min(3, months - 1) }, (_, i) => addMonths(now, -(i + 1)));
+  const later = new Map<string, number>();
+  if (allIds.length && priorMonths.length) {
+    for (let p = 0; p < 10; p++) {
+      const { data, error } = await supabase.from('transaction_lines').select('date, category_id, amount')
+        .in('category_id', allIds).gte('date', priorMonths[priorMonths.length - 1]).lt('date', now).order('date').range(p * 1000, p * 1000 + 999);
+      if (error) throw new Error(error.message);
+      for (const r of (data ?? []) as { date: string; category_id: string; amount: number }[]) {
+        if (Number(r.date.slice(8, 10)) > day) later.set(r.category_id, (later.get(r.category_id) ?? 0) - Number(r.amount));
+      }
+      if (!data || data.length < 1000) break;
+    }
+  }
   const one = (c: Category): Watched => {
     const ms = Array.from({ length: months }, (_, i) => addMonths(first, i)).map((m) => ({
       month: m, actual: actualFor(c.kind, rows.filter((r) => r.category_id === c.id && r.month === m).reduce((s, r) => s + r.total, 0)),
@@ -37,9 +55,9 @@ export async function loadWatch(today: string, months = 6): Promise<{ list: Watc
     const avg3 = prior.length ? prior.reduce((s, x) => s + x.actual, 0) / prior.length : 0;
     const cur = ms[ms.length - 1].actual;
     const b = budgets.find((x) => x.month === now && x.categoryId === c.id);
-    // Heading for: what's spent so far plus the usual daily amount for the days left (steadier than
-    // stretching a few days of spending over the whole month).
-    return { category: c, months: ms, avg3, thisMonth: cur, projected: cur + (avg3 / daysIn) * (daysIn - day), budget: b ? b.amount : null };
+    // Heading for: what's spent so far plus what the rest of the month usually costs.
+    const rest = Math.max(0, (later.get(c.id) ?? 0) / Math.max(1, priorMonths.length));
+    return { category: c, months: ms, avg3, thisMonth: cur, projected: cur + rest, budget: b ? b.amount : null };
   };
   const forIds = (list: string[]) => list.map((id) => cats.find((c) => c.id === id)).filter((c): c is Category => !!c).map(one);
   const list = forIds(ids);

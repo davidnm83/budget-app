@@ -23,7 +23,7 @@ export function WatchCard({ t, w, compact, onMonth }: { t: Theme; w: Watched; co
       </View>
       <Text style={{ color: t.muted, fontSize: 12 }}>
         Heading for {money0(w.projected)} this month vs a {money0(w.avg3)} average
-        {w.avg3 ? ` (${diff <= 0 ? '−' : '+'}${money0(Math.abs(diff))})` : ''}{w.budget != null ? ` · budget ${money0(w.budget)}` : ''}
+        {w.avg3 && Math.abs(diff) >= 0.5 ? ` (${diff <= 0 ? '−' : '+'}${money0(Math.abs(diff))})` : ''}{w.budget != null ? ` · budget ${money0(w.budget)}` : ''}
       </Text>
       {!compact && (
         <BarChart t={t} height={96} labels={w.months.map((m) => monthShort(m.month))} series={[{ name: 'Spent', values: w.months.map((m) => m.actual) }]} format={money0}
@@ -52,7 +52,7 @@ export function WatchStackCard({ t, s, onMonth, onEdit, onRemove }: { t: Theme; 
         <Text style={{ color, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{money0(thisMonth)}</Text>
       </View>
       <Text style={{ color: t.muted, fontSize: 12 }}>
-        Heading for {money0(projected)} this month vs a {money0(avg3)} average{avg3 ? ` (${diff <= 0 ? '−' : '+'}${money0(Math.abs(diff))})` : ''}
+        Heading for {money0(projected)} this month vs a {money0(avg3)} average{avg3 && Math.abs(diff) >= 0.5 ? ` (${diff <= 0 ? '−' : '+'}${money0(Math.abs(diff))})` : ''}
       </Text>
       <BarChart t={t} stacked height={120} labels={months.map(monthShort)} colors={colors} format={money0}
         series={s.parts.map((w) => ({ name: w.category.name, values: w.months.map((m) => m.actual) }))}
