@@ -4,7 +4,7 @@
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import { Sheet } from '@/components/Forms';
 import { Tile } from '@/components/Tile';
-import { ROW, LIST } from '@/lib/layout';
+import { ROW, LIST, SPLIT_LIST, splitFits, splitSide } from '@/lib/layout';
 import { EmptyState, PageSkeleton, RowsSkeleton } from '@/components/States';
 import { ALL_TIME, DateRangeBody, type Range } from '@/components/DateRange';
 import { toast } from '@/lib/toast';
@@ -72,6 +72,8 @@ export default function Transactions() {
   const [search, setSearch] = useState(params.q ?? '');
   useEffect(() => { if (params.q) setSearch(params.q); }, [params.q]);
   const wide = useWide();
+  const [room, setRoom] = useState(1200); // width available to the list and the pane beside it
+  const twoPane = wide && splitFits(room);
   const [sel, setSel] = useState<string | null>(null);
   const searchRef = useRef<TextInput>(null);
   const [query, setQuery] = useState('');
@@ -194,8 +196,9 @@ export default function Transactions() {
         onExport={() => exportCsv(mode, filters, query)} />
       {!!error && <Text style={{ color: t.danger, padding: 12 }}>{error}</Text>}
 
-      <View style={[COLUMN, { flex: 1, flexDirection: 'row' }]}>
-      <View style={{ flex: 1, minWidth: wide ? 400 : 0 }}>
+      <View style={[COLUMN, { flex: 1, flexDirection: 'row' }]} onLayout={(e) => setRoom(e.nativeEvent.layout.width)}>
+      {/* Same rule as Merchants (lib/layout SPLIT): the list keeps its width, the pane beside it narrows, then steps aside. */}
+      <View style={wide ? SPLIT_LIST : { flex: 1 }}>
       {byDate ? (
         <SectionList {...LIST}
           sections={sections}
@@ -227,13 +230,13 @@ export default function Transactions() {
         />
       )}
       </View>
-      {!wide && sel && (
+      {!twoPane && sel && (
         <Sheet title="Transaction" scroll={false} onClose={() => setSel(null)}>
           <TransactionEditor key={sel} id={sel} onOpen={setSel} onDone={() => { setSel(null); reload(); }} />
         </Sheet>
       )}
-      {wide && !sel && <FilterSummary t={t} mode={mode} filters={filters} query={query} stamp={rows.length} />}
-      {wide && sel && (
+      {twoPane && !sel && <FilterSummary t={t} mode={mode} filters={filters} query={query} stamp={rows.length} />}
+      {twoPane && sel && (
         <View style={[styles.side, PANEL, { borderColor: t.line, backgroundColor: t.bg }]}>
           <View style={[styles.sideHead, { borderColor: t.line }]}>
             <Text style={{ color: t.text, fontWeight: '700', flex: 1 }}>Transaction</Text>
@@ -484,7 +487,7 @@ function FilterSummary({ t, mode, filters, query, stamp }: { t: Theme; mode: Mod
 }
 const styles = StyleSheet.create({
   // The list keeps at least 400px; the side pane gives up width first and never grows past 420.
-  side: { width: 420, flexGrow: 0, flexShrink: 1, flexBasis: 420, minWidth: 300, borderLeftWidth: 1 },
+  side: { ...splitSide(420), borderLeftWidth: 1 },
   sideHead: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   status: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   search: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, height: 40 },

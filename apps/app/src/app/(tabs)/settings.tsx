@@ -14,6 +14,10 @@ import { useConfirm } from '@/components/Confirm';
 import { toast } from '@/lib/toast';
 import { setPanel } from '@/lib/panels';
 import { canExport, exportEverything } from '@/lib/exportAll';
+import { accountIsEmpty, describeBackup, readBackup, restoreBackup, type Backup } from '@/lib/restore';
+import { pickJsonText } from '@/lib/pickFile';
+import { Sheet } from '@/components/Forms';
+import { refreshNow } from '@/lib/pullRefresh';
 import { setThemeMode, useTheme, useThemeMode } from '@/lib/theme';
 import type { PlaidItem } from '@/lib/types';
 
@@ -40,6 +44,31 @@ export default function Settings() {
     try { const r = await exportEverything(setExporting); toast(`Downloaded ${r.rows.toLocaleString()} rows from ${r.tables} tables`); }
     catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); }
     finally { setExporting(''); }
+  };
+  // Restore: pick a file, show what's in it, and (unless the account is empty) ask for the word RESTORE.
+  const [pending, setPending] = useState<{ backup: Backup; empty: boolean } | null>(null);
+  const [word, setWord] = useState('');
+  const [restoring, setRestoring] = useState('');
+  const [restoreNotes, setRestoreNotes] = useState<string[]>([]);
+  const chooseBackup = async () => {
+    try {
+      const f = await pickJsonText();
+      if (!f) return;
+      const b = readBackup(f.text);
+      setWord(''); setPending({ backup: b, empty: await accountIsEmpty() });
+    } catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); }
+  };
+  const runRestore = async () => {
+    if (!pending) return;
+    try {
+      // Keep a copy of what's here first, so a restore can itself be undone.
+      if (!pending.empty) await exportEverything((m) => setRestoring(`Saving a copy of what's here first. ${m}`));
+      const r = await restoreBackup(pending.backup, setRestoring);
+      setPending(null); setRestoreNotes(r.notes);
+      toast(`Restored ${r.rows.toLocaleString()} rows`);
+      load(); refreshNow();
+    } catch (e) { toast(`Restore stopped: ${e instanceof Error ? e.message : String(e)}. Run it again with the same file.`, { error: true }); }
+    finally { setRestoring(''); }
   };
   const changeCurrency = async (c: string) => { try { await saveCurrency(c); setCode(c); } catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); } };
   const [ask, confirmUi] = useConfirm();
@@ -131,7 +160,34 @@ export default function Settings() {
         <Button title="Download everything" kind="plain" busy={!!exporting} disabled={!canExport} onPress={backup} />
         {!!exporting && <Text style={{ color: t.muted, fontSize: 12 }}>{exporting}</Text>}
         {!canExport && <Text style={{ color: t.muted, fontSize: 12 }}>Available in the web version.</Text>}
+        <Text style={{ color: t.muted }}>Restore replaces everything in this account with the contents of a backup file. Bank links are kept if they still exist here; they are never part of a backup.</Text>
+        <Button title="Restore from a backup file" kind="plain" disabled={!canExport || session?.user.app_metadata?.demo === true} onPress={chooseBackup} />
+        {restoreNotes.map((n) => <Text key={n} style={{ color: t.muted, fontSize: 12 }}>• {n}</Text>)}
       </Card>
+      {pending && (() => {
+        const d = describeBackup(pending.backup);
+        const ok = pending.empty || word.trim().toUpperCase() === 'RESTORE';
+        return (
+          <Sheet title="Restore this backup?" onClose={() => { if (!restoring) setPending(null); }} fit>
+            <Text style={{ color: t.text, fontWeight: '600' }}>Backup from {d.when}</Text>
+            <Text style={{ color: t.muted }}>{d.lines.join(' · ')}</Text>
+            {pending.empty
+              ? <Text style={{ color: t.muted }}>This account has no accounts or transactions yet, so nothing of yours is replaced.</Text>
+              : (
+                <>
+                  <Text style={{ color: t.danger }}>Everything in this account now is deleted and replaced with the backup: accounts, transactions, categories, rules, budgets, bills and settings. Anything added since the backup was made is lost, including transactions synced since then.</Text>
+                  <Text style={{ color: t.muted }}>A copy of what’s here now is downloaded first, so you can restore that if you change your mind.</Text>
+                  <Text style={{ color: t.muted, fontSize: 13 }}>Type RESTORE to go ahead.</Text>
+                  <TextInput value={word} onChangeText={setWord} autoCapitalize="characters" placeholder="RESTORE" placeholderTextColor={t.muted}
+                    style={{ color: t.text, borderWidth: 1, borderColor: t.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, backgroundColor: t.card }} />
+                </>
+              )}
+            {!!restoring && <Text style={{ color: t.muted, fontSize: 12 }}>{restoring}</Text>}
+            <Button title={pending.empty ? 'Restore' : 'Delete and restore'} kind={pending.empty ? 'primary' : 'danger'} disabled={!ok} busy={!!restoring} onPress={runRestore} />
+            <Button title="Cancel" kind="plain" disabled={!!restoring} onPress={() => setPending(null)} />
+          </Sheet>
+        );
+      })()}
 
       <Text style={[styles.h, { color: t.text }]}>Sample data</Text>
       <Card style={{ gap: 12 }}>

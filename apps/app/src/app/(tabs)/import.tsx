@@ -1,5 +1,6 @@
 // Import a bank's CSV export into an account Plaid can't reach (Rogers, PC Financial, Amex, …).
-// Steps: choose the file → pick or create the account → check the preview → import.
+// Steps: choose the file(s) → pick or create the account → check the preview → import.
+// Several files can be chosen at once; they are then taken one at a time, each with its own account and preview.
 // Rows the account already has (same amount within 3 days) are skipped, so overlapping exports are safe.
 import { formatMoney, parseBankCsv, shortDate, type CsvRow, type ParsedCsv } from '@budget-app/core';
 import { router } from 'expo-router';
@@ -7,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button, Card } from '@/components/ui';
 import { findDuplicates, importRows } from '@/lib/csvImport';
-import { canPickFiles, pickCsvText } from '@/lib/pickFile';
+import { canPickFiles, pickCsvTexts } from '@/lib/pickFile';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
 import type { Account } from '@/lib/types';
@@ -32,7 +33,12 @@ export default function ImportScreen() {
   const [showDupes, setShowDupes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [done, setDone] = useState('');
+  const [done, setDone] = useState<string[]>([]);
+  // Files chosen together and still to do after the one on screen, and how many were chosen in all.
+  const [rest, setRest] = useState<{ name: string; parsed: ParsedCsv }[]>([]);
+  const [total, setTotal] = useState(0);
+  // The account each kind of file went into this time, so the next file from the same bank starts on it.
+  const [used, setUsed] = useState<Record<string, string>>({});
 
   useEffect(() => {
     supabase.from('accounts').select('*').eq('is_hidden', false).order('name')
@@ -53,22 +59,40 @@ export default function ImportScreen() {
     return () => { live = false; };
   }, [file, account?.id]);
 
+  // Put one file on screen and suggest its account: the one the last file from this bank went into,
+  // else a manual account whose name mentions the bank, else a new one named after it.
+  const open = (f: { name: string; parsed: ParsedCsv }, list: Account[] = accounts, went: Record<string, string> = used) => {
+    setFile(f);
+    const word = f.parsed.label.split(' ')[0].toLowerCase();
+    const match = list.find((a) => a.id === went[f.parsed.label]) ?? list.find((a) => a.kind === 'manual' && a.name.toLowerCase().includes(word));
+    setAccountId(match?.id ?? NEW);
+    setNewName(f.parsed.format === 'generic' || f.parsed.format === 'headerless' ? '' : f.parsed.label);
+    setNewType(TYPES[0]);
+    setBalance(''); setShowDupes(false);
+  };
+  /** Move on to the next chosen file, or finish. */
+  const next = (list: Account[] = accounts, went: Record<string, string> = used) => {
+    if (rest.length) { open(rest[0], list, went); setRest(rest.slice(1)); } else setFile(null);
+  };
+
   const choose = async () => {
-    setError(''); setDone('');
+    setError(''); setDone([]);
     try {
-      const picked = await pickCsvText();
-      if (!picked) return;
-      const parsed = parseBankCsv(picked.text);
-      if (!parsed.rows.length) throw new Error('No transactions found in that file.');
-      setFile({ name: picked.name, parsed });
-      // Suggest an account: a manual one whose name mentions the bank, else a new one named after it.
-      const word = parsed.label.split(' ')[0].toLowerCase();
-      const match = accounts.find((a) => a.kind === 'manual' && a.name.toLowerCase().includes(word));
-      setAccountId(match?.id ?? NEW);
-      setNewName(parsed.format === 'generic' || parsed.format === 'headerless' ? '' : parsed.label);
-      setNewType(TYPES[0]);
+      const picked = await pickCsvTexts();
+      if (!picked.length) return;
+      const good: { name: string; parsed: ParsedCsv }[] = [], bad: string[] = [];
+      for (const p of picked) {
+        try { const parsed = parseBankCsv(p.text); if (parsed.rows.length) good.push({ name: p.name, parsed }); else bad.push(`${p.name}: no transactions found`); }
+        catch (e) { bad.push(`${p.name}: ${e instanceof Error ? e.message : String(e)}`); }
+      }
+      if (bad.length) setError(bad.join('\n'));
+      if (!good.length) { setFile(null); setRest([]); setTotal(0); return; }
+      // Oldest first, so several months for one account go in in order.
+      good.sort((x, y) => (x.parsed.rows.map((r) => r.date).sort()[0] ?? '').localeCompare(y.parsed.rows.map((r) => r.date).sort()[0] ?? ''));
+      setTotal(good.length); setRest(good.slice(1)); setUsed({});
+      open(good[0], accounts, {});
     } catch (e) {
-      setFile(null);
+      setFile(null); setRest([]);
       setError(e instanceof Error ? e.message : String(e));
     }
   };
@@ -85,6 +109,7 @@ export default function ImportScreen() {
           .select('*').single();
         if (error) throw new Error(error.message);
         target = data as Account;
+        setAccounts((xs) => [...xs, target!].sort((x, y) => x.name.localeCompare(y.name)));
       }
       const added = await importRows(target, preview.add);
       const b = balance.trim() ? Number(balance.replace(/[$,\s]/g, '')) : NaN;
@@ -92,9 +117,11 @@ export default function ImportScreen() {
         const owed = target.type === 'credit' || target.type === 'loan';
         await supabase.rpc('set_balance_today', { p_account: target.id, p_balance: owed ? -Math.abs(b) : b });
       }
-      setDone(`Imported ${added} transaction(s) into ${target.name}.` + (preview.duplicates.length ? ` Skipped ${preview.duplicates.length} already there.` : ''));
-      setFile(null);
-      setBalance('');
+      const line = `${total > 1 ? `${file.name}: ` : ''}Imported ${added} transaction(s) into ${target.name}.` + (preview.duplicates.length ? ` Skipped ${preview.duplicates.length} already there.` : '');
+      setDone((d) => [...d, line]);
+      const went = { ...used, [file.parsed.label]: target.id };
+      setUsed(went);
+      next(accounts.some((a) => a.id === target!.id) ? accounts : [...accounts, target], went);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -116,9 +143,10 @@ export default function ImportScreen() {
       {!canPickFiles && <Text style={{ color: t.danger }}>CSV import is only in the web version for now.</Text>}
 
       <Card style={{ gap: 8 }}>
-        <Text style={[styles.h, { color: t.text }]}>1. Choose the file</Text>
-        <Text style={{ color: t.muted }}>Download the transactions as CSV from your bank's website. Rogers, PC Financial and American Express are recognised; most other CSVs with date, description and amount columns work too.</Text>
-        <Button title={file ? 'Choose a different file' : 'Choose CSV file'} kind={file ? 'plain' : 'primary'} onPress={choose} />
+        <Text style={[styles.h, { color: t.text }]}>1. Choose the file{total > 1 ? 's' : ''}</Text>
+        <Text style={{ color: t.muted }}>Download the transactions as CSV from your bank's website. Rogers, PC Financial and American Express are recognised; most other CSVs with date, description and amount columns work too. You can choose several files at once; they are taken one at a time.</Text>
+        <Button title={file ? 'Choose different files' : 'Choose CSV files'} kind={file ? 'plain' : 'primary'} onPress={choose} />
+        {file && total > 1 && <Text style={{ color: t.muted, fontWeight: '600' }}>File {total - rest.length} of {total}</Text>}
         {file && (
           <Text style={{ color: t.text }}>
             {file.name}: {file.parsed.label}, {file.parsed.rows.length} transactions, {shortDate(dates[0])} – {shortDate(dates[dates.length - 1])}
@@ -168,16 +196,18 @@ export default function ImportScreen() {
               {showDupes && preview.duplicates.map((r, i) => <Row key={'d' + i} r={r} muted />)}
               <Button title={`Import ${preview.add.length} transaction(s)`} onPress={runImport} busy={busy}
                 disabled={!preview.add.length && !balance.trim()} />
+              {total > 1 && <Button title={rest.length ? 'Skip this file' : 'Skip this file and finish'} kind="plain" disabled={busy}
+                onPress={() => { setDone((d) => [...d, `${file.name}: skipped.`]); next(); }} />}
             </>
           )}
         </Card>
       )}
 
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-      {!!done && (
+      {done.length > 0 && (
         <Card style={{ gap: 8 }}>
-          <Text style={{ color: t.text }}>{done}</Text>
-          <Button title="Review them" onPress={() => router.navigate('/transactions' as any)} />
+          {done.map((d, i) => <Text key={i} style={{ color: t.text }}>{d}</Text>)}
+          {!file && <Button title="Review them" onPress={() => router.navigate('/transactions' as any)} />}
         </Card>
       )}
     </ScrollView>

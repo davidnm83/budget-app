@@ -25,6 +25,8 @@ import { PRESS, RISE } from '@/lib/motion';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
 import { loadWatch, type Watched } from '@/lib/watch';
+import { dismissRadar, loadRadar, restoreRadar } from '@/lib/radar';
+import { toast } from '@/lib/toast';
 import { BarChart, Donut, LineChart } from '@/components/Charts';
 import { cfgCategories, loadChart, NO_ACCOUNTS, pickAccounts, SOURCES, SPLITS, SPLIT_LABEL, VIEW_LABEL, type ChartCfg, type ChartData, type ChartView, type Source, type SplitBy } from '@/lib/widgetData';
 
@@ -68,6 +70,7 @@ export function parseEntry(e: string): [string, WidgetCfg] {
 export const keyOf = (e: string) => { const k = parseEntry(e)[0]; return k === 'spend' ? 'chart' : k; };
 export const makeEntry = (key: string, cfg: WidgetCfg) => `${key}::${JSON.stringify(cfg)}`;
 export const WIDGETS: WidgetDef[] = [
+  { key: 'radar', title: 'Radar', about: 'What needs attention: a balance about to dip, a late or changed bill, a budget running over, unusual spending', home: true, budget: false },
   { key: 'review', title: 'To review', about: 'New transactions waiting to be checked', home: true, budget: false },
   { key: 'week', title: 'This week', about: 'Cash now, projected end of week, what’s next', home: true, budget: false },
   { key: 'budget', title: 'Budget pace', about: 'This month’s spending against an even pace', home: true, budget: false },
@@ -80,7 +83,7 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or an account, for the accounts and categories you choose', home: true, budget: true, config: 'chart', sizable: true },
   { key: 'tags', title: 'Tag totals', about: 'Everything under each tag added up: a trip, a move, a repair', home: true, budget: true, sizable: true },
 ];
-export const DEFAULT_HOME = ['review', 'week', 'budget', 'networth'];
+export const DEFAULT_HOME = ['radar', 'review', 'week', 'budget', 'networth'];
 export const DEFAULT_BUDGET: string[] = [];
 
 /** `after` renders outside the pressable card (pop-ups opened from inside it, so their taps don't reach the card). */
@@ -131,6 +134,7 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
     case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} anchor={anchor} range={range} />;
     case 'text': return <TextNote t={t} cfg={cfg} />;
     case 'tags': return <TagTotals t={t} refresh={refresh} h={cfg.h} />;
+    case 'radar': return <Radar t={t} refresh={refresh} />;
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
     case 'watch': return <WatchMini t={t} refresh={refresh} h={cfg.h} />;
@@ -206,6 +210,49 @@ const monthShort = (m: string) => new Date(m + 'T00:00:00Z').toLocaleDateString(
 
 const isCash = (a: Account) => a.type === 'depository' && !a.is_hidden;
 const owed = (a: Account) => Math.max(0, -signedBalance(a));
+
+/** What needs attention right now, most urgent first. Each line opens the page behind it; × hides it until the facts change. */
+function Radar({ t, refresh }: { t: Theme; refresh: number }) {
+  const [again, setAgain] = useState(0);
+  const [all, setAll] = useState(false);
+  const { data, error } = useLoad(loadRadar, [refresh, again]);
+  if (error) return <CardShell t={t} title="Radar"><Text style={{ color: t.muted, fontSize: 13 }}>{error}</Text></CardShell>;
+  if (!data) return <CardShell t={t} title="Radar"><Skeleton color={t.track} /></CardShell>;
+  const LOOK = { act: { icon: 'alert-circle', color: t.danger }, heads: { icon: 'warning', color: t.series2 }, info: { icon: 'information-circle', color: t.muted } } as const;
+  const shown = all ? data.cards : data.cards.slice(0, 4);
+  const hide = async (id: string) => {
+    try { await dismissRadar(id, data.cards.map((c) => c.id)); setAgain((n) => n + 1); }
+    catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); }
+  };
+  const bringBack = async () => { try { await restoreRadar(); setAgain((n) => n + 1); } catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); } };
+  return (
+    <CardShell t={t} title="Radar">
+      {!data.cards.length && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Ionicons name="checkmark-circle" size={20} color={t.accent} />
+          <Text style={{ color: t.text, fontSize: 15 }}>Nothing needs attention</Text>
+        </View>
+      )}
+      {shown.map((c, i) => (
+        <Pressable key={c.id} onPress={() => router.navigate(c.href as any)} accessibilityRole="link"
+          style={({ pressed, hovered }: any) => [{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingTop: i ? 10 : 0, borderTopWidth: i ? StyleSheet.hairlineWidth : 0, borderColor: t.line }, (pressed || hovered) && { opacity: 0.75 }]}>
+          <Ionicons name={LOOK[c.severity].icon} size={18} color={LOOK[c.severity].color} style={{ marginTop: 1 }} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={{ color: t.text, fontSize: 14, fontWeight: '600' }}>{c.title}</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }}>{c.text}</Text>
+          </View>
+          <Pressable onPress={(e: any) => { e?.stopPropagation?.(); hide(c.id); }} hitSlop={10} accessibilityLabel={`Dismiss: ${c.title}`}><Ionicons name="close" size={16} color={t.muted} /></Pressable>
+        </Pressable>
+      ))}
+      {(data.cards.length > 4 || data.hidden > 0) && (
+        <View style={styles.between}>
+          {data.cards.length > 4 ? <Pressable onPress={() => setAll(!all)} hitSlop={8}><Text style={{ color: t.accent, fontSize: 12 }}>{all ? 'Show fewer' : `${data.cards.length - 4} more`}</Text></Pressable> : <View />}
+          {data.hidden > 0 && <Pressable onPress={bringBack} hitSlop={8}><Text style={{ color: t.muted, fontSize: 12 }}>{data.hidden} dismissed · show again</Text></Pressable>}
+        </View>
+      )}
+    </CardShell>
+  );
+}
 
 function CashPosition({ t, refresh }: { t: Theme; refresh: number }) {
   const { data } = useLoad(loadAccounts, [refresh]);

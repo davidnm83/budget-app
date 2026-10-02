@@ -3,4 +3,12 @@ export async function pickCsvText(): Promise<{ name: string; text: string } | nu
   throw new Error('CSV import is only in the web version for now. Open the app in a browser to import.');
 }
 
+export async function pickCsvTexts(): Promise<{ name: string; text: string }[]> {
+  throw new Error('CSV import is only in the web version for now. Open the app in a browser to import.');
+}
+
+export async function pickJsonText(): Promise<{ name: string; text: string } | null> {
+  throw new Error('Restore is only in the web version for now. Open the app in a browser to restore.');
+}
+
 export const canPickFiles = false;

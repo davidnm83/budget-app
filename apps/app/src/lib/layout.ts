@@ -29,3 +29,15 @@ export const ROW: { title: TextStyle; sub: TextStyle; amount: TextStyle; minHeig
  * of what's showing (the default keeps ten each way, which is a lot of rows to build and hold).
  */
 export const LIST = { initialNumToRender: 14, maxToRenderPerBatch: 12, updateCellsBatchingPeriod: 40, windowSize: 9 } as const;
+
+/**
+ * A list with a pane beside it (Transactions, Merchants) on wide screens. One rule for both: the
+ * list never goes below SPLIT.list; the pane beside it is what narrows, down to SPLIT.side; when
+ * even that doesn't fit, the pane steps aside (a summary is hidden, details open as a sheet).
+ */
+export const SPLIT = { list: 460, side: 300, gap: 12 } as const;
+export const SPLIT_LIST = { flexGrow: 1, flexShrink: 0, flexBasis: SPLIT.list, minWidth: SPLIT.list } as const;
+/** The pane's style at its full width `basis`. */
+export const splitSide = (basis: number) => ({ flexGrow: 0, flexShrink: 1, flexBasis: basis, minWidth: SPLIT.side }) as const;
+/** Whether both fit in `room` pixels (measure the row that holds them with onLayout). */
+export const splitFits = (room: number) => room >= SPLIT.list + SPLIT.gap + SPLIT.side;

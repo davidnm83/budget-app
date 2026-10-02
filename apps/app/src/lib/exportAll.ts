@@ -37,3 +37,6 @@ export async function exportEverything(progress: (msg: string) => void): Promise
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   return { tables: Object.keys(tables).length, rows };
 }
+
+/** For restore: the optional tables this install knows about. */
+export const extraTables = (): string[] => EXTRA_TABLES;
