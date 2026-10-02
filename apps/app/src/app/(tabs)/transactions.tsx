@@ -2,6 +2,7 @@
 // The check button beside the search shows only unchecked ones (new arrivals, with a count);
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
+import { Sheet } from '@/components/Forms';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { seedTxn } from '@/lib/txnCache';
 import { PAGE_MAX, useWide } from '@/lib/layout';
@@ -146,7 +147,7 @@ export default function Transactions() {
 
   const renderRow = ({ item }: { item: Row }) => (
     <TxnRow t={t} item={item} showDate={!byDate} onToggle={() => setReviewed([item.id], !item.reviewed)} selected={sel === item.id}
-      onOpen={() => { seedTxn(item); if (wide) setSel(item.id); else router.push({ pathname: '/transaction/[id]', params: { id: item.id } }); }} />
+      onOpen={() => { seedTxn(item); setSel(item.id); }} />
   );
   const footer = hasMore ? <Button title="Load more" kind="plain" onPress={() => fetchPage(Math.ceil(rows.length / PAGE))} busy={loading} style={{ margin: 16 }} /> : null;
   const empty = loading ? null : (
@@ -214,6 +215,11 @@ export default function Transactions() {
         />
       )}
       </View>
+      {!wide && sel && (
+        <Sheet title="Transaction" scroll={false} onClose={() => setSel(null)}>
+          <TransactionEditor key={sel} id={sel} onOpen={setSel} onDone={() => { setSel(null); reload(); }} />
+        </Sheet>
+      )}
       {wide && sel && (
         <View style={[styles.side, { borderColor: t.line, backgroundColor: t.bg }]}>
           <View style={[styles.sideHead, { borderColor: t.line }]}>

@@ -8,7 +8,7 @@ import {
   addDays, addMonths, balanceHistory, categoryIcon, expandPlan, formatDuration, loanSummary, formatMoney, monthEnd, shortDate, totalShifts, weekStart, type Month,
 } from '@budget-app/core';
 import { router } from 'expo-router';
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { BalanceChart } from '@/components/AccountSheet';
 import { Skeleton } from '@/components/Columns';
@@ -19,7 +19,7 @@ import { useTxnSheet } from '@/components/TxnSheet';
 import { Bar, Button, Chip, LIFT, Segmented } from '@/components/ui';
 import { costPerKm, loadGigSettings, loadShifts } from '@/lib/gig';
 import { loadAccounts, loadEntries, loadRecurring, today } from '@/lib/plan';
-import { savePrefs } from '@/lib/prefs';
+import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from '@/lib/reports';
 import { RISE } from '@/lib/motion';
 import { useTheme, type Theme } from '@/lib/theme';
@@ -71,7 +71,11 @@ export const DEFAULT_HOME = ['review', 'week', 'budget', 'networth'];
 export const DEFAULT_BUDGET: string[] = [];
 
 /** `after` renders outside the pressable card (pop-ups opened from inside it, so their taps don't reach the card). */
-export function CardShell({ t, title, link, onPress, children, after }: { t: Theme; title: string; link?: string; onPress?: () => void; children: ReactNode; after?: ReactNode }) {
+/** A title you gave a widget in its settings; the card shows it in place of its own. */
+export const TitleOverride = createContext<string | undefined>(undefined);
+
+export function CardShell({ t, title: own, link, onPress, children, after }: { t: Theme; title: string; link?: string; onPress?: () => void; children: ReactNode; after?: ReactNode }) {
+  const title = useContext(TitleOverride) ?? own;
   return (
     <>
     <Pressable onPress={onPress} style={({ pressed }) => [styles.card, LIFT, RISE, { backgroundColor: t.card, borderColor: t.line, opacity: pressed && onPress ? 0.85 : 1 }]}>
@@ -97,7 +101,14 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): { data: T | nul
 
 /** One of the self-loading widgets by key (the four Home cards are drawn by Home itself). */
 /** `anchor`: the month the page is showing; widgets that can follow it do (charts, bills calendar, spending by group). */
-export function Widget({ k: entry, refresh = 0, anchor }: { k: string; refresh?: number; anchor?: Month }) {
+export function Widget(props: { k: string; refresh?: number; anchor?: Month }) {
+  const [k, cfg] = parseEntry(props.k);
+  // Charts and accounts use their title themselves; for the rest it replaces the card's heading.
+  const own = k === 'chart' || k === 'spend' || k === 'account';
+  return <TitleOverride.Provider value={own ? undefined : cfg.title || undefined}><WidgetBody {...props} /></TitleOverride.Provider>;
+}
+
+function WidgetBody({ k: entry, refresh = 0, anchor }: { k: string; refresh?: number; anchor?: Month }) {
   const t = useTheme();
   const [k, cfg] = parseEntry(entry);
   switch (k) {
@@ -106,7 +117,7 @@ export function Widget({ k: entry, refresh = 0, anchor }: { k: string; refresh?:
     case 'account': return <AccountWidget t={t} refresh={refresh} cfg={cfg} />;
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
-    case 'avgspend': return <AvgSpending t={t} refresh={refresh} />;
+    case 'avgspend': return <AvgSpending t={t} refresh={refresh} months={cfg.months} />;
     case 'watch': return <WatchMini t={t} refresh={refresh} h={cfg.h} />;
     case 'credit': return <CreditMini t={t} refresh={refresh} />;
     case 'gig': return <GigWeek t={t} refresh={refresh} />;
@@ -248,8 +259,8 @@ function Runway({ t, refresh }: { t: Theme; refresh: number }) {
   );
 }
 
-function AvgSpending({ t, refresh }: { t: Theme; refresh: number }) {
-  const [span, setSpan] = useState<'3' | '6' | '12'>('3');
+function AvgSpending({ t, refresh, months }: { t: Theme; refresh: number; months?: number }) {
+  const [span, setSpan] = useState<'3' | '6' | '12'>(months === 6 ? '6' : months === 12 ? '12' : '3');
   const { data } = useLoad(() => loadMonthSummaries(addMonths(thisMonth(), -12), monthEnd(thisMonth())), [refresh]);
   const [showTxns, txnSheet] = useTxnSheet();
   if (!data) return <CardShell t={t} title="Average spending"><Skeleton color={t.track} /></CardShell>;
@@ -447,7 +458,7 @@ export function entryLabel(e: string): string {
   const [k, c] = parseEntry(e);
   const w = WIDGETS.find((x) => x.key === keyOf(e));
   if (!w) return k;
-  if (!w.config) return w.title;
+  if (!w.config) return c.title ? `${c.title} (${w.title})` : w.title;
   if (w.config === 'account') return `Account: ${c.title || c.accountMatch || 'tap ⚙ to choose'}`;
   const src = SOURCES[c.source ?? 'spending'];
   const view = c.view ?? c.chart ?? src.views[0];
@@ -455,9 +466,13 @@ export function entryLabel(e: string): string {
 }
 
 /** Settings for one widget: what it shows, how it's drawn and over how long; or which account. */
-export function WidgetSettings({ kind, cfg, onDone, onClose }: { kind: 'spend' | 'account' | 'chart'; cfg: WidgetCfg; onDone: (c: WidgetCfg) => void; onClose: () => void }) {
+export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: 'spend' | 'account' | 'chart' | 'basic'; widget?: string; cfg: WidgetCfg; onDone: (c: WidgetCfg) => void; onClose: () => void }) {
   const t = useTheme();
-  const chart = kind !== 'account';
+  const chart = kind === 'chart' || kind === 'spend';
+  const def = WIDGETS.find((w) => w.key === widget);
+  const [watch, setWatch] = useState<string[] | null>(null);
+  const [pickWatch, setPickWatch] = useState(false);
+  useEffect(() => { if (widget === 'watch') loadPrefs().then((p) => setWatch(p.watch_categories ?? [])).catch(() => setWatch([])); }, [widget]);
   const [title, setTitle] = useState(cfg.title ?? '');
   const [months, setMonths] = useState(cfg.months ?? 6);
   const [source, setSource] = useState<Source>(cfg.source ?? 'spending');
@@ -475,11 +490,13 @@ export function WidgetSettings({ kind, cfg, onDone, onClose }: { kind: 'spend' |
   const shown = views.includes(view) ? view : views[0];
   const input = { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15, color: t.text, borderColor: t.line, backgroundColor: t.card };
   const keep = { w: cfg.w, h: cfg.h };
-  const done = () => onDone(chart
+  const done = () => onDone(kind === 'basic'
+    ? { ...keep, title: title.trim() || undefined, ...(widget === 'avgspend' ? { months } : {}) }
+    : chart
     ? { ...keep, title: title.trim() || undefined, source, view: shown, months, ...(source === 'spending' && selected.length ? { categoryIds: selected } : {}) }
     : { ...keep, title: title.trim() || undefined, accountId: accountId || (data?.accounts.find((a) => cfg.accountMatch && new RegExp(cfg.accountMatch, 'i').test(a.name))?.id) });
   return (
-    <Sheet title={chart ? 'Chart' : 'Account'} onClose={onClose} footer={<Button title="Done" onPress={done} />}>
+    <Sheet title={kind === 'basic' ? def?.title ?? 'Widget' : chart ? 'Chart' : 'Account'} onClose={onClose} footer={<Button title="Done" onPress={done} />}>
       {chart ? (
         <>
           <Field t={t} label="Show" hint={SOURCES[source].about}>
@@ -503,6 +520,23 @@ export function WidgetSettings({ kind, cfg, onDone, onClose }: { kind: 'spend' |
           {data && <MultiPicker visible={pick} title="Categories" onClose={() => setPick(false)} selected={selected} onChange={setIds}
             items={data.cats.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group }))} />}
         </>
+      ) : kind === 'basic' ? (
+        <>
+          {!!def && <Text style={{ color: t.muted, fontSize: 13 }}>{def.about}.</Text>}
+          {widget === 'avgspend' && (
+            <Field t={t} label="Starts on">
+              <View style={{ flexDirection: 'row', gap: 6 }}>{[3, 6, 12].map((m) => <Chip key={m} label={`${m} months`} on={(months === 6 || months === 12 ? months : 3) === m} onPress={() => setMonths(m)} />)}</View>
+            </Field>
+          )}
+          {widget === 'watch' && (
+            <Field t={t} label="Watched categories" hint="The same list as the Spending watch page; changing it here changes it everywhere.">
+              <Button kind="plain" title={watch?.length ? `${watch.length} chosen · change` : 'Choose categories'} onPress={() => setPickWatch(true)} />
+              {data && watch && <MultiPicker visible={pickWatch} title="Watch list" onClose={() => setPickWatch(false)} selected={watch}
+                onChange={(ids) => { setWatch(ids); savePrefs({ watch_categories: ids }).catch(() => {}); }}
+                items={data.cats.filter((c) => c.kind === 'expense').map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group }))} />}
+            </Field>
+          )}
+        </>
       ) : (
         <Field t={t} label="Account">
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
@@ -510,7 +544,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose }: { kind: 'spend' |
           </View>
         </Field>
       )}
-      <Field t={t} label="Title (optional)"><TextInput value={title} onChangeText={setTitle} placeholder={chart ? SOURCES[source].title : 'e.g. Car loan'} placeholderTextColor={t.muted} style={input} /></Field>
+      <Field t={t} label="Title (optional)"><TextInput value={title} onChangeText={setTitle} placeholder={kind === 'basic' ? def?.title ?? '' : chart ? SOURCES[source].title : 'e.g. Car loan'} placeholderTextColor={t.muted} style={input} /></Field>
     </Sheet>
   );
 }

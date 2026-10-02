@@ -6,7 +6,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
-import { entryLabel, keyOf, makeEntry, parseEntry, Widget, WidgetSettings, WIDGETS, type WidgetCfg, type WidgetDef } from '@/components/Widgets';
+import { entryLabel, keyOf, makeEntry, parseEntry, TitleOverride, Widget, WidgetSettings, WIDGETS, type WidgetCfg, type WidgetDef } from '@/components/Widgets';
 import { useWide } from '@/lib/layout';
 import { useTheme, type Theme } from '@/lib/theme';
 import { afterClose } from '@/lib/useBackToClose';
@@ -85,12 +85,12 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing
                   {defs.find((w) => w.key === keyOf(e))?.sizable && <Pressable onPress={() => patch(i, { h: cfg.h === 's' ? 'm' : cfg.h === 'l' ? 's' : 'l' })} accessibilityLabel="Change height" hitSlop={6} style={[styles.size, { borderColor: t.line }]}>
                     <Text style={{ color: t.accent, fontSize: 12, fontWeight: '700' }}>{cfg.h === 's' ? 'Short' : cfg.h === 'l' ? 'Tall' : 'Medium'}</Text>
                   </Pressable>}
-                  {WIDGETS.find((w) => w.key === keyOf(e))?.config && <Tool t={t} icon="settings-outline" label="Widget settings" onPress={() => setSettings({ index: i, key: keyOf(e), cfg: k === 'spend' ? { source: 'spending', ...cfg } : cfg })} />}
+                  {WIDGETS.some((w) => w.key === keyOf(e)) && <Tool t={t} icon="settings-outline" label="Widget settings" onPress={() => setSettings({ index: i, key: keyOf(e), cfg: k === 'spend' ? { source: 'spending', ...cfg } : cfg })} />}
                   <Tool t={t} icon="close" label="Remove widget" onPress={() => onChange(entries.filter((_, n) => n !== i))} />
                 </View>
               )}
               <View style={[{ flexGrow: 1 }, editing && { opacity: drag === i ? 0.4 : 1 }]} pointerEvents={editing ? 'none' : 'auto'}>
-                {special?.(k) ?? <Widget k={e} refresh={refresh} anchor={anchor} />}
+                {special?.(k) != null ? <TitleOverride.Provider value={cfg.title || undefined}>{special(k)}</TitleOverride.Provider> : <Widget k={e} refresh={refresh} anchor={anchor} />}
               </View>
             </Cell>
           );
@@ -112,7 +112,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing
         </Sheet>
       )}
       {settings && (
-        <WidgetSettings kind={settings.key as 'chart' | 'account'} cfg={settings.cfg} onClose={() => setSettings(null)}
+        <WidgetSettings kind={settings.key === 'chart' || settings.key === 'account' ? settings.key : 'basic'} widget={settings.key} cfg={settings.cfg} onClose={() => setSettings(null)}
           onDone={(cfg) => {
             const e = makeEntry(settings.key, cfg);
             onChange(settings.index == null ? [...entries, e] : entries.map((x, n) => (n === settings.index ? e : x)));

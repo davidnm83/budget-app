@@ -5,7 +5,6 @@
 import { categoryIcon, formatMoney, normalizeDescription, parseMoney, round2, searchPattern, shortDate, toIsoDate } from '@budget-app/core';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SLIDE } from '@/lib/motion';
 import { peekCategories, peekTxn, storeCategories } from '@/lib/txnCache';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SinglePicker } from '@/components/Picker';
@@ -181,7 +180,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
 
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.bg }];
   return (
-    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={[styles.page, SLIDE]} keyboardShouldPersistTaps="handled">
+    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <Card style={{ gap: 4 }}>
         <Text style={{ color: t.text, fontSize: 28, fontWeight: '700' }}>{formatMoney(Number(txn.amount), txn.currency)}</Text>
         <Text style={{ color: t.muted }}>{shortDate(txn.date)} · {txn.accounts?.name}</Text>

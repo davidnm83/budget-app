@@ -8,7 +8,8 @@ import { addDays, addMonths, formatMoney, monthName, monthOf, shortDate, weekSta
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { BillForm, PlanEntryForm } from '@/components/Forms';
+import { BillForm, PlanEntryForm, Sheet } from '@/components/Forms';
+import { TransactionEditor } from '@/components/TransactionEditor';
 import { refreshPlannerBadge, setPlannerBadge } from '@/lib/badges';
 import { supabase } from '@/lib/supabase';
 import { IconButton, TopBar } from '@/components/TopBar';
@@ -28,6 +29,7 @@ export default function Planner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState<any | null>(null);
+  const [txnOpen, setTxnOpen] = useState<string | null>(null);
   const [view, setView] = useState<'week' | 'month' | 'all'>('week');
   const [month, setMonth] = useState(monthOf(today()));
   // One + in the same place for every view: a one-off in Week, a repeating bill in Month and All bills.
@@ -58,7 +60,7 @@ export default function Planner() {
   const label = `${shortDate(week)} – ${shortDate(addDays(week, 6))}`;
 
   const openRow = (r: WeekRow) => {
-    if (r.kind === 'actual' && r.txn) { seedTxn({ ...r.txn, account_name: name((r.txn as any).account_id ?? null) || undefined }); router.push({ pathname: '/transaction/[id]', params: { id: r.txn.id } }); return; }
+    if (r.kind === 'actual' && r.txn) { seedTxn({ ...r.txn, account_name: name((r.txn as any).account_id ?? null) || undefined }); setTxnOpen(r.txn.id); return; }
     const p = r.item!;
     if (p.key.startsWith('gig:') && !r.txn) { router.push('/gig' as any); return; }
     setForm({
@@ -155,6 +157,11 @@ export default function Planner() {
       )}
 
       {newBill && data && <BillForm initial={{ kind: 'bill', frequency: 'monthly', start_date: now }} accounts={data.accounts} categories={cats} onClose={() => setNewBill(false)} onSaved={() => { load(); setBillsKey((k) => k + 1); }} />}
+      {txnOpen && (
+        <Sheet title="Transaction" scroll={false} onClose={() => setTxnOpen(null)}>
+          <TransactionEditor key={txnOpen} id={txnOpen} onOpen={setTxnOpen} onDone={() => { setTxnOpen(null); load(); }} />
+        </Sheet>
+      )}
       {form && data && <PlanEntryForm initial={form} accounts={data.accounts} onClose={() => setForm(null)} onSaved={load} />}
     </View>
   );
