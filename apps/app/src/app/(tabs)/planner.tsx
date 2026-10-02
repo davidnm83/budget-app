@@ -60,6 +60,11 @@ export default function Planner() {
   const v = data?.view;
   const label = `${shortDate(week)} – ${shortDate(addDays(week, 6))}`;
 
+  // Unplanned transactions can be tucked away to leave just the plan; they still count in every balance.
+  const [hideUnplanned, setHideUnplanned] = useState(() => { try { return globalThis.localStorage?.getItem('budget.planner.hideUnplanned') === '1'; } catch { return false; } });
+  const toggleUnplanned = () => setHideUnplanned((h) => { try { globalThis.localStorage?.setItem('budget.planner.hideUnplanned', h ? '0' : '1'); } catch { /* lasts until reload */ } return !h; });
+  const unplanned = v ? v.days.reduce((n, d) => n + d.rows.filter((r) => r.kind === 'actual').length, 0) : 0;
+
   const openRow = (r: WeekRow) => {
     if (r.kind === 'actual' && r.txn) { seedTxn({ ...r.txn, account_name: name((r.txn as any).account_id ?? null) || undefined }); setTxnOpen(r.txn.id); return; }
     const p = r.item!;
@@ -136,6 +141,15 @@ export default function Planner() {
               <Text style={{ color: t.danger, fontSize: 13 }}>{v.summary.overdue} planned {v.summary.overdue === 1 ? 'entry hasn’t' : 'entries haven’t'} posted yet. Tap one to move it or skip it.</Text>
             )}
 
+            {unplanned > 0 && (
+              <Pressable onPress={toggleUnplanned} accessibilityRole="switch" accessibilityState={{ checked: hideUnplanned }} style={styles.hideRow}>
+                <Ionicons name={hideUnplanned ? 'eye-off-outline' : 'eye-outline'} size={16} color={t.accent} />
+                <Text style={{ color: t.accent, fontSize: 13, fontWeight: '600' }}>
+                  {hideUnplanned ? `Show ${unplanned} unplanned transaction${unplanned === 1 ? '' : 's'}` : `Hide ${unplanned} unplanned transaction${unplanned === 1 ? '' : 's'}`}
+                </Text>
+                {hideUnplanned && <Text style={{ color: t.muted, fontSize: 12, flex: 1 }} numberOfLines={1}>· still counted in the balances</Text>}
+              </Pressable>
+            )}
             <Card style={{ padding: 0 }}>
               {v.days.map((d, i) => (
                 <View key={d.date} style={i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }}>
@@ -144,7 +158,7 @@ export default function Planner() {
                     <Text style={{ color: t.muted, flex: 1 }}>{shortDate(d.date)}{d.date === now ? ' · today' : ''}</Text>
                     <Text style={{ color: d.endBalance < 0 ? t.danger : t.muted, fontVariant: ['tabular-nums'], fontSize: 13 }}>{formatMoney(d.endBalance)}</Text>
                   </View>
-                  {d.rows.map((r) => <Row key={r.key} t={t} r={r} account={only ? '' : name(r.accountId)} onPress={() => openRow(r)} />)}
+                  {d.rows.filter((r) => !(hideUnplanned && r.kind === 'actual')).map((r) => <Row key={r.key} t={t} r={r} account={only ? '' : name(r.accountId)} onPress={() => openRow(r)} />)}
                 </View>
               ))}
             </Card>
@@ -191,6 +205,7 @@ function Row({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string
 
 
 const styles = StyleSheet.create({
+  hideRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 32 },
   viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   page: { padding: 12, gap: 10, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

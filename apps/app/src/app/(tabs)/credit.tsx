@@ -2,7 +2,7 @@
 // statement and the interest it would cost if unpaid, plus total card debt and utilisation over
 // the past year. Tap a card for its full page.
 import { PAGE_MAX } from '@/lib/layout';
-import { bankLogo, customPicture, useLogos } from '@/lib/logos';
+import { bankLogo, customPicture, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { UNDER_BAR } from '@/lib/layout';
 import { addDays, balanceHistory, cardCycle, cardStatus, formatMoney, monthEnd, monthName, shortDate, utilization } from '@budget-app/core';
@@ -26,7 +26,7 @@ const money0 = (n: number) => formatMoney(n).replace(/\.\d\d$/, '');
 
 export default function Credit() {
   const t = useTheme();
-  useLogos();
+  const lv = useLogoVersion();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [txns, setTxns] = useState<Row[]>([]);
   const [open, setOpen] = useState<Account | null>(null);
@@ -95,7 +95,7 @@ export default function Credit() {
         {perCard.map((c, i) => (
           <Pressable key={c.a.id} onPress={() => setOpen(c.a)} style={({ pressed, hovered }: any) => [styles.card, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }, (pressed || hovered) && { backgroundColor: t.line }]}>
             <View style={styles.between}>
-              <Logo size={26} name={c.a.name} uri={customPicture(`account:${c.a.id}`) ?? (c.a.icon ? null : bankLogo(c.a.name))} emoji={c.a.icon ?? '💳'} />
+              <Logo size={26} name={c.a.name} uri={customPicture(`account:${c.a.id}`, lv) ?? (c.a.icon ? null : bankLogo(c.a.name, lv))} emoji={c.a.icon ?? '💳'} />
               <Text style={{ color: t.text, fontWeight: '600', flex: 1 }} numberOfLines={1}>{c.a.name}{c.a.mask ? ` ••${c.a.mask}` : ''}</Text>
               <Text style={{ color: t.text, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{formatMoney(c.owed)}</Text>
             </View>

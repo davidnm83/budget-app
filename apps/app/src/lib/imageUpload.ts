@@ -1,6 +1,6 @@
 // Choose a picture from the device and shrink it to a small square, in the browser, before it is
 // saved. Nothing is uploaded anywhere except the finished 128×128 image into your own database.
-export const PICTURE_HINT = 'Best: a square PNG with a clear or white background, 128×128 or larger. JPG and WebP work too. Up to 5 MB; it is shrunk to 128×128.';
+export const PICTURE_HINT = 'Best: a square PNG with a clear or white background, 128×128 or larger. JPG and WebP work too. Up to 5 MB; it is shrunk to about 128 pixels.';
 const MAX_BYTES = 5 * 1024 * 1024, SIZE = 128;
 
 export function pickPicture(): Promise<string | null> {
@@ -17,12 +17,14 @@ export function pickPicture(): Promise<string | null> {
       const img = new Image();
       img.onload = () => {
         try {
-          const c = document.createElement('canvas'); c.width = SIZE; c.height = SIZE;
+          // Keep the picture's shape: its short side becomes 128, and a very long side is trimmed
+          // from the centre to twice that. "Fill the circle" then decides how it is shown.
+          const w = img.naturalWidth || SIZE, h = img.naturalHeight || SIZE, k = SIZE / Math.min(w, h);
+          const cw = Math.min(Math.round(w * k), SIZE * 2), ch = Math.min(Math.round(h * k), SIZE * 2);
+          const c = document.createElement('canvas'); c.width = cw; c.height = ch;
           const ctx = c.getContext('2d')!;
-          // Fit the whole picture inside the square, centred, keeping its shape.
-          const w = img.naturalWidth || SIZE, h = img.naturalHeight || SIZE, k = Math.min(SIZE / w, SIZE / h);
           ctx.imageSmoothingQuality = 'high';
-          ctx.drawImage(img, (SIZE - w * k) / 2, (SIZE - h * k) / 2, w * k, h * k);
+          ctx.drawImage(img, (cw - w * k) / 2, (ch - h * k) / 2, w * k, h * k);
           let out = c.toDataURL('image/png');
           if (out.length > 120000) out = c.toDataURL('image/webp', 0.85); // photos: smaller as WebP
           resolve(out);

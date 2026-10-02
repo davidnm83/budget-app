@@ -2,7 +2,7 @@
 // (or merge it into another by giving it that name) and the change is remembered as a rule, so
 // future transactions from the bank get the same name.
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { customPicture, merchantLogo, movePicture, savePicture, useLogos } from '@/lib/logos';
+import { customPicture, fillsCircle, merchantLogo, movePicture, savePicture, setPictureFill, useLogoVersion } from '@/lib/logos';
 import { PICTURE_HINT, pickPicture } from '@/lib/imageUpload';
 import { Logo } from '@/components/Logo';
 import { UNDER_BAR } from '@/lib/layout';
@@ -30,7 +30,7 @@ export default function Merchants() {
   const [sort, setSort] = useState<'count' | 'name' | 'recent'>('count');
   const [edit, setEdit] = useState<M | null>(null);
   const [name, setName] = useState('');
-  useLogos();
+  const lv = useLogoVersion();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showTxns, txnSheet] = useTxnSheet();
@@ -113,7 +113,7 @@ export default function Merchants() {
         renderItem={({ item }) => (
           <Pressable onPress={() => { setEdit(item); setName(item.merchant); setError(''); }}
             style={({ pressed, hovered }: any) => [styles.row, { borderColor: t.line, backgroundColor: pressed || hovered ? t.line : t.card }]}>
-            <Logo size={34} name={item.merchant} uri={merchantLogo(item.merchant)} />
+            <Logo size={34} name={item.merchant} uri={merchantLogo(item.merchant, lv)} />
             <View style={{ flex: 1 }}>
               <Text style={{ color: t.text, fontSize: TYPE.body, fontWeight: '600' }} numberOfLines={1}>{item.merchant}</Text>
               <Text style={{ color: t.muted, fontSize: TYPE.label }}>{item.txns} transaction{item.txns === 1 ? '' : 's'} · last {shortDate(item.last_date)} {item.last_date.slice(0, 4)}</Text>
@@ -128,11 +128,19 @@ export default function Merchants() {
           </Field>
           <Field t={t} label="Picture" hint={PICTURE_HINT}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Logo size={44} name={edit.merchant} uri={merchantLogo(edit.merchant)} />
-              <Button kind="plain" title={customPicture(edit.merchant) ? 'Replace picture' : 'Upload a picture'} style={{ flex: 1 }}
+              <Logo size={44} name={edit.merchant} uri={merchantLogo(edit.merchant, lv)} />
+              <Button kind="plain" title={customPicture(edit.merchant, lv) ? 'Replace picture' : 'Upload a picture'} style={{ flex: 1 }}
                 onPress={async () => { try { const img = await pickPicture(); if (img) await savePicture(edit.merchant, img); setError(''); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }} />
-              {!!customPicture(edit.merchant) && <Button kind="danger" title="Remove" onPress={() => savePicture(edit.merchant, null).catch((e) => setError(String(e?.message ?? e)))} />}
+              {!!customPicture(edit.merchant, lv) && <Button kind="danger" title="Remove" onPress={() => savePicture(edit.merchant, null).catch((e) => setError(String(e?.message ?? e)))} />}
             </View>
+            {!!customPicture(edit.merchant, lv) && (
+            <Pressable onPress={() => setPictureFill(edit.merchant, !fillsCircle(customPicture(edit.merchant, lv)!, lv)).catch(() => {})} accessibilityRole="checkbox" accessibilityState={{ checked: fillsCircle(customPicture(edit.merchant, lv)!, lv) }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 }}>
+              <Ionicons name={fillsCircle(customPicture(edit.merchant, lv)!, lv) ? 'checkbox' : 'square-outline'} size={22} color={fillsCircle(customPicture(edit.merchant, lv)!, lv) ? t.accent : t.muted} />
+              <Text style={{ color: t.text }}>Fill the circle</Text>
+              <Text style={{ color: t.muted, fontSize: 12, flex: 1 }} numberOfLines={1}>off shows the whole picture</Text>
+            </Pressable>
+          )}
           </Field>
           {similar.length > 0 && (
             <Field t={t} label="Similar names" hint="Tap one to merge into it.">

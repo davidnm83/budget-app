@@ -12,6 +12,7 @@ const KEY = 'budget.logos';
 let enabled = (() => { try { return globalThis.localStorage?.getItem(KEY) !== 'off'; } catch { return true; } })();
 let fromFeed = new Map<string, string>();   // merchant (lowercase) → image url
 let mine = new Map<string, string>();       // merchant (lowercase) or account:<id> → your uploaded picture
+const fitted = new Set<string>();            // uploaded pictures shown whole inside the circle, not filling it
 let version = 0;
 const subs = new Set<() => void>();
 const bump = () => { version++; subs.forEach((f) => f()); };
@@ -27,13 +28,24 @@ export function useLogos(): boolean {
   return enabled;
 }
 
+/**
+ * A number that changes whenever logos change (loaded, uploaded, switched on or off). The app is
+ * built with the React Compiler, which reuses a component's earlier result when its inputs look
+ * the same; the lookups below read data that lives outside React, so pass this number to them
+ * (their last argument) and the compiler knows to look again.
+ */
+export function useLogoVersion(): number {
+  return useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => version, () => 0);
+}
+
 let loading: Promise<void> | null = null;
 export function loadLogos(force = false): Promise<void> {
   if (loading && !force) return loading;
   loading = (async () => {
-    const [feed, own] = await Promise.all([supabase.rpc('merchant_logos'), supabase.from('merchant_sites').select('merchant, image').not('image', 'is', null)]);
+    const [feed, own] = await Promise.all([supabase.rpc('merchant_logos'), supabase.from('merchant_sites').select('merchant, image, fill').not('image', 'is', null)]);
     fromFeed = new Map(((feed.data ?? []) as any[]).flatMap((r) => (r.logo_url ? [[String(r.merchant).toLowerCase(), r.logo_url]] : r.website ? [[String(r.merchant).toLowerCase(), icon(r.website)]] : [])) as [string, string][]);
     mine = new Map(((own.data ?? []) as any[]).map((r) => [String(r.merchant).toLowerCase(), r.image]));
+    fitted.clear(); for (const r of (own.data ?? []) as any[]) if (r.fill === false) fitted.add(r.image);
     bump();
   })().catch(() => {});
   return loading;
@@ -70,7 +82,7 @@ const STORES: [RegExp, string][] = [
 const match = (list: [RegExp, string][], name: string) => list.find(([re]) => re.test(name))?.[1];
 
 /** Image for a merchant name, or null to show its letter. */
-export function merchantLogo(name: string | null | undefined): string | null {
+export function merchantLogo(name: string | null | undefined, _v?: number): string | null {
   if (!name) return null;
   const k = name.toLowerCase();
   const own = mine.get(k);
@@ -82,13 +94,20 @@ export function merchantLogo(name: string | null | undefined): string | null {
   return d ? icon(d) : null;
 }
 /** Image for an account, from the bank named in it (or its institution). */
-export function bankLogo(...names: (string | null | undefined)[]): string | null {
+export function bankLogo(name: string | null | undefined, _v?: number): string | null {
   if (!enabled) return null;
-  for (const n of names) { const d = n ? match(BANKS, n) : undefined; if (d) return icon(d); }
+  for (const n of [name]) { const d = n ? match(BANKS, n) : undefined; if (d) return icon(d); }
   return null;
 }
 /** A picture you uploaded, by merchant name or "account:<id>". */
-export const customPicture = (key: string): string | null => mine.get(key.toLowerCase()) ?? null;
+export const customPicture = (key: string, _v?: number): string | null => mine.get(key.toLowerCase()) ?? null;
+/** Whether a picture fills its circle. Only uploads can; site icons always sit inside it. */
+export const fillsCircle = (uri: string, _v?: number) => uri.startsWith('data:') && !fitted.has(uri);
+export async function setPictureFill(key: string, fill: boolean) {
+  const res = await supabase.from('merchant_sites').update({ fill }).eq('merchant', key);
+  if (res.error) throw new Error(res.error.message);
+  await loadLogos(true);
+}
 /** Save (or with null, remove) your picture for a merchant name or "account:<id>". */
 export async function savePicture(key: string, image: string | null) {
   const res = image ? await supabase.from('merchant_sites').upsert({ merchant: key, image, domain: null }, { onConflict: 'user_id,merchant' })
@@ -100,5 +119,6 @@ export async function savePicture(key: string, image: string | null) {
 export async function movePicture(from: string, to: string) {
   const pic = customPicture(from);
   if (!pic || customPicture(to)) return;
-  await savePicture(to, pic); await savePicture(from, null);
+  const fill = fillsCircle(pic);
+  await savePicture(to, pic); if (!fill) await setPictureFill(to, false); await savePicture(from, null);
 }

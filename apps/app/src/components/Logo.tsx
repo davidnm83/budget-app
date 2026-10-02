@@ -2,19 +2,21 @@
 // you chose, or the first letter on a colour that stays the same for that name.
 import { useEffect, useState } from 'react';
 import { Image, Text, View } from 'react-native';
-import { loadLogos, useLogos } from '@/lib/logos';
+import { fillsCircle, loadLogos, useLogoVersion } from '@/lib/logos';
 import { useTheme } from '@/lib/theme';
 
 export function Logo({ uri, name, emoji, size = 32 }: { uri: string | null; name: string; emoji?: string | null; size?: number }) {
   const t = useTheme();
-  useLogos();
+  const v = useLogoVersion();
   useEffect(() => { loadLogos(); }, []);
   const [failed, setFailed] = useState<string | null>(null);
   const box = { width: size, height: size, borderRadius: size / 2, alignItems: 'center' as const, justifyContent: 'center' as const, overflow: 'hidden' as const };
   if (uri && failed !== uri) {
+    // A picture you uploaded fills the circle unless you turned that off; a site's icon sits inside it with some air.
+    const fill = fillsCircle(uri, v);
     return (
       <View style={[box, { backgroundColor: '#fff', borderWidth: 1, borderColor: t.line }]}>
-        <Image source={{ uri }} onError={() => setFailed(uri)} style={{ width: size * 0.68, height: size * 0.68 }} resizeMode="contain" accessibilityLabel={`${name} logo`} />
+        <Image source={{ uri }} onError={() => setFailed(uri)} style={fill ? { width: size, height: size } : { width: size * 0.68, height: size * 0.68 }} resizeMode={fill ? 'cover' : 'contain'} accessibilityLabel={`${name} logo`} />
       </View>
     );
   }

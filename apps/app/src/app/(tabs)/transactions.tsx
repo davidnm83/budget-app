@@ -3,7 +3,7 @@
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import { Sheet } from '@/components/Forms';
-import { merchantLogo, useLogos } from '@/lib/logos';
+import { merchantLogo, useLogos, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { PANEL } from '@/lib/motion';
 import { UNDER_BAR } from '@/lib/layout';
@@ -301,6 +301,7 @@ async function exportCsv(mode: Mode, filters: Filters, query: string): Promise<n
 
 function TxnRow({ t, item, showDate, onToggle, onOpen, selected }: { t: Theme; item: Row; showDate: boolean; onToggle: () => void; onOpen: () => void; selected?: boolean }) {
   const logos = useLogos();
+  const lv = useLogoVersion();
   const category = item.split_count ? `✂️ Split · ${item.split_count} parts` : item.category_name ? `${categoryIcon(item.category_name, item.category_icon)} ${item.category_name}` : null;
   return (
     <Pressable onPress={onOpen}
@@ -308,7 +309,7 @@ function TxnRow({ t, item, showDate, onToggle, onOpen, selected }: { t: Theme; i
       <Pressable accessibilityLabel={item.reviewed ? 'Mark not reviewed' : 'Mark reviewed'} hitSlop={10} onPress={onToggle} style={styles.check}>
         <Ionicons name={item.reviewed ? 'checkmark-circle' : 'ellipse-outline'} size={24} color={item.reviewed ? t.accent : t.muted} />
       </Pressable>
-      {logos && <View style={{ marginRight: 10 }}><Logo size={34} name={item.display_name} uri={merchantLogo(item.display_name)} /></View>}
+      {logos && <View style={{ marginRight: 10 }}><Logo size={34} name={item.display_name} uri={merchantLogo(item.display_name, lv)} /></View>}
       <View style={{ flex: 1, gap: 2 }}>
         <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{item.display_name}</Text>
         <Text numberOfLines={1} style={{ fontSize: 13, color: category ? t.text : t.danger }}>

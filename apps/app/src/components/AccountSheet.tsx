@@ -7,7 +7,7 @@
 // The overview is built from small blocks so they can be reused on custom pages later.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { PICTURE_HINT, pickPicture } from '@/lib/imageUpload';
-import { bankLogo, customPicture, savePicture, useLogos } from '@/lib/logos';
+import { bankLogo, customPicture, fillsCircle, savePicture, setPictureFill, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { EmojiField } from '@/components/EmojiPicker';
 import { LineChart } from '@/components/Charts';
@@ -324,7 +324,7 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
   const [payFrom, setPayFrom] = useState<string | null>(account.loan_paying_account_id ?? null);
   const [icon, setIcon] = useState(account.icon ?? '');
   const [picError, setPicError] = useState('');
-  useLogos();
+  const lv = useLogoVersion();
   const owed = account.type === 'credit' || account.type === 'loan';
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
 
@@ -369,11 +369,19 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
           <Button title={label('name', 'Save')} kind="plain" disabled={flash !== 'name' && (!name.trim() || (name === account.name && icon === (account.icon ?? '')))} onPress={() => save({ name: name.trim(), icon: icon || null }, 'Saved.', 'name')} />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 }}>
-          <Logo size={40} name={account.name} uri={customPicture(`account:${account.id}`) ?? (account.icon ? null : bankLogo(account.name))} emoji={accountIcon(account.type, account.icon)} />
-          <Button kind="plain" title={customPicture(`account:${account.id}`) ? 'Replace picture' : 'Upload a picture'} style={{ flex: 1 }}
+          <Logo size={40} name={account.name} uri={customPicture(`account:${account.id}`, lv) ?? (account.icon ? null : bankLogo(account.name, lv))} emoji={accountIcon(account.type, account.icon)} />
+          <Button kind="plain" title={customPicture(`account:${account.id}`, lv) ? 'Replace picture' : 'Upload a picture'} style={{ flex: 1 }}
             onPress={async () => { try { const img = await pickPicture(); if (img) await savePicture(`account:${account.id}`, img); } catch (e) { setPicError(e instanceof Error ? e.message : String(e)); } }} />
-          {!!customPicture(`account:${account.id}`) && <Button kind="danger" title="Remove" onPress={() => savePicture(`account:${account.id}`, null).catch(() => {})} />}
+          {!!customPicture(`account:${account.id}`, lv) && <Button kind="danger" title="Remove" onPress={() => savePicture(`account:${account.id}`, null).catch(() => {})} />}
         </View>
+        {!!customPicture(`account:${account.id}`, lv) && (
+            <Pressable onPress={() => setPictureFill(`account:${account.id}`, !fillsCircle(customPicture(`account:${account.id}`, lv)!, lv)).catch(() => {})} accessibilityRole="checkbox" accessibilityState={{ checked: fillsCircle(customPicture(`account:${account.id}`, lv)!, lv) }}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36 }}>
+              <Ionicons name={fillsCircle(customPicture(`account:${account.id}`, lv)!, lv) ? 'checkbox' : 'square-outline'} size={22} color={fillsCircle(customPicture(`account:${account.id}`, lv)!, lv) ? t.accent : t.muted} />
+              <Text style={{ color: t.text }}>Fill the circle</Text>
+              <Text style={{ color: t.muted, fontSize: 12, flex: 1 }} numberOfLines={1}>off shows the whole picture</Text>
+            </Pressable>
+          )}
         <Text style={{ color: picError ? t.danger : t.muted, fontSize: 12 }}>{picError || `A picture replaces the emoji. ${PICTURE_HINT}`}</Text>
         {!!account.official_name && account.official_name !== account.name && <Text style={{ color: t.muted, fontSize: 12 }}>The bank calls it {account.official_name}</Text>}
       </Field>

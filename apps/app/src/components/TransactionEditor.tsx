@@ -3,7 +3,7 @@
 // transactions are categorised the same way, and can apply it to unreviewed ones too (TXN-5).
 // Bank transactions keep the bank's original date and amount beside your changes (TXN-12).
 import { categoryIcon, formatMoney, normalizeDescription, parseMoney, round2, searchPattern, shortDate, toIsoDate } from '@budget-app/core';
-import { merchantLogo } from '@/lib/logos';
+import { merchantLogo, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -23,6 +23,7 @@ import type { Category, Txn } from '@/lib/types';
  */
 export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: () => void; onOpen?: (id: string) => void }) {
   const t = useTheme();
+  const lv = useLogoVersion();
   // Paint from the list row that was tapped (when there is one) while the full record loads;
   // saving waits for the full record.
   const seed = useMemo(() => peekTxn(id), [id]);
@@ -185,7 +186,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <Card style={{ gap: 4 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Logo size={40} name={txn.merchant || txn.name || '?'} uri={merchantLogo(merchant.trim() || txn.merchant || txn.name)} />
+          <Logo size={40} name={txn.merchant || txn.name || '?'} uri={merchantLogo(merchant.trim() || txn.merchant || txn.name, lv)} />
           <Text style={{ color: t.text, fontSize: 28, fontWeight: '700' }}>{formatMoney(Number(txn.amount), txn.currency)}</Text>
         </View>
         <Text style={{ color: t.muted }}>{shortDate(txn.date)} · {txn.accounts?.name}</Text>
