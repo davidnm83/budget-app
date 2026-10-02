@@ -1,6 +1,6 @@
 // What a chart widget can show. Each source turns the account's data into the same shape, so
 // any view (bars, line, pie, list, table, tiles) can draw it and a tap can open what's behind it.
-import { addDays, addMonths, balanceHistory, daysBetween, categoryIcon, formatMoney, monthEnd, platformByKey, shortDate, totalsByPlatform } from '@budget-app/core';
+import { addDays, addMonths, balanceHistory, daysBetween, monthOf, categoryIcon, formatMoney, monthEnd, platformByKey, shortDate, totalsByPlatform } from '@budget-app/core';
 import type { TxnQuery } from '@/components/TxnSheet';
 import { loadTxnsFor } from './accountTxns';
 import { loadShifts } from './gig';
@@ -44,11 +44,23 @@ export function cfgCategories(cfg: ChartCfg, cats: Category[]): Category[] {
   return [];
 }
 
-/** `anchor` is the month a page is showing (Budget); periods then end at that month, not this one. */
-export async function loadChart(cfg: ChartCfg, anchor?: string): Promise<ChartData> {
-  const n = cfg.months ?? 6;
-  const past = !!anchor && anchor < thisMonth();
-  const cur = anchor ?? thisMonth(), first = addMonths(cur, -(n - 1)), now = today();
+/**
+ * `anchor` is the month a page is showing (Budget); periods then end at that month, not this one.
+ * `range` is a page's date range (Reports): the chart covers the months it spans (whole months,
+ * at most the last 24), whatever period the widget was set to.
+ */
+export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: string; to: string }): Promise<ChartData> {
+  const now = today();
+  let n = cfg.months ?? 6;
+  let cur = anchor ?? thisMonth();
+  if (range) {
+    cur = monthOf(range.to && range.to < now ? range.to : now);
+    const floor = addMonths(cur, -23);
+    const start = !range.from || monthOf(range.from) < floor ? floor : monthOf(range.from);
+    n = 1; for (let m = start; m < cur; m = addMonths(m, 1)) n++;
+  }
+  const past = cur < thisMonth();
+  const first = addMonths(cur, -(n - 1));
   const months = Array.from({ length: n }, (_, i) => addMonths(first, i));
   const period = past ? (n === 1 ? monthShort(cur) : `${n} months to ${monthShort(cur)}`) : n === 1 ? 'this month' : `last ${n} months`;
   const base = { labels: months.map(monthShort), period, from: first, to: monthEnd(cur) };
@@ -59,17 +71,18 @@ export async function loadChart(cfg: ChartCfg, anchor?: string): Promise<ChartDa
     const picked = cfgCategories(cfg, cats);
     const scope = picked.length ? picked : cats.filter((c) => c.kind === 'expense');
     const byId = new Map(scope.map((c) => [c.id, c]));
-    const mine = rows.filter((r) => r.category_id && byId.has(r.category_id) && r.kind !== 'transfer');
+    // With no categories chosen it is all spending, so spending with no category counts too.
+    const mine = rows.filter((r) => r.kind !== 'transfer' && (r.category_id ? byId.has(r.category_id) : !picked.length && r.kind === 'expense'));
     const values = months.map((m) => -mine.filter((r) => r.month === m).reduce((s, r) => s + r.total, 0));
     const by = new Map<string, number>();
-    for (const r of mine) by.set(r.category_id!, (by.get(r.category_id!) ?? 0) - r.total);
+    for (const r of mine) by.set(r.category_id ?? 'none', (by.get(r.category_id ?? 'none') ?? 0) - r.total);
     const prior = values.slice(0, -1);
     const ids = scope.map((c) => c.id);
     return {
       ...base,
       series: [{ name: 'Spending', values }],
       breakdown: [...by.entries()].filter(([, v]) => v > 0.5).sort((a, b) => b[1] - a[1])
-        .map(([id, value]) => { const c = byId.get(id)!; return { label: `${categoryIcon(c.name, c.icon)} ${c.name}`, value, query: { categoryIds: [id], noTransfers: true } }; }),
+        .map(([id, value]) => { const c = byId.get(id); return c ? { label: `${categoryIcon(c.name, c.icon)} ${c.name}`, value, query: { categoryIds: [id], noTransfers: true } } : { label: '❔ Uncategorised', value, query: { category: 'none', noTransfers: true } }; }),
       tiles: [
         { label: past ? monthShort(cur) : 'This month', value: money0(values[n - 1]) },
         { label: `Average · ${prior.length || 1} mo`, value: money0(avg(prior.length ? prior : values)), sub: 'per month' },

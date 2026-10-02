@@ -2,6 +2,8 @@
 // spending by merchant, for a chosen date range; tap anything for its transactions. Plus your own
 // tabs, each a set of widgets you pick (kept in user_prefs.report_tabs).
 import { PAGE_MAX } from '@/lib/layout';
+import { makeEntry } from '@/components/Widgets';
+import { PageBoard } from '@/components/PageBoard';
 import { EmptyState } from '@/components/States';
 import { DateRangeButton, rangeByKey, type Range } from '@/components/DateRange';
 import { usePullRefresh } from '@/lib/pullRefresh';
@@ -109,9 +111,19 @@ export default function Reports() {
             </Pressable>} />
         </>
       )}
-      {tab === 'categories' && <ByCategory t={t} cats={cats} rows={rows} open={open} />}
-      {tab === 'cashflow' && <CashFlow t={t} months={months} sources={sources} open={open} />}
-      {tab === 'merchants' && <ByMerchant t={t} list={merchants} open={open} />}
+      {/* The built-in tabs are layouts too: their own blocks first, plus any widget you add. Charts follow the dates above. */}
+      {tab === 'categories' && (
+        <PageBoard key="rc" page="reports:categories" refresh={refresh} range={range} defaults={[makeEntry('chart', { source: 'spending', view: 'pie', title: 'Spending by category' }), 'rep:categories']}
+          blocks={[{ key: 'rep:categories', title: 'Spending by category', about: 'Every group and category for the dates chosen', render: () => <View style={{ gap: 10 }}><ByCategory t={t} cats={cats} rows={rows} open={open} /></View> }]} />
+      )}
+      {tab === 'cashflow' && (
+        <PageBoard key="rf" page="reports:cashflow" refresh={refresh} range={range} defaults={[makeEntry('chart', { source: 'cashflow', view: 'bars', title: 'Money in and out', w: 'full' }), makeEntry('rep:cashflow', { w: 'full' })]}
+          blocks={[{ key: 'rep:cashflow', title: 'Cash flow by month', about: 'Income, spending and net each month, and income by source', render: () => <View style={{ gap: 10 }}><CashFlow t={t} months={months} sources={sources} open={open} /></View> }]} />
+      )}
+      {tab === 'merchants' && (
+        <PageBoard key="rm" page="reports:merchants" refresh={refresh} range={range} defaults={[makeEntry('rep:merchants', { w: 'full' })]}
+          blocks={[{ key: 'rep:merchants', title: 'Spending by merchant', about: 'Where the money went, biggest first', render: () => <View style={{ gap: 10 }}><ByMerchant t={t} list={merchants} open={open} /></View> }]} />
+      )}
     </ScrollView>
     {txnSheet}
     {editTab && (

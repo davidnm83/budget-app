@@ -3,8 +3,9 @@
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import { Sheet } from '@/components/Forms';
+import { Tile } from '@/components/Tile';
 import { ROW } from '@/lib/layout';
-import { EmptyState, RowsSkeleton } from '@/components/States';
+import { EmptyState, PageSkeleton, RowsSkeleton } from '@/components/States';
 import { ALL_TIME, DateRangeBody, type Range } from '@/components/DateRange';
 import { toast } from '@/lib/toast';
 import { usePullRefresh } from '@/lib/pullRefresh';
@@ -26,7 +27,7 @@ import { FlatList, Modal, Platform, Pressable, RefreshControl, ScrollView, Secti
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MultiPicker } from '@/components/Picker';
 import { IconButton, TopBar } from '@/components/TopBar';
-import { Button, Chip, Empty } from '@/components/ui';
+import { Bar, Card, Button, Chip, Empty } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { useTheme, type Theme } from '@/lib/theme';
@@ -231,6 +232,7 @@ export default function Transactions() {
           <TransactionEditor key={sel} id={sel} onOpen={setSel} onDone={() => { setSel(null); reload(); }} />
         </Sheet>
       )}
+      {wide && !sel && <FilterSummary t={t} mode={mode} filters={filters} query={query} stamp={rows.length} />}
       {wide && sel && (
         <View style={[styles.side, PANEL, { borderColor: t.line, backgroundColor: t.bg }]}>
           <View style={[styles.sideHead, { borderColor: t.line }]}>
@@ -421,6 +423,65 @@ const Label = ({ t, text }: { t: Theme; text: string }) => (
 );
 
 const COLUMN = { width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' } as const;
+
+/** Wide screens, nothing selected: what the current view adds up to, and where it went by category. */
+function FilterSummary({ t, mode, filters, query, stamp }: { t: Theme; mode: Mode; filters: Filters; query: string; stamp: number }) {
+  const [sum, setSum] = useState<{ n: number; inn: number; out: number; cats: [string, number][]; capped: boolean } | null>(null);
+  useEffect(() => {
+    let live = true;
+    setSum(null);
+    (async () => {
+      const all: { amount: number; category_name: string | null; is_transfer: boolean }[] = [];
+      for (let p = 0; p < 10; p++) {
+        const { data } = await filtered(supabase.from('transaction_list').select('amount, category_name, is_transfer'), mode, filters, query).range(p * 1000, p * 1000 + 999);
+        all.push(...((data ?? []) as any[]));
+        if (!data || data.length < 1000) break;
+      }
+      if (!live) return;
+      const real = all.filter((r) => !r.is_transfer);
+      const by = new Map<string, number>();
+      for (const r of real) if (Number(r.amount) < 0) by.set(r.category_name ?? 'Uncategorised', (by.get(r.category_name ?? 'Uncategorised') ?? 0) - Number(r.amount));
+      setSum({
+        n: all.length, capped: all.length >= 10000,
+        inn: real.filter((r) => Number(r.amount) > 0).reduce((x, r) => x + Number(r.amount), 0),
+        out: -real.filter((r) => Number(r.amount) < 0).reduce((x, r) => x + Number(r.amount), 0),
+        cats: [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10),
+      });
+    })();
+    return () => { live = false; };
+  }, [mode, JSON.stringify(filters), query, stamp === 0]);
+  const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
+  return (
+    <ScrollView style={[styles.side, { borderColor: t.line }]} contentContainerStyle={{ padding: 14, gap: 12 }}>
+      <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>THIS VIEW</Text>
+      {!sum ? <PageSkeleton tiles={2} cards={1} /> : (
+        <>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            <Tile t={t} label="Transactions" value={`${sum.n.toLocaleString()}${sum.capped ? '+' : ''}`} />
+            <Tile t={t} label="Net" value={`${sum.inn - sum.out < 0 ? '−' : '+'}${money0(Math.abs(sum.inn - sum.out))}`} color={sum.inn - sum.out < 0 ? t.series2 : t.accent} />
+            <Tile t={t} label="Money in" value={money0(sum.inn)} />
+            <Tile t={t} label="Money out" value={money0(sum.out)} />
+          </View>
+          {sum.cats.length > 0 && (
+            <Card style={{ gap: 8 }}>
+              <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>WHERE IT WENT</Text>
+              {sum.cats.map(([name, v]) => (
+                <View key={name} style={{ gap: 3 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+                    <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{name}</Text>
+                    <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{money0(v)}</Text>
+                  </View>
+                  <Bar value={v} max={sum.cats[0][1]} color={t.series1} height={5} />
+                </View>
+              ))}
+            </Card>
+          )}
+          <Text style={{ color: t.muted, fontSize: 12 }}>Transfers between your accounts are left out of the totals. Select a transaction to see its details here.</Text>
+        </>
+      )}
+    </ScrollView>
+  );
+}
 const styles = StyleSheet.create({
   side: { width: 420, borderLeftWidth: 1 },
   sideHead: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },

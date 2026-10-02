@@ -12,7 +12,7 @@ import { useTheme } from '@/lib/theme';
 
 export interface Block { key: string; title: string; about: string; render: () => ReactNode }
 
-export function PageBoard({ page, blocks, defaults, refresh }: { page: string; blocks: Block[]; defaults: string[]; refresh: number }) {
+export function PageBoard({ page, blocks, defaults, refresh, range }: { page: string; blocks: Block[]; defaults: string[]; refresh: number; range?: { from: string; to: string } }) {
   const t = useTheme();
   const [all, setAll] = useState<Record<string, string[]> | null>(null);
   const [editing, setEditing] = useState(false);
@@ -25,7 +25,7 @@ export function PageBoard({ page, blocks, defaults, refresh }: { page: string; b
   };
   const defs: WidgetDef[] = blocks.map((b) => ({ key: b.key, title: b.title, about: b.about, home: false, budget: false }));
   return (
-    <WidgetBoard place="page" entries={entries} refresh={refresh} editing={editing} onEditing={setEditing} onChange={save} blocks={defs}
+    <WidgetBoard place="page" entries={entries} refresh={refresh} range={range} editing={editing} onEditing={setEditing} onChange={save} blocks={defs}
       special={(k) => { const b = blocks.find((x) => x.key === k); return b ? b.render() ?? <></> : undefined; }}
       extra={all[page] ? (
         <Pressable onPress={() => save(null)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: t.line, borderRadius: 20, paddingHorizontal: 14, minHeight: 40 }}>

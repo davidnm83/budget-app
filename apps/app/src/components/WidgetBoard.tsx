@@ -16,10 +16,12 @@ import { afterClose } from '@/lib/useBackToClose';
 
 const HOME_ONLY = ['review', 'week', 'budget', 'networth'];
 
-export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing, onEditing, special, extra, blocks = [] }: {
+export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, editing, onEditing, special, extra, blocks = [] }: {
   entries: string[]; onChange: (next: string[]) => void; place: 'home' | 'page' | 'budget' | 'report'; refresh: number;
   /** The month the page is showing, for widgets that follow it. */
   anchor?: string;
+  /** The date range the page is showing (Reports), for charts.  */
+  range?: { from: string; to: string };
   editing: boolean; onEditing: (v: boolean) => void;
   /** Widgets the page draws itself from data it already has (Overview's four). */
   special?: (key: string) => ReactNode | undefined;
@@ -93,7 +95,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing
                 </View>
               )}
               <View style={[{ flexGrow: 1 }, editing && { opacity: drag === i ? 0.4 : 1 }]} pointerEvents={editing ? 'none' : 'auto'}>
-                {special?.(k) != null ? <TitleOverride.Provider value={cfg.title || undefined}>{special(k)}</TitleOverride.Provider> : <Widget k={e} refresh={refresh} anchor={anchor} />}
+                {special?.(k) != null ? <TitleOverride.Provider value={cfg.title || undefined}>{special(k)}</TitleOverride.Provider> : <Widget k={e} refresh={refresh} anchor={anchor} range={range} />}
               </View>
             </Cell>
           );

@@ -2,6 +2,7 @@
 // (or merge it into another by giving it that name) and the change is remembered as a rule, so
 // future transactions from the bank get the same name.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Tile } from '@/components/Tile';
 import { ROW } from '@/lib/layout';
 import { EmptyState, RowsSkeleton } from '@/components/States';
 import { ALL_TIME, DateRangeButton, type Range } from '@/components/DateRange';
@@ -15,13 +16,13 @@ import { UNDER_BAR } from '@/lib/layout';
 import { addMonths, formatMoney, monthEnd, monthOf, shortDate } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, TextInput, View, ScrollView } from 'react-native';
 import { DateField } from '@/components/DateField';
 import { Field, Sheet } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
 import { useTxnSheet } from '@/components/TxnSheet';
-import { Button, Chip, Segmented } from '@/components/ui';
-import { PAGE_MAX, TYPE } from '@/lib/layout';
+import { Bar, Card, Button, Chip, Segmented } from '@/components/ui';
+import { PAGE_MAX, TYPE, useWide } from '@/lib/layout';
 import { loadAccounts, today } from '@/lib/plan';
 import type { Account } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
@@ -31,6 +32,7 @@ interface M { merchant: string; txns: number; total: number; last_date: string }
 
 export default function Merchants() {
   const t = useTheme();
+  const wide = useWide();
   const [rows, setRows] = useState<M[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState('');
@@ -122,6 +124,8 @@ export default function Merchants() {
         <Segmented value={sort} onChange={setSort} options={[{ value: 'count', label: 'Most used' }, { value: 'recent', label: 'Recent' }, { value: 'name', label: 'A–Z' }]} />
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       </View>
+      <View style={[{ flex: 1 }, wide && styles.split]}>
+      <View style={{ flex: 1 }}>
       <FlatList data={shown} keyExtractor={(r) => r.merchant} contentContainerStyle={styles.list}
         ListEmptyComponent={loaded ? <EmptyState icon="storefront-outline" title={q.trim() ? 'No merchants match' : 'No merchants yet'} text={q.trim() ? 'Try a shorter search or a wider date range.' : 'They appear here once you have transactions.'} /> : <RowsSkeleton />}
         renderItem={({ item }) => (
@@ -135,6 +139,9 @@ export default function Merchants() {
             <Text style={[ROW.amount, { color: item.total > 0 ? t.positive : t.text }]}>{formatMoney(item.total)}</Text>
           </Pressable>
         )} />
+      </View>
+      {wide && <TopPane t={t} rows={rows} label={range.label} />}
+      </View>
       {edit && (
         <Sheet title="Merchant" onClose={() => setEdit(null)} footer={<Button title={merging ? `Merge into ${merging.merchant}` : 'Save name'} onPress={save} busy={busy} disabled={!target} />}>
           <Field t={t} label="Name" hint={merging ? `“${merging.merchant}” already exists: these ${edit.txns} transactions will join its ${merging.txns}.` : 'Renames it on every transaction (not only the ones in the filter) and on new ones from the bank.'}>
@@ -189,7 +196,41 @@ function FilterButton({ t, icon, label, on, onPress }: { t: Theme; icon: keyof t
   );
 }
 
+/** Wide screens: the biggest merchants for the current dates and accounts. */
+function TopPane({ t, rows, label }: { t: Theme; rows: M[]; label: string }) {
+  const lv = useLogoVersion();
+  const spent = rows.filter((r) => r.total < 0).sort((a, b) => a.total - b.total);
+  const out = -spent.reduce((s, r) => s + r.total, 0), inn = rows.filter((r) => r.total > 0).reduce((s, r) => s + r.total, 0);
+  const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
+  return (
+    <ScrollView style={{ width: 380 }} contentContainerStyle={{ paddingRight: 12, paddingBottom: UNDER_BAR, gap: 12 }}>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        <Tile t={t} label="Merchants" value={rows.length.toLocaleString()} sub={label} />
+        <Tile t={t} label="Spent" value={money0(out)} />
+        <Tile t={t} label="Received" value={money0(inn)} />
+      </View>
+      {spent.length > 0 && (
+        <Card style={{ gap: 9 }}>
+          <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>WHERE THE MOST WENT</Text>
+          {spent.slice(0, 12).map((r) => (
+            <View key={r.merchant} style={{ gap: 3 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Logo size={20} name={r.merchant} uri={merchantLogo(r.merchant, lv)} />
+                <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{r.merchant}</Text>
+                <Text style={{ color: t.muted, fontSize: 12 }}>{out ? Math.round((-r.total / out) * 100) : 0}%</Text>
+                <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'], minWidth: 60, textAlign: 'right' }}>{money0(-r.total)}</Text>
+              </View>
+              <Bar value={-r.total} max={-spent[0].total} color={t.series1} height={5} />
+            </View>
+          ))}
+        </Card>
+      )}
+    </ScrollView>
+  );
+}
+
 const styles = StyleSheet.create({
+  split: { flexDirection: 'row', gap: 12, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   filter: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, minHeight: 38, maxWidth: 220 },
   head: { padding: 12, gap: 8, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },

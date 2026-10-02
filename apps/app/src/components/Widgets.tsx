@@ -103,19 +103,19 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): { data: T | nul
 
 /** One of the self-loading widgets by key (the four Home cards are drawn by Home itself). */
 /** `anchor`: the month the page is showing; widgets that can follow it do (charts, bills calendar, spending by group). */
-export function Widget(props: { k: string; refresh?: number; anchor?: Month }) {
+export function Widget(props: { k: string; refresh?: number; anchor?: Month; range?: { from: string; to: string } }) {
   const [k, cfg] = parseEntry(props.k);
   // Charts and accounts use their title themselves; for the rest it replaces the card's heading.
   const own = k === 'chart' || k === 'spend' || k === 'account';
   return <TitleOverride.Provider value={own ? undefined : cfg.title || undefined}><WidgetBody {...props} /></TitleOverride.Provider>;
 }
 
-function WidgetBody({ k: entry, refresh = 0, anchor }: { k: string; refresh?: number; anchor?: Month }) {
+function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refresh?: number; anchor?: Month; range?: { from: string; to: string } }) {
   const t = useTheme();
   const [k, cfg] = parseEntry(entry);
   switch (k) {
-    case 'spend': return <ChartWidget t={t} refresh={refresh} cfg={{ source: 'spending', ...cfg }} anchor={anchor} />; // the older name for a spending chart
-    case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} anchor={anchor} />;
+    case 'spend': return <ChartWidget t={t} refresh={refresh} cfg={{ source: 'spending', ...cfg }} anchor={anchor} range={range} />; // the older name for a spending chart
+    case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} anchor={anchor} range={range} />;
     case 'account': return <AccountWidget t={t} refresh={refresh} cfg={cfg} />;
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
@@ -133,13 +133,13 @@ function WidgetBody({ k: entry, refresh = 0, anchor }: { k: string; refresh?: nu
 const HEIGHTS = { s: 96, m: 150, l: 230 } as const;
 
 /** Any chart widget: a source of data drawn as bars, a line, a pie, a ranked list, a table or plain numbers. */
-function ChartWidget({ t, refresh, cfg, anchor }: { t: Theme; refresh: number; cfg: WidgetCfg; anchor?: Month }) {
+function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: number; cfg: WidgetCfg; anchor?: Month; range?: { from: string; to: string } }) {
   const [showTxns, txnSheet] = useTxnSheet();
   const source: Source = cfg.source ?? 'spending';
   const allowed = SOURCES[source].views;
   const want: ChartView = cfg.view ?? cfg.chart ?? allowed[0];
   const view = allowed.includes(want) ? want : allowed[0];
-  const { data, error } = useLoad(() => loadChart(cfg, anchor), [refresh, JSON.stringify(cfg), anchor]);
+  const { data, error } = useLoad(() => loadChart(cfg, anchor, range), [refresh, JSON.stringify(cfg), anchor, range?.from, range?.to]);
   const title = cfg.title || cfg.group || SOURCES[source].title;
   if (!data) return <CardShell t={t} title={title}>{error ? <Text style={{ color: t.danger }}>{error}</Text> : <Skeleton color={t.track} />}</CardShell>;
   const h = HEIGHTS[cfg.h ?? 'm'];
