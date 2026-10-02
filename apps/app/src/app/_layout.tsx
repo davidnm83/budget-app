@@ -1,7 +1,7 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { MenuButton, Sidebar } from '@/components/Menu';
 import { useScheme } from '@/lib/theme';
 import { SessionProvider, useSession } from '@/lib/session';
@@ -46,8 +46,24 @@ function RootStack() {
   );
 }
 
+// Chrome on Android adds a row above the keyboard (passwords, cards, addresses) for any field it
+// thinks it could fill in. Nothing here is that kind of field, so say so on every one except sign-in.
+function useNoAutofill() {
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    // React Native's text fields say autocomplete="on" unless told otherwise; sign-in names its fields, so it's left alone.
+    const fix = (el: Element) => { if (/^(INPUT|TEXTAREA)$/.test(el.tagName) && (el.getAttribute('autocomplete') ?? 'on') === 'on') el.setAttribute('autocomplete', 'off'); };
+    const mark = (root: ParentNode) => root.querySelectorAll?.('input, textarea').forEach(fix);
+    mark(document);
+    const obs = new MutationObserver((list) => list.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) { fix(n as Element); mark(n as Element); } })));
+    obs.observe(document.body, { childList: true, subtree: true });
+    return () => obs.disconnect();
+  }, []);
+}
+
 export default function RootLayout() {
   const scheme = useScheme();
+  useNoAutofill();
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       <SessionProvider>
