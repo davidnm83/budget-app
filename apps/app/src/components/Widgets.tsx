@@ -210,7 +210,7 @@ function AccountWidget({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: Wi
         {loan && <Mini t={t} label="Interest to date" value={money0(loan.interestToDate)} sub={`paid ${money0(loan.paymentsToDate)}`} />}
       </View>
       {txns.length > 0 && (
-        <BalanceChart t={t} height={cfg.h === 's' ? 64 : cfg.h === 'l' ? 180 : 100} points={balanceHistory(signedBalance(a), txns.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)}
+        <BalanceChart t={t} owed={a.type === 'loan' || a.type === 'credit'} height={cfg.h === 's' ? 64 : cfg.h === 'l' ? 180 : 100} points={balanceHistory(signedBalance(a), txns.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)}
           onPick={(from, to) => showTxns({ title: `${a.name} · week of ${shortDate(from)}`, from, to, accountIds: [a.id] })} />
       )}
     </CardShell>

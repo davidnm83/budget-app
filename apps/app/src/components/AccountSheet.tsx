@@ -112,7 +112,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
                 {account.type === 'depository' && <CashBlock t={t} a={account} txns={history} onClose={onClose}
                   onMonth={(m) => showTxns({ title: `${account.name} · ${monthName(m)}`, from: m, to: monthEnd(m), accountIds: [account.id] })} />}
                 {account.current_balance != null && history.length > 0 && (
-                  <BalanceChart t={t} points={balanceHistory(signedBalance(account), history.filter((x) => x.date >= addDays(today(), -371)), today(), 53, 7)}
+                  <BalanceChart t={t} owed={account.type === 'loan' || account.type === 'credit'} points={balanceHistory(signedBalance(account), history.filter((x) => x.date >= addDays(today(), -371)), today(), 53, 7)}
                     onPick={(from, to) => showTxns({ title: `${account.name} · week of ${shortDate(from)}`, from, to, accountIds: [account.id] })} />
                 )}
               </>
@@ -497,16 +497,18 @@ const Small = ({ t, label, value, onChange }: { t: Theme; label: string; value: 
 );
 
 /** Weekly balance as a line. Hover or tap reads out a week; with `onPick`, a second tap opens that week's transactions. */
-export function BalanceChart({ t, points, title = 'BALANCE, PAST YEAR', onPick, height = 110 }: { height?: number; t: Theme; points: { date: string; balance: number }[]; title?: string; onPick?: (from: string, to: string) => void }) {
+export function BalanceChart({ t, points, title, onPick, height = 110, owed }: { owed?: boolean; height?: number; t: Theme; points: { date: string; balance: number }[]; title?: string; onPick?: (from: string, to: string) => void }) {
   if (!points.length) return null;
+  // Debts are drawn as the amount owed, so paying one down makes the line go down.
+  const val = (b: number) => (owed ? -b : b);
   const last = points[points.length - 1];
   return (
     <View style={{ gap: 6 }}>
       <View style={styles.between}>
-        <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title}</Text>
-        <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>now {formatMoney(last.balance)}</Text>
+        <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title ?? (owed ? 'OWED, PAST YEAR' : 'BALANCE, PAST YEAR')}</Text>
+        <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>now {formatMoney(val(last.balance))}</Text>
       </View>
-      <LineChart t={t} height={height} labels={points.map((p) => shortDate(p.date))} series={[{ name: 'Balance', values: points.map((p) => p.balance) }]} format={money0}
+      <LineChart t={t} height={height} labels={points.map((p) => shortDate(p.date))} series={[{ name: owed ? 'Owed' : 'Balance', values: points.map((p) => val(p.balance)) }]} format={money0}
         onPick={onPick ? (i) => onPick(i > 0 ? addDays(points[i - 1].date, 1) : addDays(points[i].date, -6), points[i].date) : undefined} />
     </View>
   );

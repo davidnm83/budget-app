@@ -66,8 +66,8 @@ export default function Loans() {
                 <LoanBlock t={t} a={loan} txns={mine} />
               </View>
             ) },
-            { key: 'loan:chart', title: 'Balance, past year', about: 'The loan balance week by week', render: () => (mine.length > 0 ? (
-              <Card><BalanceChart t={t} points={balanceHistory(signedBalance(loan), mine.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)}
+            { key: 'loan:chart', title: 'Owed, past year', about: 'What is left on the loan, week by week', render: () => (mine.length > 0 ? (
+              <Card><BalanceChart t={t} owed points={balanceHistory(signedBalance(loan), mine.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)}
                 onPick={(from, to) => showTxns({ title: `${loan.name} · week of ${shortDate(from)}`, from, to, accountIds: [loan.id] })} /></Card>
             ) : null) },
             { key: 'loan:payments', title: 'Payments', about: 'Every payment made on the loan', render: () => <List t={t} title="Payments" rows={mine.filter((x) => x.amount > 0)} /> },

@@ -11,6 +11,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { peekCategories, peekTxn, storeCategories } from '@/lib/txnCache';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { SinglePicker } from '@/components/Picker';
+import { SuggestInput } from '@/components/SuggestInput';
+import { forgetKnown, knownMerchants, knownTags } from '@/lib/known';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Button, Card } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
@@ -35,6 +37,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   const [categoryId, setCategoryId] = useState<string | null>(seed?.category_id ?? null);
   const [notes, setNotes] = useState(seed?.notes ?? '');
   const [tags, setTags] = useState((seed?.tags ?? []).join(', '));
+  const [known, setKnown] = useState<{ merchants: string[]; tags: string[] }>({ merchants: [], tags: [] });
+  useEffect(() => { Promise.all([knownMerchants(), knownTags()]).then(([m, g]) => setKnown({ merchants: m, tags: g })).catch(() => {}); }, []);
   const [date, setDate] = useState(seed?.date ?? '');
   const [amount, setAmount] = useState(seed ? Number(seed.amount).toFixed(2) : '');
   const picked = useRef(false); // a category chosen before the full record arrived is kept
@@ -183,6 +187,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     const before = { merchant: txn.merchant, category_id: txn.category_id, category_source: txn.category_source, notes: txn.notes, tags: txn.tags ?? [], date: txn.date, amount: txn.amount,
       reviewed: txn.reviewed, is_transfer: txn.is_transfer, original_date: txn.original_date ?? null, original_amount: txn.original_amount ?? null };
     const id = txn.id;
+    forgetKnown();
     toast('Saved', split || hadSplit ? {} : { undo: async () => { const r = await supabase.from('transactions').update(before).eq('id', id); if (r.error) throw new Error(r.error.message); } });
     onDone();
   };
@@ -227,7 +232,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       </View>
 
       <Text style={[styles.label, { color: t.muted }]}>Merchant</Text>
-      <TextInput style={input} value={merchant} onChangeText={setMerchant} placeholder="e.g. Corner Market" placeholderTextColor={t.muted} />
+      <SuggestInput style={input} value={merchant} onChange={setMerchant} options={known.merchants} placeholder="Search your merchants or type a new name" />
 
       <View style={[styles.ruleRow, { marginTop: 16 }]}>
         <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>{split ? 'Split across categories' : 'Category'}</Text>
@@ -293,7 +298,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       <TextInput style={[input, { minHeight: 60 }]} value={notes} onChangeText={setNotes} multiline />
 
       <Text style={[styles.label, { color: t.muted }]}>Tags (comma-separated)</Text>
-      <TextInput style={input} value={tags} onChangeText={setTags} placeholder="e.g. trip, reimbursable" placeholderTextColor={t.muted} autoCapitalize="none" />
+      <SuggestInput multi style={input} value={tags} onChange={setTags} options={known.tags} placeholder="e.g. trip, reimbursable" />
 
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <Button title="Save and mark reviewed" onPress={save} busy={busy || !ready} style={{ marginTop: 16 }} />
