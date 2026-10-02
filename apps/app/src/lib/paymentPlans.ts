@@ -10,7 +10,8 @@
 //  • The one-time fee and each month's interest are added as charges on the card, unless the
 //    plan says the statement already lists them.
 // Generated transactions carry import_id "plan:<plan id>:…", which is how they are found again.
-import { currency, planSchedule, type PaymentPlan } from '@budget-app/core';
+import * as core from '@budget-app/core';
+import { planSchedule, type PaymentPlan } from '@budget-app/core';
 import { isOffline } from './offline';
 import { today } from './plan';
 import { supabase } from './supabase';
@@ -67,12 +68,14 @@ export async function syncPlans(plans?: CardPlan[]): Promise<number> {
   const { data: have, error } = await supabase.from('transactions').select('import_id').like('import_id', 'plan:%');
   fail(error);
   const done = new Set((have ?? []).map((r: any) => r.import_id as string));
+  // Installs with a currency setting stamp it on each row; ones without leave it to the database's default.
+  const money = typeof (core as any).currency === 'function' ? { currency: (core as any).currency() as string } : {};
   let cat: string | null = null, added = 0;
   for (const p of list) {
     const schedule = planSchedule(p);
     for (const x of schedule) {
       if (x.date > now || (p.countFrom && x.date < p.countFrom)) continue;
-      const base = { account_id: p.accountId, date: x.date, currency: currency(), merchant: p.description, category_source: 'manual', reviewed: true, reviewed_at: new Date().toISOString(), source: 'manual' };
+      const base = { account_id: p.accountId, date: x.date, ...money, merchant: p.description, category_source: 'manual', reviewed: true, reviewed_at: new Date().toISOString(), source: 'manual' };
       const key = `plan:${p.id}:${x.n}`;
       if (!done.has(key)) {
         cat ??= await planCategory();
