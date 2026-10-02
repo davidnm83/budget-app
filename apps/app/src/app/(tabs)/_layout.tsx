@@ -18,7 +18,7 @@ export default function TabLayout() {
   return (
     <Tabs tabBar={wide ? () => null : undefined}
       screenOptions={{ headerShown: false, tabBarActiveTintColor: t.accent, sceneStyle: { backgroundColor: t.bg }, tabBarPosition: wide ? 'top' : 'bottom', tabBarStyle: { backgroundColor: t.card, borderTopColor: t.line, height: 62 + insets.bottom, paddingTop: 6 }, tabBarInactiveTintColor: t.muted, tabBarLabelStyle: { fontSize: 10, fontWeight: '600', letterSpacing: -0.1 }, tabBarBadgeStyle: { backgroundColor: t.danger, color: '#fff', fontSize: 10, fontWeight: '700', minWidth: 17, height: 17, lineHeight: 16 } }}>
-      <Tabs.Screen name="index" options={{ title: 'Home', tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? 'home' : 'home-outline'} color={color} size={23} /> }} />
+      <Tabs.Screen name="index" options={{ title: 'Overview', tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? 'home' : 'home-outline'} color={color} size={23} /> }} />
       <Tabs.Screen name="transactions" options={{ title: 'Transactions', tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? 'list' : 'list'} color={color} size={23} /> }} />
       <Tabs.Screen name="planner" options={{ title: 'Planner', tabBarBadge: overdue || undefined, tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? 'calendar' : 'calendar-outline'} color={color} size={23} /> }} />
       <Tabs.Screen name="budget" options={{ title: 'Budget', tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? 'pie-chart' : 'pie-chart-outline'} color={color} size={23} /> }} />

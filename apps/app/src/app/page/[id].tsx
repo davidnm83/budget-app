@@ -4,9 +4,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Columns } from '@/components/Columns';
-import { Card, Empty } from '@/components/ui';
-import { makeEntry, Widget, WidgetPicker } from '@/components/Widgets';
+import { Sheet } from '@/components/Forms';
+import { Button, Card, Empty } from '@/components/ui';
+import { WidgetBoard } from '@/components/WidgetBoard';
+import { makeEntry } from '@/components/Widgets';
 import { PAGE_MAX } from '@/lib/layout';
 import { loadPrefs, savePrefs, type Page } from '@/lib/prefs';
 import { useTheme } from '@/lib/theme';
@@ -29,6 +30,7 @@ export default function CustomPage() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [pages, setPages] = useState<Page[] | null>(null);
   const [editing, setEditing] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('');
   const [refresh, setRefresh] = useState(0);
@@ -40,6 +42,7 @@ export default function CustomPage() {
   const page = pages?.find((p) => p.id === id) ?? null;
   const save = async (next: Page[]) => { await savePrefs({ pages: next }); setPages(next); };
   const create = async (tpl: (typeof TEMPLATES)[number]) => {
+    setEditing(!tpl.widgets.length); // a blank page opens ready to add widgets
     const p: Page = { id: `p${Date.now().toString(36)}`, name: tpl.name === 'Blank page' ? 'My page' : tpl.name, icon: tpl.icon, widgets: tpl.widgets };
     try { await save([...(pages ?? []), p]); router.replace(`/page/${p.id}` as any); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
@@ -73,22 +76,24 @@ export default function CustomPage() {
       {pages && !page && <Empty text="This page no longer exists." />}
       {page && (
         <>
-          <Columns>{page.widgets.map((k, i) => <Widget key={`${i}:${k}`} k={k} refresh={refresh} />)}</Columns>
-          {!page.widgets.length && <Empty text="No widgets on this page yet." />}
-          <Pressable onPress={() => { setName(page.name); setIcon(page.icon); setEditing(true); }} style={styles.edit}>
-            <Ionicons name="options-outline" size={16} color={t.accent} /><Text style={{ color: t.accent }}>Edit this page</Text>
-          </Pressable>
+          <WidgetBoard place="page" entries={page.widgets} refresh={refresh} editing={editing} onEditing={setEditing}
+            onChange={(next) => save(pages!.map((p) => (p.id === page.id ? { ...p, widgets: next } : p))).catch((e) => setError(e instanceof Error ? e.message : String(e)))}
+            extra={<Pressable onPress={() => { setName(page.name); setIcon(page.icon); setRenaming(true); }} style={[styles.edit, { borderColor: t.line }]}>
+              <Ionicons name="create-outline" size={16} color={t.accent} /><Text style={{ color: t.accent, fontWeight: '600' }}>Name or delete</Text>
+            </Pressable>} />
         </>
       )}
-      {editing && page && (
-        <WidgetPicker place="report" current={page.widgets} title="Edit page" deleteLabel="Delete page"
-          header={<View style={{ flexDirection: 'row', gap: 8 }}>
+      {renaming && page && (
+        <Sheet title="This page" onClose={() => setRenaming(false)}
+          footer={<View style={{ flexDirection: 'row', gap: 8 }}>
+            <Button title="Delete page" kind="danger" onPress={async () => { await save(pages!.filter((p) => p.id !== page.id)); setRenaming(false); router.back(); }} />
+            <Button title="Save" style={{ flex: 1 }} onPress={async () => { await save(pages!.map((p) => (p.id === page.id ? { ...p, name: name.trim() || 'My page', icon: icon || '📄' } : p))); setRenaming(false); }} />
+          </View>}>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
             <TextInput value={icon} onChangeText={(v) => setIcon(v.trim().slice(0, 8))} placeholder="📄" style={[input, { width: 56, textAlign: 'center', fontSize: 20 }]} />
             <TextInput value={name} onChangeText={setName} placeholder="Page name" placeholderTextColor={t.muted} style={[input, { flex: 1 }]} />
-          </View>}
-          save={(keys) => save(pages!.map((p) => (p.id === page.id ? { ...p, name: name.trim() || 'My page', icon: icon || '📄', widgets: keys } : p)))}
-          onDelete={async () => { await save(pages!.filter((p) => p.id !== page.id)); setEditing(false); router.back(); }}
-          onClose={() => setEditing(false)} onSaved={() => setRefresh((r) => r + 1)} />
+          </View>
+        </Sheet>
       )}
     </ScrollView>
   );
@@ -96,6 +101,6 @@ export default function CustomPage() {
 
 const styles = StyleSheet.create({
   page: { padding: 12, gap: 10, paddingBottom: 48, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
-  edit: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12 },
+  edit: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, minHeight: 40 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15 },
 });

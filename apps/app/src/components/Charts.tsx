@@ -1,0 +1,224 @@
+// The charts every widget draws with. One look everywhere: thin marks, a quiet grid, colours in a
+// fixed order, a legend whenever there is more than one series, and a readout line that shows
+// the values under the pointer (hover on a computer, tap on a phone).
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
+import type { Theme } from '@/lib/theme';
+
+export interface Series { name: string; values: number[] }
+interface PlotProps {
+  t: Theme; labels: string[]; series: Series[]; height?: number;
+  format: (n: number) => string;
+  /** Tap a point (second tap on phones, once it is selected) to open what's behind it. */
+  onPick?: (i: number) => void;
+}
+
+/** "Nice" top of the axis: 1, 2, 2.5 or 5 times a power of ten. */
+function niceMax(v: number): number {
+  if (v <= 0) return 1;
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * p) return m * p;
+  return 10 * p;
+}
+/** Show at most ~6 x labels, always including the last. */
+const showLabel = (i: number, n: number) => { const step = Math.ceil(n / 6); return (n - 1 - i) % step === 0; };
+
+function Legend({ t, series }: { t: Theme; series: Series[] }) {
+  if (series.length < 2) return null;
+  return (
+    <View style={styles.legend}>
+      {series.map((s, i) => (
+        <View key={s.name} style={styles.legendItem}>
+          <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: t.series[i] }} />
+          <Text style={{ color: t.muted, fontSize: 12 }}>{s.name}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** The line under the title that reads out one point: its label and each series' value. */
+function Readout({ t, labels, series, sel, format, hint }: { t: Theme; labels: string[]; series: Series[]; sel: number | null; format: (n: number) => string; hint?: string }) {
+  if (sel == null) return <Legend t={t} series={series} />;
+  return (
+    <View style={styles.legend}>
+      <Text style={{ color: t.text, fontSize: 12, fontWeight: '700' }}>{labels[sel]}</Text>
+      {series.map((s, i) => (
+        <View key={s.name} style={styles.legendItem}>
+          {series.length > 1 && <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: t.series[i] }} />}
+          <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>{series.length > 1 ? `${s.name} ` : ''}{format(s.values[sel] ?? 0)}</Text>
+        </View>
+      ))}
+      {!!hint && <Text style={{ color: t.muted, fontSize: 12 }}>{hint}</Text>}
+    </View>
+  );
+}
+
+/** Shared frame: readout, y-axis labels, the plot, hit columns and x labels. */
+function Frame({ t, labels, series, height = 140, format, onPick, free, children }: PlotProps & { free?: boolean; children: (w: number, h: number, min: number, max: number, sel: number | null) => React.ReactNode }) {
+  const [w, setW] = useState(0);
+  const [sel, setSel] = useState<number | null>(null);
+  const all = series.flatMap((s) => s.values);
+  const lo = Math.min(0, ...all), hi = Math.max(0, ...all);
+  let max = niceMax(hi), min = lo < 0 ? -niceMax(-lo) : 0;
+  // Lines show change, so they may leave zero out when the values sit far from it (a loan-heavy net worth).
+  const dLo = Math.min(...all), dHi = Math.max(...all);
+  if (free && all.length && (dLo > 0 || dHi < 0) && dHi - dLo < Math.abs(dHi + dLo) / 4) {
+    const pad = Math.max((dHi - dLo) * 0.15, Math.abs(dHi) * 0.01, 1);
+    const step = niceMax((dHi - dLo + 2 * pad) / 2);
+    min = Math.floor((dLo - pad) / step) * step; max = min + 2 * step;
+    if (max < dHi) max = min + 3 * step;
+  }
+  const n = labels.length;
+  const ticks = min < 0 && max > 0 ? [max, 0, min] : [max, (max + min) / 2, min];
+  return (
+    <View style={{ gap: 4 }}>
+      <Readout t={t} labels={labels} series={series} sel={sel} format={format} hint={onPick && sel != null ? 'tap again for details' : undefined} />
+      <View style={{ flexDirection: 'row', gap: 6 }}>
+        <View style={{ height, justifyContent: 'space-between', alignItems: 'flex-end' }}>
+          {ticks.map((v, i) => <Text key={i} style={{ color: t.muted, fontSize: 10, fontVariant: ['tabular-nums'], lineHeight: 12, marginTop: i === 0 ? -6 : 0, marginBottom: i === 2 ? -6 : 0 }}>{format(v)}</Text>)}
+        </View>
+        <View style={{ flex: 1 }}>
+          <View style={{ height }} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+            {w > 0 && children(w, height, min, max, sel)}
+            <View style={[StyleSheet.absoluteFill, { flexDirection: 'row' }]}>
+              {labels.map((l, i) => (
+                <Pressable key={i} style={{ flex: 1 }} accessibilityLabel={`${l}: ${series.map((s) => `${s.name} ${format(s.values[i] ?? 0)}`).join(', ')}`}
+                  onHoverIn={() => setSel(i)} onHoverOut={() => setSel((c) => (c === i ? null : c))}
+                  onPress={() => { if (sel === i && onPick) onPick(i); else setSel(i); }} />
+              ))}
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', marginTop: 3 }}>
+            {labels.map((l, i) => <Text key={i} numberOfLines={1} style={{ flex: 1, textAlign: 'center', color: sel === i ? t.text : t.muted, fontSize: 10, overflow: 'visible' }}>{showLabel(i, n) || sel === i ? l : ''}</Text>)}
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function Grid({ t, w, h, min, max }: { t: Theme; w: number; h: number; min: number; max: number }) {
+  const y0 = min > 0 || max < 0 ? h : h * (max / (max - min));
+  return (
+    <>
+      <Line x1={0} x2={w} y1={0.5} y2={0.5} stroke={t.line} strokeWidth={1} />
+      {(min >= 0 || max <= 0) && <Line x1={0} x2={w} y1={h / 2} y2={h / 2} stroke={t.line} strokeWidth={1} />}
+      <Line x1={0} x2={w} y1={Math.min(h - 0.5, y0)} y2={Math.min(h - 0.5, y0)} stroke={t.muted} strokeOpacity={0.5} strokeWidth={1} />
+    </>
+  );
+}
+
+/** Change over time: one 2px line per series; a single series gets a soft fill to the baseline. */
+export function LineChart(props: PlotProps) {
+  const { t, series, labels } = props;
+  const n = labels.length;
+  return (
+    <Frame {...props} free>
+      {(w, h, min, max, sel) => {
+        const x = (i: number) => (n === 1 ? w / 2 : (w / n) * (i + 0.5));
+        const y = (v: number) => h - ((v - min) / (max - min)) * h;
+        const zero = min <= 0 && max >= 0; // only fill down to a baseline that is on the chart
+        return (
+          <Svg width={w} height={h}>
+            <Grid t={t} w={w} h={h} min={min} max={max} />
+            {sel != null && <Line x1={x(sel)} x2={x(sel)} y1={0} y2={h} stroke={t.muted} strokeWidth={1} />}
+            {series.map((s, k) => {
+              const d = s.values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+              const last = s.values.length - 1;
+              const at = sel ?? last;
+              return (
+                [
+                  series.length === 1 && n > 1 && zero ? <Path key={`${s.name}-a`} d={`${d} L${x(last).toFixed(1)},${y(0).toFixed(1)} L${x(0).toFixed(1)},${y(0).toFixed(1)} Z`} fill={t.series[k]} fillOpacity={0.12} /> : null,
+                  <Path key={`${s.name}-l`} d={d} stroke={t.series[k]} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" fill="none" />,
+                  <Circle key={`${s.name}-c`} cx={x(at)} cy={y(s.values[at] ?? 0)} r={4} fill={t.series[k]} stroke={t.card} strokeWidth={2} />,
+                ]
+              );
+            })}
+          </Svg>
+        );
+      }}
+    </Frame>
+  );
+}
+
+/** Amounts side by side: bars grow from the zero line, grouped when there are several series. */
+export function BarChart(props: PlotProps) {
+  const { t, series, labels } = props;
+  const n = labels.length;
+  return (
+    <Frame {...props}>
+      {(w, h, min, max, sel) => {
+        const slot = w / n;
+        const group = Math.min(slot * 0.72, 44 * series.length);
+        const bw = Math.max(2, (group - 2 * (series.length - 1)) / series.length);
+        const y = (v: number) => h - ((v - min) / (max - min)) * h;
+        const r = Math.min(4, bw / 2);
+        return (
+          <Svg width={w} height={h}>
+            <Grid t={t} w={w} h={h} min={min} max={max} />
+            {series.map((s, k) => s.values.map((v, i) => {
+              if (!v) return null;
+              const x0 = slot * i + (slot - group) / 2 + k * (bw + 2);
+              const top = y(Math.max(v, 0)), bot = y(Math.min(v, 0));
+              const hh = Math.max(1, bot - top);
+              const rr = Math.min(r, hh);
+              // Rounded at the data end, square on the baseline.
+              const d = v > 0
+                ? `M${x0},${bot} L${x0},${top + rr} Q${x0},${top} ${x0 + rr},${top} L${x0 + bw - rr},${top} Q${x0 + bw},${top} ${x0 + bw},${top + rr} L${x0 + bw},${bot} Z`
+                : `M${x0},${top} L${x0},${bot - rr} Q${x0},${bot} ${x0 + rr},${bot} L${x0 + bw - rr},${bot} Q${x0 + bw},${bot} ${x0 + bw},${bot - rr} L${x0 + bw},${top} Z`;
+              return <Path key={`${k}-${i}`} d={d} fill={t.series[k]} fillOpacity={sel == null || sel === i ? 1 : 0.45} />;
+            }))}
+          </Svg>
+        );
+      }}
+    </Frame>
+  );
+}
+
+export interface Slice { label: string; value: number; onPress?: () => void }
+/** Shares of a whole: at most seven named slices plus "others", with the total in the middle and a legend that carries the numbers. */
+export function Donut({ t, slices, format, note, size = 132 }: { t: Theme; slices: Slice[]; format: (n: number) => string; note?: string; size?: number }) {
+  const [sel, setSel] = useState<number | null>(null);
+  const top = slices.slice(0, 7);
+  const rest = slices.slice(7).reduce((s, x) => s + x.value, 0);
+  const parts: (Slice & { color: string })[] = top.map((s, i) => ({ ...s, color: t.series[i] }));
+  if (rest > 0) parts.push({ label: `${slices.length - 7} others`, value: rest, color: t.muted });
+  const total = parts.reduce((s, p) => s + p.value, 0);
+  if (total <= 0) return <Text style={{ color: t.muted }}>Nothing to show{note ? ` ${note}` : ''}.</Text>;
+  const R = size / 2, sw = size * 0.2, r = R - sw / 2, C = 2 * Math.PI * r;
+  let acc = 0;
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
+      <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+        <Svg width={size} height={size} style={StyleSheet.absoluteFill as any}>
+          {parts.map((p, i) => {
+            const len = (p.value / total) * C, off = acc; acc += len;
+            // A 2px gap in the surface colour separates neighbours.
+            return <Circle key={p.label} cx={R} cy={R} r={r} fill="none" stroke={p.color} strokeWidth={sel === i ? sw + 4 : sw} strokeOpacity={sel == null || sel === i ? 1 : 0.5}
+              strokeDasharray={`${Math.max(0, len - 2)} ${C - Math.max(0, len - 2)}`} strokeDashoffset={-off} transform={`rotate(-90 ${R} ${R})`} />;
+          })}
+        </Svg>
+        <Text style={{ color: t.text, fontWeight: '700', fontSize: 15, fontVariant: ['tabular-nums'] }}>{format(sel == null ? total : parts[sel].value)}</Text>
+        <Text style={{ color: t.muted, fontSize: 10, maxWidth: size * 0.55, textAlign: 'center' }} numberOfLines={1}>{sel == null ? note ?? 'total' : parts[sel].label}</Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 170, gap: 2 }}>
+        {parts.map((p, i) => (
+          <Pressable key={p.label} onPress={p.onPress} disabled={!p.onPress} onHoverIn={() => setSel(i)} onHoverOut={() => setSel(null)} style={styles.sliceRow}>
+            <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: p.color }} />
+            <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{p.label}</Text>
+            <Text style={{ color: t.muted, fontSize: 12, fontVariant: ['tabular-nums'] }}>{Math.round((p.value / total) * 100)}%</Text>
+            <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'], minWidth: 56, textAlign: 'right' }}>{format(p.value)}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  legend: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, rowGap: 2, minHeight: 18 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  sliceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 24 },
+});

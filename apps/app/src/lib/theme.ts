@@ -2,8 +2,11 @@
 import { useSyncExternalStore } from 'react';
 import { useColorScheme } from 'react-native';
 
-const light = { bg: '#f0f0ec', card: '#ffffff', text: '#1d1d1b', muted: '#6b6b66', line: '#e2e2dc', accent: '#1f6f5c', danger: '#b4541a', positive: '#1f6f5c', track: '#e9e9e3', series1: '#2a78d6', series2: '#eb6834' };
-const dark = { bg: '#111110', card: '#1e1e1c', text: '#ececea', muted: '#a3a39c', line: '#2f2f2b', accent: '#4fb398', danger: '#e3894f', positive: '#4fb398', track: '#2c2c29', series1: '#3987e5', series2: '#d95926' };
+const light = { bg: '#f0f0ec', card: '#ffffff', text: '#1d1d1b', muted: '#6b6b66', line: '#e2e2dc', accent: '#1f6f5c', danger: '#b4541a', positive: '#1f6f5c', track: '#e9e9e3', series1: '#2a78d6', series2: '#eb6834',
+  // Chart colours in a fixed order (never cycled): each mode's own steps of the same eight hues.
+  series: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'] };
+const dark = { bg: '#111110', card: '#1e1e1c', text: '#ececea', muted: '#a3a39c', line: '#2f2f2b', accent: '#4fb398', danger: '#e3894f', positive: '#4fb398', track: '#2c2c29', series1: '#3987e5', series2: '#d95926',
+  series: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'] };
 export type Theme = typeof light;
 export type ThemeMode = 'auto' | 'light' | 'dark';
 

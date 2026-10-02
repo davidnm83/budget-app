@@ -16,8 +16,9 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'r
 import { Columns } from '@/components/Columns';
 import { TopBar } from '@/components/TopBar';
 import { CardShell, DEFAULT_HOME, Mini, Widget, WidgetPicker } from '@/components/Widgets';
-import { loadPrefs } from '@/lib/prefs';
+import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { Bar } from '@/components/ui';
+import { WidgetBoard } from '@/components/WidgetBoard';
 import { loadWeek, today, type PlannerData } from '@/lib/plan';
 import { loadBudgets, loadCategories, loadCategoryMonths, thisMonth, totalsFor } from '@/lib/reports';
 import { supabase } from '@/lib/supabase';
@@ -40,7 +41,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [widgets, setWidgets] = useState<string[] | null>(null);
-  const [picking, setPicking] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [refresh, setRefresh] = useState(0);
 
   const load = useCallback(async () => {
@@ -103,22 +104,12 @@ export default function Home() {
       </TopBar>
       <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-        <Columns>{data && widgets ? widgets.map((k) => {
-          switch (k) {
-            case 'review': return <ReviewCard key={k} t={t} n={data.toReview} />;
-            case 'week': return <WeekCard key={k} t={t} data={data.week} now={now} />;
-            case 'budget': return <BudgetCard key={k} t={t} b={data.budget} />;
-            case 'networth': return <NetWorthCard key={k} t={t} n={data.net} />;
-            default: return <Widget key={k} k={k} refresh={refresh} />;
-          }
-        }) : null}</Columns>
-        {data && (
-          <Pressable onPress={() => setPicking(true)} style={styles.customize}>
-            <Ionicons name="options-outline" size={16} color={t.accent} />
-            <Text style={{ color: t.accent }}>Customize Home</Text>
-          </Pressable>
+        {data && widgets && (
+          <WidgetBoard place="home" entries={widgets} refresh={refresh} editing={editing} onEditing={setEditing}
+            onChange={(next) => { setWidgets(next); savePrefs({ home_widgets: next }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e))); }}
+            special={(k) => (k === 'review' ? <ReviewCard t={t} n={data.toReview} /> : k === 'week' ? <WeekCard t={t} data={data.week} now={now} />
+              : k === 'budget' ? <BudgetCard t={t} b={data.budget} /> : k === 'networth' ? <NetWorthCard t={t} n={data.net} /> : undefined)} />
         )}
-        {picking && widgets && <WidgetPicker place="home" current={widgets} onClose={() => setPicking(false)} onSaved={setWidgets} />}
       </ScrollView>
     </View>
   );

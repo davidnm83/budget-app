@@ -52,12 +52,23 @@ function useNoAutofill() {
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     // React Native's text fields say autocomplete="on" unless told otherwise; sign-in names its fields, so it's left alone.
-    const fix = (el: Element) => { if (/^(INPUT|TEXTAREA)$/.test(el.tagName) && (el.getAttribute('autocomplete') ?? 'on') === 'on') el.setAttribute('autocomplete', 'off'); };
+    const fix = (el: Element) => {
+      if (!/^(INPUT|TEXTAREA)$/.test(el.tagName) || el.getAttribute('data-form-type') === 'other') return;
+      const ac = el.getAttribute('autocomplete') ?? 'on';
+      if (ac !== 'on' && ac !== 'off') return; // sign-in names its fields
+      el.setAttribute('autocomplete', 'off');
+      el.setAttribute('data-form-type', 'other'); el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-1p-ignore', 'true');
+      // Chrome often ignores autocomplete="off" on plain text fields but doesn't offer autofill on search fields.
+      if (el.tagName === 'INPUT' && (el.getAttribute('type') ?? 'text') === 'text') el.setAttribute('type', 'search');
+    };
+    const css = document.createElement('style');
+    css.textContent = 'input[type=search]{-webkit-appearance:none;appearance:none}input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-search-decoration{-webkit-appearance:none;display:none}';
+    document.head.appendChild(css);
     const mark = (root: ParentNode) => root.querySelectorAll?.('input, textarea').forEach(fix);
     mark(document);
     const obs = new MutationObserver((list) => list.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) { fix(n as Element); mark(n as Element); } })));
     obs.observe(document.body, { childList: true, subtree: true });
-    return () => obs.disconnect();
+    return () => { obs.disconnect(); css.remove(); };
   }, []);
 }
 

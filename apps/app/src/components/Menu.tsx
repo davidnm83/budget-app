@@ -31,7 +31,7 @@ const TABS = ['/', '/transactions', '/planner', '/budget', '/accounts'];
 
 /** The tabs, shown in the sidebar on wide screens (there the sidebar replaces the top tab bar). */
 const TAB_ITEMS: Item[] = [
-  { icon: 'home-outline', label: 'Home', href: '/' },
+  { icon: 'home-outline', label: 'Overview', href: '/' },
   { icon: 'list', label: 'Transactions', href: '/transactions' },
   { icon: 'calendar-outline', label: 'Planner', href: '/planner' },
   { icon: 'pie-chart-outline', label: 'Budget', href: '/budget' },
