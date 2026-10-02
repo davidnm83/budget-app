@@ -94,6 +94,32 @@ export function matchDues(dues: Due[], txns: PostedTxn[], toleranceDays = 4): Ma
   return out;
 }
 
+/**
+ * BIL-7: for due dates nothing matched, looks for a payment that is clearly the same bill but
+ * for a different amount (an insurance renewal, a price rise). Needs the bill's match text, so
+ * it can't mistake an unrelated payment for it; same account and date window as matchDues.
+ * Returns due key → transaction id.
+ */
+export function matchChanged(dues: Due[], txns: PostedTxn[], matched: Map<string, string>, toleranceDays = 4): Map<string, string> {
+  const used = new Set(matched.values());
+  const out = new Map<string, string>();
+  for (const d of [...dues].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (matched.has(d.key) || !d.matchText) continue;
+    const needle = normalizeDescription(d.matchText);
+    if (!needle) continue;
+    let best: { t: PostedTxn; days: number } | null = null;
+    for (const t of txns) {
+      if (used.has(t.id) || (d.accountId && t.accountId !== d.accountId)) continue;
+      if (d.amount !== 0 && Math.sign(t.amount) !== Math.sign(d.amount)) continue;
+      const days = Math.abs(daysBetween(d.date, t.date));
+      if (days > toleranceDays || !normalizeDescription(`${t.merchant ?? ''} ${t.name}`).includes(needle)) continue;
+      if (!best || days < best.days) best = { t, days };
+    }
+    if (best) { used.add(best.t.id); out.set(d.key, best.t.id); }
+  }
+  return out;
+}
+
 export interface RecurringSuggestion {
   name: string;
   kind: 'bill' | 'income';
