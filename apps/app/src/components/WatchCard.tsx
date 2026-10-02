@@ -34,7 +34,11 @@ export function WatchCard({ t, w, compact, onMonth }: { t: Theme; w: Watched; co
   );
 }
 
-/** Several categories as one stacked chart: the total against its average, and each part in its own colour. */
+/**
+ * Several categories as one chart: the total against its average. The bars are stacked by
+ * category, but there is no colour key to read: the line above the chart names the month's total
+ * and its biggest categories (the latest month until you hover or tap another).
+ */
 export function WatchStackCard({ t, s, onMonth, onEdit, onRemove }: { t: Theme; s: WatchStack; onMonth?: (month: string) => void; onEdit?: () => void; onRemove?: () => void }) {
   const sum = (f: (w: Watched) => number) => s.parts.reduce((a, w) => a + f(w), 0);
   const thisMonth = sum((w) => w.thisMonth), projected = sum((w) => w.projected), avg3 = sum((w) => w.avg3);
@@ -54,7 +58,7 @@ export function WatchStackCard({ t, s, onMonth, onEdit, onRemove }: { t: Theme; 
       <Text style={{ color: t.muted, fontSize: 12 }}>
         Heading for {money0(projected)} this month vs a {money0(avg3)} average{avg3 && Math.abs(diff) >= 0.5 ? ` (${diff <= 0 ? '−' : '+'}${money0(Math.abs(diff))})` : ''}
       </Text>
-      <BarChart t={t} stacked height={120} labels={months.map(monthShort)} colors={colors} format={money0}
+      <BarChart t={t} stacked legend={false} height={120} labels={months.map(monthShort)} colors={colors} format={money0}
         series={s.parts.map((w) => ({ name: w.category.name, values: w.months.map((m) => m.actual) }))}
         refLine={avg3 > 0 ? avg3 : undefined} onPick={onMonth ? (i) => onMonth(months[i]) : undefined} />
     </Card>

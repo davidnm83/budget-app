@@ -7,7 +7,7 @@ import { UNDER_BAR } from '@/lib/layout';
 import { categoryIcon, monthEnd, monthName } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PageBoard } from '@/components/PageBoard';
 import { MultiPicker } from '@/components/Picker';
 import { Button, Card } from '@/components/ui';
@@ -37,8 +37,8 @@ export default function Watch() {
   const selected = data?.list.map((w) => w.category.id) ?? [];
   const change = async (ids: string[]) => { await savePrefs({ watch_categories: ids }); load(); };
   const custom = data?.charts.custom ?? [];
-  const saveCharts = async (patch: { byGroup?: boolean; custom?: typeof custom }) => {
-    try { await savePrefs({ watch_charts: { ...data?.charts, ...patch } }); load(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  const saveCharts = async (patch: { custom?: typeof custom }) => {
+    try { await savePrefs({ watch_charts: { custom: patch.custom } }); load(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   // A combined chart keeps whatever is ticked; unticking everything removes it.
   const combine = (ids: string[]) => {
@@ -59,10 +59,6 @@ export default function Watch() {
       <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
         <Button title="Choose categories" kind="plain" style={{ flexGrow: 1 }} onPress={() => setPicking(true)} />
         <Button title="Add a combined chart" kind="plain" style={{ flexGrow: 1 }} onPress={() => setCombining('new')} />
-      </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 4 }}>
-        <Text style={{ color: t.text, flex: 1 }}>Stack categories in the same group into one chart</Text>
-        <Switch value={!!data?.charts.byGroup} onValueChange={(v) => saveCharts({ byGroup: v })} />
       </View>
       {data && (
         <PageBoard page="watch" refresh={refresh} defaults={['watch:list']} blocks={[

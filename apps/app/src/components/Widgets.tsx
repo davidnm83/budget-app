@@ -9,7 +9,7 @@ import {
 } from '@budget-app/core';
 import { router } from 'expo-router';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { BalanceChart } from '@/components/AccountSheet';
 import { Skeleton } from '@/components/Columns';
 import { Field, Sheet } from '@/components/Forms';
@@ -26,26 +26,41 @@ import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
 import { loadWatch, type Watched } from '@/lib/watch';
 import { BarChart, Donut, LineChart } from '@/components/Charts';
-import { cfgCategories, loadChart, SOURCES, VIEW_LABEL, type ChartData, type ChartView, type Source } from '@/lib/widgetData';
+import { cfgCategories, loadChart, pickAccounts, SOURCES, SPLITS, SPLIT_LABEL, VIEW_LABEL, type ChartCfg, type ChartData, type ChartView, type Source, type SplitBy } from '@/lib/widgetData';
 
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
 
-export interface WidgetDef { key: string; title: string; about: string; home: boolean; budget: boolean; config?: 'spend' | 'account' | 'chart';
+export interface WidgetDef { key: string; title: string; about: string; home: boolean; budget: boolean; config?: 'spend' | 'chart';
   /** Has a chart or a list, so it can be short, medium or tall. Widgets that are only numbers have one height. */
   sizable?: boolean }
 
 /** A placed widget is its key, or `key::{json settings}` for the ones with settings of their own (VIEW-15). */
-export interface WidgetCfg { title?: string; categoryIds?: string[]; group?: string; names?: string[]; months?: number; accountId?: string; accountMatch?: string; chart?: Chart;
+export interface WidgetCfg extends ChartCfg { title?: string; chart?: Chart;
+  /** Chart widgets: false hides the numbers above a bar or line chart. */
+  numbers?: boolean;
   /** Chart widgets: what to show and how. */
-  source?: Source; view?: ChartView;
+  view?: ChartView;
   /** Layout: width on wide screens, and chart height. */
   w?: 'half' | 'full'; h?: 's' | 'm' | 'l' }
 /** How a Category spending widget draws: monthly bars, a pie of the categories, or a ranked list. */
 export type Chart = 'bars' | 'pie' | 'list';
+/**
+ * Widgets that used to be their own thing and are now a chart with settings. A layout saved with
+ * the old name keeps working: it is read as the matching chart (and saved that way when edited).
+ */
+const LEGACY: Record<string, WidgetCfg> = {
+  nwtypes: { source: 'networth', by: 'type', view: 'list', months: 6, title: 'Net worth by type' },
+  avgspend: { source: 'spending', view: 'tiles', months: 3, title: 'Average spending' },
+  groups: { source: 'spending', by: 'group', view: 'list', months: 1, title: 'Spending by group' },
+  credit: { source: 'carddebt', view: 'tiles', months: 6, title: 'Credit cards' },
+  account: { source: 'balance', view: 'line', months: 12, payoff: true },
+};
 export function parseEntry(e: string): [string, WidgetCfg] {
   const i = e.indexOf('::');
-  if (i < 0) return [e, {}];
-  try { return [e.slice(0, i), JSON.parse(e.slice(i + 2))]; } catch { return [e.slice(0, i), {}]; }
+  const key = i < 0 ? e : e.slice(0, i);
+  let cfg: WidgetCfg = {};
+  if (i >= 0) { try { cfg = JSON.parse(e.slice(i + 2)); } catch { cfg = {}; } }
+  return LEGACY[key] ? ['chart', { ...LEGACY[key], ...cfg }] : [key, cfg];
 }
 /** The widget an entry belongs to ('spend' is the older name for a spending chart). */
 export const keyOf = (e: string) => { const k = parseEntry(e)[0]; return k === 'spend' ? 'chart' : k; };
@@ -57,15 +72,10 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'networth', title: 'Net worth', about: 'Assets minus debts, and the change this month', home: true, budget: false },
   { key: 'cash', title: 'Cash position', about: 'Cash, card debt, and what’s left after paying the cards', home: true, budget: true },
   { key: 'runway', title: 'Cash runway', about: 'How many days your cash lasts at your usual daily spending', home: true, budget: true },
-  { key: 'avgspend', title: 'Average spending', about: 'Monthly average over 3, 6 or 12 months vs this month', home: true, budget: true },
   { key: 'watch', title: 'Spending watch', about: 'Your watch-list categories against their average', home: true, budget: true, sizable: true },
-  { key: 'credit', title: 'Credit cards', about: 'Card debt, utilisation and the next due date', home: true, budget: true },
   { key: 'calendar', title: 'Bills calendar', about: 'This month’s bills and income on a calendar', home: true, budget: true },
-  { key: 'nwtypes', title: 'Net worth by type', about: 'Cash, cards, loans and investments', home: true, budget: false },
-  { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth or card debt, drawn the way you choose', home: true, budget: true, config: 'chart', sizable: true },
-  { key: 'account', title: 'Account', about: 'One account: balance, past year, loan payoff', home: true, budget: true, config: 'account', sizable: true },
+  { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or an account, for the accounts and categories you choose', home: true, budget: true, config: 'chart', sizable: true },
   { key: 'tags', title: 'Tag totals', about: 'Everything under each tag added up: a trip, a move, a repair', home: true, budget: true, sizable: true },
-  { key: 'groups', title: 'Spending by group', about: 'This month by category group, with last month beside it', home: true, budget: true, sizable: true },
 ];
 export const DEFAULT_HOME = ['review', 'week', 'budget', 'networth'];
 export const DEFAULT_BUDGET: string[] = [];
@@ -106,7 +116,7 @@ function useLoad<T>(fn: () => Promise<T>, deps: unknown[] = []): { data: T | nul
 export function Widget(props: { k: string; refresh?: number; anchor?: Month; range?: { from: string; to: string } }) {
   const [k, cfg] = parseEntry(props.k);
   // Charts and accounts use their title themselves; for the rest it replaces the card's heading.
-  const own = k === 'chart' || k === 'spend' || k === 'account';
+  const own = k === 'chart' || k === 'spend';
   return <TitleOverride.Provider value={own ? undefined : cfg.title || undefined}><WidgetBody {...props} /></TitleOverride.Provider>;
 }
 
@@ -116,16 +126,11 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
   switch (k) {
     case 'spend': return <ChartWidget t={t} refresh={refresh} cfg={{ source: 'spending', ...cfg }} anchor={anchor} range={range} />; // the older name for a spending chart
     case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} anchor={anchor} range={range} />;
-    case 'account': return <AccountWidget t={t} refresh={refresh} cfg={cfg} />;
     case 'tags': return <TagTotals t={t} refresh={refresh} h={cfg.h} />;
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
-    case 'avgspend': return <AvgSpending t={t} refresh={refresh} months={cfg.months} />;
     case 'watch': return <WatchMini t={t} refresh={refresh} h={cfg.h} />;
-    case 'credit': return <CreditMini t={t} refresh={refresh} />;
     case 'calendar': return <BillsCalendar t={t} refresh={refresh} anchor={anchor} />;
-    case 'nwtypes': return <NetWorthByType t={t} refresh={refresh} />;
-    case 'groups': return <SpendingByGroup t={t} refresh={refresh} anchor={anchor} h={cfg.h} />;
     default: return null;
   }
 }
@@ -140,7 +145,7 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
   const want: ChartView = cfg.view ?? cfg.chart ?? allowed[0];
   const view = allowed.includes(want) ? want : allowed[0];
   const { data, error } = useLoad(() => loadChart(cfg, anchor, range), [refresh, JSON.stringify(cfg), anchor, range?.from, range?.to]);
-  const title = cfg.title || cfg.group || SOURCES[source].title;
+  const title = cfg.title || cfg.group || data?.title || SOURCES[source].title;
   if (!data) return <CardShell t={t} title={title}>{error ? <Text style={{ color: t.danger }}>{error}</Text> : <Skeleton color={t.track} />}</CardShell>;
   const h = HEIGHTS[cfg.h ?? 'm'];
   const open = (i: number) => { const q = data.drill?.(i); if (q) showTxns({ title: `${title} · ${data.labels[i]}`, ...q }); };
@@ -158,7 +163,7 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
                 <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{b.label}</Text>
                 <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{money0(b.value)}</Text>
               </View>
-              <Bar value={b.value} max={data.breakdown[0].value} color={t.series[0]} height={5} />
+              <Bar value={Math.abs(b.value)} max={Math.max(...data.breakdown.map((x) => Math.abs(x.value)))} color={b.value < 0 ? t.series2 : t.series[0]} height={5} />
             </Pressable>
           )) : <Text style={{ color: t.muted }}>Nothing to show {data.period}.</Text>
         ) : view === 'table' ? (
@@ -176,10 +181,10 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
           </View>
         ) : (
           <>
-            {cfg.h !== 's' && <View style={styles.tiles}>{data.tiles.slice(0, 3).map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}
+            {cfg.h !== 's' && cfg.numbers !== false && <View style={styles.tiles}>{data.tiles.slice(0, 3).map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}
             {view === 'line'
-              ? <LineChart t={t} labels={data.labels} series={data.series} height={h} format={money0} onPick={data.drill ? open : undefined} />
-              : <BarChart t={t} labels={data.labels} series={data.series} height={h} format={money0} onPick={data.drill ? open : undefined} />}
+              ? <LineChart t={t} labels={data.labels} series={data.series} height={h} format={money0} refLine={data.refLine} onPick={data.drill ? open : undefined} />
+              : <BarChart t={t} labels={data.labels} series={data.series} height={h} format={money0} refLine={data.refLine} onPick={data.drill ? open : undefined} />}
           </>
         )}
       {!data.empty && (view === 'list' || view === 'tiles') && <Text style={{ color: t.muted, fontSize: 12 }}>{data.period}</Text>}
@@ -188,37 +193,6 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
 }
 
 const monthShort = (m: string) => new Date(m + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' });
-
-function AccountWidget({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: WidgetCfg }) {
-  const [showTxns, txnSheet] = useTxnSheet();
-  const now = today();
-  const { data } = useLoad(async () => {
-    const all = await loadAccounts();
-    const a = all.find((x) => x.id === cfg.accountId) ?? (cfg.accountMatch ? all.find((x) => new RegExp(cfg.accountMatch!, 'i').test(x.name)) : undefined);
-    if (!a) return { a: null, txns: [] as { date: string; amount: number; name: string }[] };
-    const txns = (await loadTxnsFor([a.id], a.type === 'loan' ? '1900-01-01' : addDays(now, -371))).map((x) => ({ date: x.date, amount: x.amount, name: x.name ?? '' }));
-    return { a, txns };
-  }, [refresh, cfg.accountId, cfg.accountMatch]);
-  if (!data) return <CardShell t={t} title={cfg.title || 'Account'}><Skeleton color={t.track} /></CardShell>;
-  const { a, txns } = data;
-  if (!a) return <CardShell t={t} title={cfg.title || 'Account'}><Text style={{ color: t.muted }}>Account not found. Edit the page to pick one.</Text></CardShell>;
-  const debt = a.type === 'credit' || a.type === 'loan';
-  const loan = a.type === 'loan' ? loanSummary(Math.abs(signedBalance(a)), txns, now) : null;
-  return (
-    <CardShell t={t} after={txnSheet} title={cfg.title || a.name} link={a.type === 'loan' ? 'Loans' : a.type === 'credit' ? 'Credit' : 'Accounts'}
-      onPress={() => (a.type === 'loan' ? router.push('/loans' as any) : a.type === 'credit' ? router.push('/credit' as any) : router.navigate('/accounts'))}>
-      <View style={styles.tiles}>
-        <Mini t={t} label={debt ? 'Owing' : 'Balance'} value={formatMoney(Math.abs(signedBalance(a)))} />
-        {loan?.status === 'ok' && <Mini t={t} label="Paid off" value={monthShort(loan.payoffDate!) + ' ' + loan.payoffDate!.slice(0, 4)} sub={`${loan.monthsLeft} months`} />}
-        {loan && <Mini t={t} label="Interest to date" value={money0(loan.interestToDate)} sub={`paid ${money0(loan.paymentsToDate)}`} />}
-      </View>
-      {txns.length > 0 && (
-        <BalanceChart t={t} owed={a.type === 'loan' || a.type === 'credit'} height={cfg.h === 's' ? 64 : cfg.h === 'l' ? 180 : 100} points={balanceHistory(signedBalance(a), txns.filter((x) => x.date >= addDays(now, -371)), now, 53, 7)}
-          onPick={(from, to) => showTxns({ title: `${a.name} · week of ${shortDate(from)}`, from, to, accountIds: [a.id] })} />
-      )}
-    </CardShell>
-  );
-}
 
 const isCash = (a: Account) => a.type === 'depository' && !a.is_hidden;
 const owed = (a: Account) => Math.max(0, -signedBalance(a));
@@ -257,33 +231,6 @@ function Runway({ t, refresh }: { t: Theme; refresh: number }) {
         <Text style={{ color: t.muted }}>days of cash at {money0(data.daily)}/day</Text>
       </View>
       <Text style={{ color: t.muted, fontSize: 12 }}>{money0(data.cash)} in checking and savings ÷ your average daily spending over the last 3 months. Income isn’t counted.</Text>
-    </CardShell>
-  );
-}
-
-function AvgSpending({ t, refresh, months }: { t: Theme; refresh: number; months?: number }) {
-  const [span, setSpan] = useState<'3' | '6' | '12'>(months === 6 ? '6' : months === 12 ? '12' : '3');
-  const { data } = useLoad(() => loadMonthSummaries(addMonths(thisMonth(), -12), monthEnd(thisMonth())), [refresh]);
-  const [showTxns, txnSheet] = useTxnSheet();
-  if (!data) return <CardShell t={t} title="Average spending"><Skeleton color={t.track} /></CardShell>;
-  const cur = thisMonth();
-  const full = data.filter((m) => m.month < cur).sort((a, b) => b.month.localeCompare(a.month)).slice(0, Number(span));
-  const avg = full.length ? full.reduce((s, m) => s + Math.abs(m.spending), 0) / full.length : 0;
-  const now = data.find((m) => m.month === cur);
-  const spent = Math.abs(now?.spending ?? 0);
-  const day = Number(today().slice(8, 10)), daysIn = Number(monthEnd(cur).slice(8, 10));
-  const projected = spent + (avg / daysIn) * (daysIn - day); // so far + the usual for the days left
-  const color = projected > avg * 1.05 ? t.series2 : t.accent;
-  return (
-    <CardShell t={t} after={txnSheet} title="Average spending" link="Reports" onPress={() => router.push('/reports')}>
-      <Segmented value={span} onChange={setSpan} options={[{ value: '3', label: '3 months' }, { value: '6', label: '6 months' }, { value: '12', label: '12 months' }]} />
-      <View style={styles.tiles}>
-        <Mini t={t} label={`Average · ${full.length} mo`} value={money0(avg)} sub="per month" />
-        <Pressable style={{ flex: 1 }} onPress={() => showTxns({ title: 'Spending this month', from: cur, to: monthEnd(cur), kind: 'expense' })}>
-          <Mini t={t} label="This month" value={money0(spent)} sub={`heading for ${money0(projected)}`} color={color} />
-        </Pressable>
-      </View>
-      <Bar value={projected} max={Math.max(avg, projected)} color={color} />
     </CardShell>
   );
 }
@@ -349,34 +296,6 @@ function WatchMini({ t, refresh, h }: { t: Theme; refresh: number; h?: WidgetCfg
   );
 }
 
-function CreditMini({ t, refresh }: { t: Theme; refresh: number }) {
-  const { data } = useLoad(loadAccounts, [refresh]);
-  if (!data) return <CardShell t={t} title="Credit cards"><Skeleton color={t.track} /></CardShell>;
-  const cards = data.filter((a) => a.type === 'credit' && !a.is_hidden);
-  const total = cards.reduce((s, a) => s + owed(a), 0);
-  const lim = cards.filter((a) => a.credit_limit);
-  const limit = lim.reduce((s, a) => s + Number(a.credit_limit), 0);
-  const u = limit ? lim.reduce((s, a) => s + owed(a), 0) / limit : null;
-  const now = today();
-  const dueDate = (a: Account) => {
-    const d = new Date(now + 'T00:00:00Z'); const day = a.due_day!;
-    let c = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), day));
-    if (c.toISOString().slice(0, 10) < now) c = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, day));
-    return c.toISOString().slice(0, 10);
-  };
-  const next = cards.filter((a) => a.due_day && owed(a) > 0).map((a) => ({ a, due: dueDate(a) })).sort((x, y) => x.due.localeCompare(y.due))[0];
-  const color = u == null ? undefined : u > 0.7 ? t.danger : u > 0.3 ? t.series2 : t.accent;
-  return (
-    <CardShell t={t} title="Credit cards" link="Credit" onPress={() => router.push('/credit' as any)}>
-      <View style={styles.tiles}>
-        <Mini t={t} label="Owing" value={money0(total)} sub={`${cards.length} cards`} />
-        <Mini t={t} label="Utilisation" value={u == null ? '–' : `${Math.round(u * 100)}%`} sub={limit ? `of ${money0(limit)}` : 'add limits'} color={color} />
-        <Mini t={t} label="Next due" value={next ? shortDate(next.due) : '–'} sub={next ? next.a.name : ''} />
-      </View>
-    </CardShell>
-  );
-}
-
 function BillsCalendar({ t, refresh, anchor }: { t: Theme; refresh: number; anchor?: Month }) {
   const month: Month = anchor ?? thisMonth();
   const end = monthEnd(month);
@@ -418,76 +337,31 @@ function BillsCalendar({ t, refresh, anchor }: { t: Theme; refresh: number; anch
   );
 }
 
-function NetWorthByType({ t, refresh }: { t: Theme; refresh: number }) {
-  const { data } = useLoad(loadAccounts, [refresh]);
-  if (!data) return <CardShell t={t} title="Net worth by type"><Skeleton color={t.track} /></CardShell>;
-  const vis = data.filter((a) => !a.is_hidden);
-  const groups = [
-    { label: 'Cash', v: vis.filter((a) => a.type === 'depository').reduce((s, a) => s + signedBalance(a), 0) },
-    { label: 'Investments', v: vis.filter((a) => a.type === 'investment').reduce((s, a) => s + signedBalance(a), 0) },
-    { label: 'Credit cards', v: vis.filter((a) => a.type === 'credit').reduce((s, a) => s + signedBalance(a), 0) },
-    { label: 'Loans', v: vis.filter((a) => a.type === 'loan').reduce((s, a) => s + signedBalance(a), 0) },
-  ].filter((g) => g.v);
-  const max = Math.max(1, ...groups.map((g) => Math.abs(g.v)));
-  return (
-    <CardShell t={t} title="Net worth by type" link="Accounts" onPress={() => router.navigate('/accounts')}>
-      {groups.map((g) => (
-        <View key={g.label} style={{ gap: 3 }}>
-          <View style={styles.between}>
-            <Text style={{ color: t.text, fontSize: 13 }}>{g.label}</Text>
-            <Text style={{ color: g.v < 0 ? t.danger : t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{formatMoney(g.v)}</Text>
-          </View>
-          <Bar value={Math.abs(g.v)} max={max} color={g.v < 0 ? t.danger : t.accent} height={5} />
-        </View>
-      ))}
-    </CardShell>
-  );
-}
-
-function SpendingByGroup({ t, refresh, anchor, h }: { t: Theme; refresh: number; anchor?: Month; h?: WidgetCfg['h'] }) {
-  const [showTxns, txnSheet] = useTxnSheet();
-  const cur = anchor ?? thisMonth(), last = addMonths(cur, -1);
-  const { data } = useLoad(async () => {
-    const [cats, rows] = await Promise.all([loadCategories(), loadCategoryMonths(last, cur)]);
-    const m = new Map<string, { now: number; prev: number }>();
-    for (const r of rows) {
-      if (r.kind !== 'expense') continue;
-      const g = cats.find((c) => c.id === r.category_id)?.group ?? 'Uncategorised';
-      const e = m.get(g) ?? m.set(g, { now: 0, prev: 0 }).get(g)!;
-      if (r.month === cur) e.now -= r.total; else e.prev -= r.total;
-    }
-    return [...m.entries()].map(([group, v]) => ({ group, ...v })).filter((x) => x.now > 0.5 || x.prev > 0.5).sort((a, b) => b.now - a.now);
-  }, [refresh, cur]);
-  const max = Math.max(1, ...(data ?? []).flatMap((g) => [g.now, g.prev]));
-  return (
-    <CardShell t={t} after={txnSheet} title={anchor && anchor !== thisMonth() ? `Spending by group · ${monthShort(cur)}` : 'Spending by group'} link="Reports" onPress={() => router.push('/reports')}>
-      {!data ? <Skeleton color={t.track} /> : data.slice(0, h === 's' ? 5 : h === 'l' ? 30 : 10).map((g) => (
-        <Pressable key={g.group} style={{ gap: 3 }} onPress={() => showTxns({ title: `${g.group} · ${monthShort(cur)}`, from: cur, to: monthEnd(cur), group: g.group, kind: 'expense' })}>
-          <View style={styles.between}>
-            <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{g.group}</Text>
-            <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{money0(g.now)} <Text style={{ color: t.muted }}>· last {money0(g.prev)}</Text></Text>
-          </View>
-          <Bar value={g.now} max={max} color={t.series1} height={5} />
-        </Pressable>
-      ))}
-    </CardShell>
-  );
-}
-
-/** What a widget's row says about its settings. */
 export function entryLabel(e: string): string {
   const [k, c] = parseEntry(e);
   const w = WIDGETS.find((x) => x.key === keyOf(e));
   if (!w) return k;
   if (!w.config) return c.title ? `${c.title} (${w.title})` : w.title;
-  if (w.config === 'account') return `Account: ${c.title || c.accountMatch || 'tap ⚙ to choose'}`;
   const src = SOURCES[c.source ?? 'spending'];
   const view = c.view ?? c.chart ?? src.views[0];
   return `${c.title || c.group || src.title} · ${VIEW_LABEL[view].toLowerCase()}`;
 }
 
-/** Settings for one widget: what it shows, how it's drawn and over how long; or which account. */
-export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: 'spend' | 'account' | 'chart' | 'basic'; widget?: string; cfg: WidgetCfg; onDone: (c: WidgetCfg) => void; onClose: () => void }) {
+/** Ready-made charts: each fills in the settings below, which can then be changed. */
+export const PRESETS: { name: string; cfg: WidgetCfg }[] = [
+  { name: 'Spending', cfg: { source: 'spending', view: 'bars', months: 6 } },
+  { name: 'Spending by category', cfg: { source: 'spending', view: 'pie', months: 1 } },
+  { name: 'Spending by group', cfg: { source: 'spending', by: 'group', view: 'list', months: 1 } },
+  { name: 'Average spending', cfg: { source: 'spending', view: 'tiles', months: 3 } },
+  { name: 'Money in and out', cfg: { source: 'cashflow', view: 'bars', months: 12 } },
+  { name: 'Net worth', cfg: { source: 'networth', view: 'line', months: 12 } },
+  { name: 'Net worth by type', cfg: { source: 'networth', by: 'type', view: 'list', months: 6 } },
+  { name: 'Credit cards', cfg: { source: 'carddebt', view: 'tiles', months: 6 } },
+  { name: 'Account balance', cfg: { source: 'balance', view: 'line', months: 12 } },
+];
+
+/** Settings for one widget. Charts: what to show, for which accounts and categories, and how it's drawn. */
+export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: 'spend' | 'chart' | 'basic'; widget?: string; cfg: WidgetCfg; onDone: (c: WidgetCfg) => void; onClose: () => void }) {
   const t = useTheme();
   const chart = kind === 'chart' || kind === 'spend';
   const def = WIDGETS.find((w) => w.key === widget);
@@ -499,56 +373,97 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
   const [source, setSource] = useState<Source>(cfg.source ?? 'spending');
   const [view, setView] = useState<ChartView>(cfg.view ?? cfg.chart ?? 'bars');
   const [ids, setIds] = useState<string[] | null>(cfg.categoryIds ?? null);
-  const [accountId, setAccountId] = useState(cfg.accountId ?? '');
+  const [accs, setAccs] = useState<string[] | null>(cfg.accountIds ?? null);
+  const [by, setBy] = useState<SplitBy | undefined>(cfg.by);
+  const [avgLine, setAvgLine] = useState(!!cfg.avg);
+  const [numbers, setNumbers] = useState(cfg.numbers !== false);
+  const [payoff, setPayoff] = useState(cfg.payoff !== false);
   const [pick, setPick] = useState(false);
+  const [pickAcc, setPickAcc] = useState(false);
   const { data } = useLoad(async () => {
     const [cats, accounts] = await Promise.all([loadCategories(), loadAccounts()]);
-    return { cats: cats.filter((c) => c.kind !== 'transfer' && !c.hidden), accounts };
+    return { cats: cats.filter((c) => c.kind !== 'transfer' && !c.hidden), accounts: accounts.filter((a) => !a.is_hidden) };
   });
-  // A template's group or names become a real selection the first time it's opened here.
+  // A template's group or names, or an older single-account setting, become a real selection the first time it's opened here.
   const selected = ids ?? (data ? cfgCategories(cfg, data.cats).map((c) => c.id) : []);
+  const pool = data ? (source === 'carddebt' ? data.accounts.filter((a) => a.type === 'credit') : data.accounts) : [];
+  const chosen = (accs ?? (data ? pickAccounts(cfg, data.accounts).map((a) => a.id) : [])).filter((id) => pool.some((a) => a.id === id));
   const views = SOURCES[source].views;
   const shown = views.includes(view) ? view : views[0];
+  const splits = SPLITS[source];
+  const split = by && splits.includes(by) ? by : splits[0];
+  const drawn = shown === 'bars' || shown === 'line';
+  const oneLoan = source === 'balance' && chosen.length === 1 && pool.find((a) => a.id === chosen[0])?.type === 'loan';
+  const preset = (p: typeof PRESETS[number]) => {
+    setSource(p.cfg.source!); setView(p.cfg.view!); setMonths(p.cfg.months ?? 6); setBy(p.cfg.by); setIds([]); setAvgLine(false);
+    if (!title.trim() || PRESETS.some((x) => x.name === title.trim())) setTitle(p.name);
+  };
   const input = { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15, color: t.text, borderColor: t.line, backgroundColor: t.card };
   const keep = { w: cfg.w, h: cfg.h };
   const done = () => onDone(kind === 'basic'
-    ? { ...keep, title: title.trim() || undefined, ...(widget === 'avgspend' ? { months } : {}) }
-    : chart
-    ? { ...keep, title: title.trim() || undefined, source, view: shown, months, ...(source === 'spending' && selected.length ? { categoryIds: selected } : {}) }
-    : { ...keep, title: title.trim() || undefined, accountId: accountId || (data?.accounts.find((a) => cfg.accountMatch && new RegExp(cfg.accountMatch, 'i').test(a.name))?.id) });
+    ? { ...keep, title: title.trim() || undefined }
+    : {
+      ...keep, title: title.trim() || undefined, source, view: shown, months,
+      ...(source === 'spending' && selected.length ? { categoryIds: selected } : {}),
+      ...(chosen.length ? { accountIds: chosen } : {}),
+      ...(splits.length > 1 && split !== splits[0] ? { by: split } : {}),
+      ...(avgLine && drawn ? { avg: true } : {}),
+      ...(numbers ? {} : { numbers: false }),
+      ...(oneLoan && !payoff ? { payoff: false } : {}),
+    });
+  const chips = { flexDirection: 'row', flexWrap: 'wrap', gap: 6 } as const;
+  const toggle = (label: string, value: boolean, set: (v: boolean) => void) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      <Text style={{ color: t.text, flex: 1 }}>{label}</Text>
+      <Switch value={value} onValueChange={set} />
+    </View>
+  );
   return (
-    <Sheet title={kind === 'basic' ? def?.title ?? 'Widget' : chart ? 'Chart' : 'Account'} onClose={onClose} footer={<Button title="Done" onPress={done} />}>
+    <Sheet title={kind === 'basic' ? def?.title ?? 'Widget' : 'Chart'} onClose={onClose} footer={<Button title="Done" onPress={done} />}>
       {chart ? (
         <>
+          <Field t={t} label="Start from" hint="A ready-made chart. Everything below can still be changed.">
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              {PRESETS.map((p) => <Chip key={p.name} label={p.name} on={false} onPress={() => preset(p)} />)}
+            </ScrollView>
+          </Field>
           <Field t={t} label="Show" hint={SOURCES[source].about}>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            <View style={chips}>
               {(Object.keys(SOURCES) as Source[]).map((k) => <Chip key={k} label={SOURCES[k].title} on={source === k} onPress={() => setSource(k)} />)}
             </View>
           </Field>
           <Field t={t} label="As">
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+            <View style={chips}>
               {views.map((v) => <Chip key={v} label={VIEW_LABEL[v]} on={shown === v} onPress={() => setView(v)} />)}
             </View>
           </Field>
           <Field t={t} label="Over">
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{[1, 3, 6, 12, 24].map((m) => <Chip key={m} label={m === 1 ? 'This month' : `${m} months`} on={months === m} onPress={() => setMonths(m)} />)}</View>
+            <View style={chips}>{[1, 3, 6, 12, 24].map((m) => <Chip key={m} label={m === 1 ? 'This month' : `${m} months`} on={months === m} onPress={() => setMonths(m)} />)}</View>
+          </Field>
+          <Field t={t} label="Accounts" hint={chosen.length ? pool.filter((a) => chosen.includes(a.id)).map((a) => a.name).join(' · ') : source === 'balance' ? 'Choose one account, or several to add together.' : source === 'carddebt' ? 'All cards. Choose cards to narrow it.' : 'All accounts. Choose accounts to narrow it.'}>
+            <Button kind="plain" title={chosen.length ? `${chosen.length} chosen · change` : 'Choose accounts'} onPress={() => setPickAcc(true)} />
           </Field>
           {source === 'spending' && (
             <Field t={t} label="Categories" hint={selected.length ? data?.cats.filter((c) => selected.includes(c.id)).map((c) => c.name).join(' · ') : 'All spending. Choose categories to narrow it.'}>
               <Button kind="plain" title={selected.length ? `${selected.length} chosen · change` : 'Choose categories'} onPress={() => setPick(true)} />
             </Field>
           )}
-          {data && <MultiPicker visible={pick} title="Categories" onClose={() => setPick(false)} selected={selected} onChange={setIds}
-            items={data.cats.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group }))} />}
-        </>
-      ) : kind === 'basic' ? (
-        <>
-          {!!def && <Text style={{ color: t.muted, fontSize: 13 }}>{def.about}.</Text>}
-          {widget === 'avgspend' && (
-            <Field t={t} label="Starts on">
-              <View style={{ flexDirection: 'row', gap: 6 }}>{[3, 6, 12].map((m) => <Chip key={m} label={`${m} months`} on={(months === 6 || months === 12 ? months : 3) === m} onPress={() => setMonths(m)} />)}</View>
+          {splits.length > 1 && (shown === 'pie' || shown === 'list') && (
+            <Field t={t} label="Split by">
+              <View style={chips}>{splits.map((b) => <Chip key={b} label={SPLIT_LABEL[b]} on={split === b} onPress={() => setBy(b)} />)}</View>
             </Field>
           )}
+          {drawn && toggle('Numbers above the chart', numbers, setNumbers)}
+          {drawn && source !== 'cashflow' && toggle('Dashed line at the average', avgLine, setAvgLine)}
+          {oneLoan && toggle('Loan payoff date and interest', payoff, setPayoff)}
+          {data && <MultiPicker visible={pick} title="Categories" onClose={() => setPick(false)} selected={selected} onChange={setIds}
+            items={data.cats.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group }))} />}
+          {data && <MultiPicker visible={pickAcc} title="Accounts" onClose={() => setPickAcc(false)} selected={chosen} onChange={setAccs}
+            items={pool.map((a) => ({ id: a.id, label: `${a.name}${a.mask ? ` ••${a.mask}` : ''}`, group: a.type === 'credit' ? 'Credit cards' : a.type === 'loan' ? 'Loans' : a.type === 'investment' ? 'Investments' : 'Cash' }))} />}
+        </>
+      ) : (
+        <>
+          {!!def && <Text style={{ color: t.muted, fontSize: 13 }}>{def.about}.</Text>}
           {widget === 'watch' && (
             <Field t={t} label="Watched categories" hint="The same list as the Spending watch page; changing it here changes it everywhere.">
               <Button kind="plain" title={watch?.length ? `${watch.length} chosen · change` : 'Choose categories'} onPress={() => setPickWatch(true)} />
@@ -558,14 +473,8 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
             </Field>
           )}
         </>
-      ) : (
-        <Field t={t} label="Account">
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-            {data?.accounts.filter((a) => !a.is_hidden).map((a) => <Chip key={a.id} label={`${a.name}${a.mask ? ` ••${a.mask}` : ''}`} on={accountId === a.id} onPress={() => setAccountId(a.id)} />)}
-          </View>
-        </Field>
       )}
-      <Field t={t} label="Title (optional)"><TextInput value={title} onChangeText={setTitle} placeholder={kind === 'basic' ? def?.title ?? '' : chart ? SOURCES[source].title : 'e.g. Car loan'} placeholderTextColor={t.muted} style={input} /></Field>
+      <Field t={t} label="Title (optional)"><TextInput value={title} onChangeText={setTitle} placeholder={kind === 'basic' ? def?.title ?? '' : SOURCES[source].title} placeholderTextColor={t.muted} style={input} /></Field>
     </Sheet>
   );
 }

@@ -26,7 +26,7 @@ import {
 import { useTheme, type Theme } from '@/lib/theme';
 
 type Tab = string; // 'categories' | 'cashflow' | 'merchants' | a custom tab's id
-const BUILT_IN = [{ id: 'categories', name: 'Categories' }, { id: 'cashflow', name: 'Cash flow' }, { id: 'merchants', name: 'Merchants' }];
+const BUILT_IN = [{ id: 'categories', name: 'Categories' }, { id: 'cashflow', name: 'Cash flow' }];
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
 
 export default function Reports() {
@@ -36,7 +36,6 @@ export default function Reports() {
   const [cats, setCats] = useState<Category[]>([]);
   const [rows, setRows] = useState<CategoryMonth[]>([]);
   const [months, setMonths] = useState<MonthSummary[]>([]);
-  const [merchants, setMerchants] = useState<MerchantTotal[]>([]);
   const [sources, setSources] = useState<MerchantTotal[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -56,10 +55,10 @@ export default function Reports() {
     loadPrefs().then((p) => setTabs(p.report_tabs ?? [])).catch(() => {});
     try {
       const r = range;
-      const [c, s, m, inc] = await Promise.all([
-        loadCategories(), loadMonthSummaries(r.from, r.to), loadMerchants(r.from, r.to), loadMerchants(r.from, r.to, 'income'),
+      const [c, s, inc] = await Promise.all([
+        loadCategories(), loadMonthSummaries(r.from, r.to), loadMerchants(r.from, r.to, 'income'),
       ]);
-      setCats(c); setMonths(s); setMerchants(m); setSources(inc);
+      setCats(c); setMonths(s); setSources(inc);
       // report_months is newest first, so its last row is the oldest month with activity.
       setRows(s.length ? await loadCategoryMonths(s[s.length - 1].month, s[0].month) : []);
     } catch (e) {
@@ -119,10 +118,6 @@ export default function Reports() {
       {tab === 'cashflow' && (
         <PageBoard key="rf" page="reports:cashflow" refresh={refresh} range={range} defaults={[makeEntry('chart', { source: 'cashflow', view: 'bars', title: 'Money in and out', w: 'full' }), makeEntry('rep:cashflow', { w: 'full' })]}
           blocks={[{ key: 'rep:cashflow', title: 'Cash flow by month', about: 'Income, spending and net each month, and income by source', render: () => <View style={{ gap: 10 }}><CashFlow t={t} months={months} sources={sources} open={open} /></View> }]} />
-      )}
-      {tab === 'merchants' && (
-        <PageBoard key="rm" page="reports:merchants" refresh={refresh} range={range} defaults={[makeEntry('rep:merchants', { w: 'full' })]}
-          blocks={[{ key: 'rep:merchants', title: 'Spending by merchant', about: 'Where the money went, biggest first', render: () => <View style={{ gap: 10 }}><ByMerchant t={t} list={merchants} open={open} /></View> }]} />
       )}
     </ScrollView>
     {txnSheet}
@@ -234,24 +229,6 @@ function CashFlow({ t, months, sources, open }: { t: Theme; months: MonthSummary
 }
 
 // RPT-3
-function ByMerchant({ t, list, open }: { t: Theme; list: MerchantTotal[]; open: (q: Record<string, string>) => void }) {
-  if (!list.length) return <EmptyState icon="pie-chart-outline" title="No spending in this period" text="Pick a wider range of dates above." />;
-  const max = Math.max(1, ...list.map((m) => -m.total));
-  return (
-    <Card style={{ gap: 8 }}>
-      {list.slice(0, 60).map((m) => (
-        <Pressable key={m.merchant} onPress={() => open({ merchant: m.merchant, title: m.merchant })} style={{ gap: 4 }}>
-          <View style={styles.between}>
-            <Text style={{ color: t.text, flex: 1 }} numberOfLines={1}>{m.merchant}</Text>
-            <Text style={{ color: t.text }}>{formatMoney(-m.total)} <Text style={{ color: t.muted }}>· {m.txns}</Text></Text>
-          </View>
-          <Bar value={Math.max(0, -m.total)} max={max} color={t.series1} height={6} />
-        </Pressable>
-      ))}
-    </Card>
-  );
-}
-
 const styles = StyleSheet.create({
   tabBar: { gap: 6, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 6, alignItems: 'center' },
   tab: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 7 },

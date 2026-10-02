@@ -18,6 +18,8 @@ interface PlotProps {
   colors?: string[];
   /** A dashed line across the plot (a target or an average). */
   refLine?: number;
+  /** false hides the colour key (when there are too many parts for it to help). */
+  legend?: boolean;
 }
 
 /** "Nice" top of the axis: 1, 2, 2.5 or 5 times a power of ten. */
@@ -44,25 +46,33 @@ function Legend({ t, series, col }: { t: Theme; series: Series[]; col: (i: numbe
   );
 }
 
-/** The line under the title that reads out one point: its label and each series' value. */
-function Readout({ t, labels, series, sel, format, hint, col }: { t: Theme; labels: string[]; series: Series[]; sel: number | null; format: (n: number) => string; hint?: string; col: (i: number) => string }) {
-  if (sel == null) return <Legend t={t} series={series} col={col} />;
+/**
+ * The line above the plot that reads out one point. It always takes the same height, so the card
+ * doesn't move when you hover or tap: with nothing selected it shows the latest point, dimmed.
+ * Stacked charts read out the total, then the biggest parts.
+ */
+function Readout({ t, labels, series, sel, format, hint, col, stacked }: { t: Theme; labels: string[]; series: Series[]; sel: number | null; format: (n: number) => string; hint?: string; col: (i: number) => string; stacked?: boolean }) {
+  const at = sel ?? labels.length - 1;
+  const tone = sel == null ? t.muted : t.text;
+  const parts = series.map((s, i) => ({ name: s.name, v: s.values[at] ?? 0, i }));
+  const list = stacked ? parts.filter((p) => Math.abs(p.v) >= 0.5).sort((a, b) => b.v - a.v) : parts;
   return (
-    <View style={styles.legend}>
-      <Text style={{ color: t.text, fontSize: 12, fontWeight: '700' }}>{labels[sel]}</Text>
-      {series.map((s, i) => (
-        <View key={s.name} style={styles.legendItem}>
-          {series.length > 1 && <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: col(i) }} />}
-          <Text style={{ color: t.text, fontSize: 12, fontVariant: ['tabular-nums'] }}>{series.length > 1 ? `${s.name} ` : ''}{format(s.values[sel] ?? 0)}</Text>
+    <View style={styles.readout}>
+      <Text style={{ color: tone, fontSize: 12, fontWeight: '700' }}>{labels[at] ?? ''}</Text>
+      {stacked && series.length > 1 && <Text style={{ color: tone, fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{format(parts.reduce((x, p) => x + p.v, 0))}</Text>}
+      {list.map((p) => (
+        <View key={p.name} style={styles.legendItem}>
+          {series.length > 1 && <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: col(p.i), opacity: sel == null ? 0.6 : 1 }} />}
+          <Text numberOfLines={1} style={{ color: tone, fontSize: 12, fontVariant: ['tabular-nums'] }}>{series.length > 1 ? `${p.name} ` : ''}{format(p.v)}</Text>
         </View>
       ))}
-      {!!hint && <Text style={{ color: t.muted, fontSize: 12 }}>{hint}</Text>}
+      {!!hint && <Text numberOfLines={1} style={{ color: t.muted, fontSize: 12 }}>{hint}</Text>}
     </View>
   );
 }
 
 /** Shared frame: readout, y-axis labels, the plot, hit columns and x labels. */
-function Frame({ t, labels, series, height = 140, format, onPick, free, colors, refLine, stacked, also = [], children }: PlotProps & { free?: boolean; stacked?: boolean; also?: number[]; children: (w: number, h: number, min: number, max: number, sel: number | null) => React.ReactNode }) {
+function Frame({ t, labels, series, height = 140, format, onPick, free, colors, refLine, stacked, legend = true, also = [], children }: PlotProps & { free?: boolean; stacked?: boolean; also?: number[]; children: (w: number, h: number, min: number, max: number, sel: number | null) => React.ReactNode }) {
   const [w, setW] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
   const wide = useWide(); // with a mouse, hovering reads a point out and one click opens it; on a phone the first tap reads it out
@@ -82,7 +92,8 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, colors, 
   const ticks = min < 0 && max > 0 ? [max, 0, min] : [max, (max + min) / 2, min];
   return (
     <View style={{ gap: 4 }}>
-      <Readout t={t} labels={labels} series={series} sel={sel} format={format} col={col} hint={onPick && sel != null && !wide ? 'tap again for details' : undefined} />
+      {legend && <Legend t={t} series={series} col={col} />}
+      {n > 0 && <Readout t={t} labels={labels} series={series} sel={sel} format={format} col={col} stacked={stacked} hint={onPick && sel != null && !wide ? 'tap again for details' : undefined} />}
       <View style={{ flexDirection: 'row', gap: 6 }}>
         <View style={{ height, justifyContent: 'space-between', alignItems: 'flex-end' }}>
           {ticks.map((v, i) => <Text key={i} style={{ color: t.muted, fontSize: 10, fontVariant: ['tabular-nums'], lineHeight: 12, marginTop: i === 0 ? -6 : 0, marginBottom: i === 2 ? -6 : 0 }}>{format(v)}</Text>)}
@@ -246,5 +257,6 @@ export function Donut({ t, slices, format, note, size = 132 }: { t: Theme; slice
 const styles = StyleSheet.create({
   legend: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, rowGap: 2, minHeight: 18 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  readout: { flexDirection: 'row', alignItems: 'center', columnGap: 10, height: 18, overflow: 'hidden' },
   sliceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 24 },
 });

@@ -63,16 +63,9 @@ export async function loadWatch(today: string, months = 6): Promise<{ list: Watc
   const list = forIds(ids);
   const charts = prefs.watch_charts ?? {};
 
-  // Your own combined charts first; then, when stacking by group, each group with two or more
-  // watched categories becomes one chart and the rest stay on their own.
+  // Your own combined charts first, then each watched category on its own.
   const stacks: WatchStack[] = (charts.custom ?? []).map((c) => ({ id: c.id, name: c.name, parts: forIds(c.ids), custom: true })).filter((c) => c.parts.length > 0);
-  let singles = list;
-  if (charts.byGroup) {
-    const groups = new Map<string, Watched[]>();
-    for (const w of list) (groups.get(w.category.group) ?? groups.set(w.category.group, []).get(w.category.group)!).push(w);
-    singles = [];
-    for (const [g, ws] of groups) { if (ws.length > 1) stacks.push({ id: `group:${g}`, name: g, parts: ws, custom: false }); else singles.push(...ws); }
-  }
+  const singles = list;
   return { list, chosen, cats, charts, stacks, singles };
 }
 

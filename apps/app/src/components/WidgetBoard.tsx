@@ -117,7 +117,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, 
         </Sheet>
       )}
       {settings && (
-        <WidgetSettings kind={settings.key === 'chart' || settings.key === 'account' ? settings.key : 'basic'} widget={settings.key} cfg={settings.cfg} onClose={() => setSettings(null)}
+        <WidgetSettings kind={settings.key === 'chart' ? 'chart' : 'basic'} widget={settings.key} cfg={settings.cfg} onClose={() => setSettings(null)}
           onDone={(cfg) => {
             const e = makeEntry(settings.key, cfg);
             onChange(settings.index == null ? [...entries, e] : entries.map((x, n) => (n === settings.index ? e : x)));

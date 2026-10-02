@@ -36,7 +36,7 @@ export default function Merchants() {
   const [rows, setRows] = useState<M[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState<'count' | 'name' | 'recent'>('count');
+  const [sort, setSort] = useState<'amount' | 'count' | 'name' | 'recent'>('amount');
   const [edit, setEdit] = useState<M | null>(null);
   const [name, setName] = useState('');
   const lv = useLogoVersion();
@@ -66,6 +66,7 @@ export default function Merchants() {
     const list = s ? rows.filter((r) => r.merchant.toLowerCase().includes(s)) : [...rows];
     if (sort === 'name') list.sort((a, b) => a.merchant.localeCompare(b.merchant));
     else if (sort === 'recent') list.sort((a, b) => b.last_date.localeCompare(a.last_date));
+    else if (sort === 'amount') list.sort((a, b) => a.total - b.total || b.txns - a.txns); // most spent first
     else list.sort((a, b) => b.txns - a.txns);
     return list;
   }, [rows, q, sort]);
@@ -121,7 +122,7 @@ export default function Merchants() {
           <DateRangeButton value={range} onChange={setRange} />
           <FilterButton t={t} icon="wallet-outline" label={accountIds.length ? (accountIds.length === 1 ? accounts.find((a) => a.id === accountIds[0])?.name ?? '1 account' : `${accountIds.length} accounts`) : 'All accounts'} on={accountIds.length > 0} onPress={() => setPick('accounts')} />
         </View>
-        <Segmented value={sort} onChange={setSort} options={[{ value: 'count', label: 'Most used' }, { value: 'recent', label: 'Recent' }, { value: 'name', label: 'A–Z' }]} />
+        <Segmented value={sort} onChange={setSort} options={[{ value: 'amount', label: 'Amount' }, { value: 'count', label: 'Most used' }, { value: 'recent', label: 'Recent' }, { value: 'name', label: 'A–Z' }]} />
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       </View>
       <View style={[{ flex: 1 }, wide && styles.split]}>
