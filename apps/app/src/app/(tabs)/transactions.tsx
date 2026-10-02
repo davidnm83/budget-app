@@ -195,7 +195,7 @@ export default function Transactions() {
       {!!error && <Text style={{ color: t.danger, padding: 12 }}>{error}</Text>}
 
       <View style={[COLUMN, { flex: 1, flexDirection: 'row' }]}>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, minWidth: wide ? 400 : 0 }}>
       {byDate ? (
         <SectionList
           sections={sections}
@@ -483,7 +483,8 @@ function FilterSummary({ t, mode, filters, query, stamp }: { t: Theme; mode: Mod
   );
 }
 const styles = StyleSheet.create({
-  side: { width: 420, borderLeftWidth: 1 },
+  // The list keeps at least 400px; the side pane gives up width first and never grows past 420.
+  side: { width: 420, flexGrow: 0, flexShrink: 1, flexBasis: 420, minWidth: 300, borderLeftWidth: 1 },
   sideHead: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   status: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   search: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, height: 40 },
