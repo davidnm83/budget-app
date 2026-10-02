@@ -19,6 +19,7 @@ const S: Record<string, any> = web ? StyleSheet.create({
   pop: kf({ opacity: 0, transform: 'translateY(10px) scale(0.97)' }, { opacity: 1, transform: 'translateY(0px) scale(1)' }, '220ms'),
   panel: kf({ opacity: 0, transform: 'translateX(36px)' }, { opacity: 1, transform: 'translateX(0px)' }, '240ms'),
   slide: kf({ opacity: 0, transform: 'translateX(28px)' }, { opacity: 1, transform: 'translateX(0px)' }, '200ms'),
+  sheet: kf({ transform: 'translateY(100%)' }, { transform: 'translateY(0%)' }, '280ms', undefined, { willChange: 'transform' }),
   enterA: up(10), enterB: up(10.01),
   pulse: { animationKeyframes: { '0%': { opacity: 1 }, '50%': { opacity: 0.45 }, '100%': { opacity: 1 } }, animationDuration: '1400ms', animationIterationCount: 'infinite', animationTimingFunction: 'ease-in-out' } as any,
   backwards: { animationFillMode: 'backwards' } as any,
@@ -32,6 +33,8 @@ export const GROW: any = S.grow ?? {};
 export const SPIN: any = S.spin ?? {};
 /** A centred pop-up arriving on a wide screen. */
 export const POP: any = S.pop ?? {};
+/** A phone sheet rising from the bottom edge. Runs off the main thread, so it stays smooth while the sheet's content is still being drawn. */
+export const SHEET: any = S.sheet ?? {};
 /** A panel sliding in from the right edge (transaction details beside the list). */
 export const PANEL: any = S.panel ?? {};
 /** A page arriving from the right. */

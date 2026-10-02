@@ -5,6 +5,7 @@
 //   • Details — display name, sync status, balance, card settings, planner, hide, merge.
 //   • Transactions — the latest 100.
 // The overview is built from small blocks so they can be reused on custom pages later.
+import { LIST } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Sheet } from '@/components/Forms';
 import { TransactionEditor } from '@/components/TransactionEditor';
@@ -127,7 +128,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
         )}
         {tab === 'details' && <DetailsTab t={t} account={account} accounts={accounts} onChanged={onChanged} onClose={onClose} />}
         {tab === 'txns' && (
-          <FlatList
+          <FlatList {...LIST}
             data={list}
             keyExtractor={(r) => r.id}
             ListFooterComponent={list.length >= 100 ? <Button title="See all in Transactions" kind="plain" style={{ margin: 16 }} onPress={() => { onClose(); afterClose(() => router.navigate('/transactions' as any)); }} /> : null}

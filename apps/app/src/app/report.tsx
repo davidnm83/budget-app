@@ -1,5 +1,6 @@
 // Drill-down from Budget or Reports: the transactions (or split parts) behind one number.
 // Params: from, to, title, and one of category (id or 'none'), group, merchant; optional kind.
+import { LIST } from '@/lib/layout';
 import { formatMoney, shortDate } from '@budget-app/core';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -43,7 +44,7 @@ export default function Report() {
         <Text style={{ color: t.muted }}>{lines?.length ?? '…'} transactions · {shortDate(p.from)} {p.from.slice(0, 4)} – {shortDate(p.to)} {p.to.slice(0, 4)}</Text>
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       </View>
-      <FlatList
+      <FlatList {...LIST}
         data={lines ?? []}
         keyExtractor={(l, i) => l.transaction_id + i}
         ListEmptyComponent={lines ? <Empty text="Nothing here." /> : null}

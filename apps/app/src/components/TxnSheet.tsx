@@ -3,6 +3,7 @@
 //   const [showTxns, txnSheet] = useTxnSheet();
 //   showTxns({ title: 'Groceries · Sep', from: '2026-09-01', to: '2026-09-30', categoryIds: [id] });
 //   … {txnSheet}
+import { LIST } from '@/lib/layout';
 import { formatMoney, shortDate } from '@budget-app/core';
 import { seedTxn } from '@/lib/txnCache';
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
@@ -78,7 +79,7 @@ export function TxnSheet({ q, onClose }: { q: TxnQuery; onClose: () => void }) {
         </View>
       </View>
       {!!error && <Text style={{ color: t.danger, padding: 12 }}>{error}</Text>}
-      <FlatList
+      <FlatList {...LIST}
         data={lines ?? []}
         keyExtractor={(l, i) => `${l.transaction_id}:${i}`}
         ListEmptyComponent={lines ? <Text style={{ color: t.muted, padding: 16 }}>No transactions in this period.</Text> : null}

@@ -5,7 +5,7 @@ import { ModalFrame } from '@/components/ModalFrame';
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useWide } from '@/lib/layout';
+import { useWide, LIST } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
 import { useBackToClose } from '@/lib/useBackToClose';
 
@@ -42,7 +42,7 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
           <TextInput value={q} onChangeText={setQ} placeholder={`Search ${title.toLowerCase()}`} placeholderTextColor={t.muted} autoFocus={wide}
             style={[{ flex: 1, color: t.text, paddingVertical: 9, fontSize: 15 }, { outlineStyle: 'none' } as any]} />
         </View>
-        <FlatList
+        <FlatList {...LIST}
           data={list}
           keyExtractor={(i) => i.id}
           keyboardShouldPersistTaps="handled"
@@ -110,7 +110,7 @@ export function SinglePicker({ visible, title, items, selected, suggested = [], 
             </View>
           </View>
         )}
-        <FlatList data={rows} keyExtractor={(r, n) => ('head' in r ? `h${n}` : r.id)} keyboardShouldPersistTaps="handled"
+        <FlatList {...LIST} data={rows} keyExtractor={(r, n) => ('head' in r ? `h${n}` : r.id)} keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => 'head' in item
             ? <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>{item.head.toUpperCase()}</Text>
             : (

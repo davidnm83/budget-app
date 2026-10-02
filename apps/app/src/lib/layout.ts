@@ -23,3 +23,9 @@ export const ROW: { title: TextStyle; sub: TextStyle; amount: TextStyle; minHeig
   amount: { fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
   minHeight: 56,
 };
+
+/**
+ * For every long list: draw about a screen and a half first, then keep a few screens either side
+ * of what's showing (the default keeps ten each way, which is a lot of rows to build and hold).
+ */
+export const LIST = { initialNumToRender: 14, maxToRenderPerBatch: 12, updateCellsBatchingPeriod: 40, windowSize: 9 } as const;

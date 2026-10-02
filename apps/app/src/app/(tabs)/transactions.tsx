@@ -4,7 +4,7 @@
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import { Sheet } from '@/components/Forms';
 import { Tile } from '@/components/Tile';
-import { ROW } from '@/lib/layout';
+import { ROW, LIST } from '@/lib/layout';
 import { EmptyState, PageSkeleton, RowsSkeleton } from '@/components/States';
 import { ALL_TIME, DateRangeBody, type Range } from '@/components/DateRange';
 import { toast } from '@/lib/toast';
@@ -197,7 +197,7 @@ export default function Transactions() {
       <View style={[COLUMN, { flex: 1, flexDirection: 'row' }]}>
       <View style={{ flex: 1, minWidth: wide ? 400 : 0 }}>
       {byDate ? (
-        <SectionList
+        <SectionList {...LIST}
           sections={sections}
           keyExtractor={(r) => r.id}
           stickySectionHeadersEnabled
@@ -215,7 +215,7 @@ export default function Transactions() {
           contentContainerStyle={{ paddingBottom: UNDER_BAR }}
         />
       ) : (
-        <FlatList
+        <FlatList {...LIST}
           data={rows}
           keyExtractor={(r) => r.id}
           refreshControl={<RefreshControl refreshing={loading && !rows.length} onRefresh={reload} />}

@@ -58,13 +58,14 @@ export default function Categories() {
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <ScrollView contentContainerStyle={styles.page}>
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-        <Text style={{ color: t.muted, fontSize: 13 }}>Tap a category to edit it, or a group name to rename the group or change its emoji. Hidden categories stay on old transactions.</Text>
+        <Text style={{ color: t.muted, fontSize: 13 }}>Tap a category to edit it. “Edit group” renames a group, changes its emoji, and chooses which categories are in it. Hidden categories stay on old transactions.</Text>
+        <Button title="New group" kind="plain" onPress={() => setGroup('')} />
         {groups.map(([g, list]) => (
           <View key={g} style={{ gap: 6 }}>
             <Pressable onPress={() => setGroup(g)} style={styles.groupHead}>
               <Text style={{ fontSize: 15 }}>{groupIcon(g, groupIcons[g])}</Text>
               <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, flex: 1 }}>{g.toUpperCase()}</Text>
-              <Ionicons name="pencil" size={13} color={t.muted} />
+              <Ionicons name="pencil" size={13} color={t.accent} /><Text style={{ color: t.accent, fontSize: 12, fontWeight: '600' }}>Edit group</Text>
             </Pressable>
             <Card style={{ padding: 0 }}>
               {list.map((c, i) => (
@@ -87,7 +88,7 @@ export default function Categories() {
         <Ionicons name="add" size={28} color="#fff" />
       </Pressable>
       {editing && <CategoryEditor initial={editing} cats={cats} count={editing.id ? counts.get(editing.id) ?? 0 : 0} onClose={() => setEditing(null)} onSaved={load} />}
-      {group && <GroupEditor name={group} icon={groupIcons[group] ?? ''} onClose={() => setGroup(null)} onSaved={load} />}
+      {group != null && <GroupEditor name={group} icon={groupIcons[group] ?? ''} cats={cats} onClose={() => setGroup(null)} onSaved={load} />}
     </View>
   );
 }
@@ -162,28 +163,49 @@ function CategoryEditor({ initial, cats, count, onClose, onSaved }: { initial: P
   );
 }
 
-function GroupEditor({ name, icon: initialIcon, onClose, onSaved }: { name: string; icon: string; onClose: () => void; onSaved: () => void }) {
+/** Rename a group, change its emoji, and choose its categories. An empty `name` makes a new group. */
+function GroupEditor({ name, icon: initialIcon, cats, onClose, onSaved }: { name: string; icon: string; cats: Cat[]; onClose: () => void; onSaved: () => void }) {
   const t = useTheme();
+  const isNew = name === '';
   const [value, setValue] = useState(name);
   const [icon, setIcon] = useState(initialIcon);
   const [error, setError] = useState('');
+  const before = cats.filter((c) => c.group_name === name && !isNew).map((c) => c.id);
+  const [members, setMembers] = useState<string[]>(before);
+  const [picking, setPicking] = useState(false);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
   const save = async () => {
     try {
-      if (icon !== initialIcon) await setGroupIcon(name, icon.trim() || null);
-      await renameGroup(name, value);
+      const to = value.trim();
+      if (!to) { setError('Give the group a name.'); return; }
+      if (isNew && !members.length) { setError('Pick at least one category for the group. A group exists as long as it has categories in it.'); return; }
+      if (!isNew && to !== name) await renameGroup(name, to);
+      const added = members.filter((id) => !before.includes(id));
+      const removed = before.filter((id) => !members.includes(id));
+      if (added.length) { const r = await supabase.from('categories').update({ group_name: to }).in('id', added); if (r.error) throw new Error(r.error.message); }
+      // Categories taken out of a group land in "Other" (they have to be somewhere).
+      if (removed.length) { const r = await supabase.from('categories').update({ group_name: to === 'Other' ? 'Ungrouped' : 'Other' }).in('id', removed); if (r.error) throw new Error(r.error.message); }
+      if (icon !== initialIcon || isNew) await setGroupIcon(to, icon.trim() || null);
+      toast(isNew ? `Group “${to}” made` : 'Group saved');
       onSaved(); onClose();
     }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
+  const names = cats.filter((c) => members.includes(c.id)).map((c) => c.name);
   return (
-    <Sheet title="Edit group" onClose={onClose} footer={<Button title="Save" onPress={save} />}>
+    <Sheet title={isNew ? 'New group' : 'Edit group'} onClose={onClose} footer={<Button title="Save" onPress={save} />}>
       <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
-        <Field t={t} label="Icon"><EmojiField value={icon} onChange={setIcon} placeholder={groupIcon(name)} /></Field>
-        <View style={{ flex: 1 }}><Field t={t} label="Group name"><TextInput value={value} onChangeText={setValue} style={input} /></Field></View>
+        <Field t={t} label="Icon"><EmojiField value={icon} onChange={setIcon} placeholder={groupIcon(value || name)} /></Field>
+        <View style={{ flex: 1 }}><Field t={t} label="Group name"><TextInput value={value} onChangeText={setValue} placeholder="e.g. Pets" placeholderTextColor={t.muted} style={input} /></Field></View>
       </View>
-      <Text style={{ color: t.muted, fontSize: 12 }}>Renaming to an existing group's name combines the two.</Text>
+      {!isNew && <Text style={{ color: t.muted, fontSize: 12 }}>Renaming to an existing group's name combines the two.</Text>}
+      <Field t={t} label="Categories in this group" hint={names.length ? names.join(' · ') : 'None yet.'}>
+        <Button kind="plain" title={members.length ? `${members.length} chosen · change` : 'Choose categories'} onPress={() => setPicking(true)} />
+      </Field>
+      <Text style={{ color: t.muted, fontSize: 12 }}>Ticking a category moves it here from its current group. Unticking one moves it to “Other”.</Text>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+      <MultiPicker visible={picking} title="Categories in this group" onClose={() => setPicking(false)} selected={members} onChange={setMembers}
+        items={cats.filter((c) => !c.is_hidden).map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))} />
     </Sheet>
   );
 }

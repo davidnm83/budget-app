@@ -68,10 +68,12 @@ function useNoAutofill() {
     const css = document.createElement('style');
     css.textContent = 'html,body{overscroll-behavior-y:contain}'
       + '[tabindex="0"],[role="button"],[role="tab"],[role="link"]{transition:background-color .16s ease-out,border-color .16s ease-out,box-shadow .2s ease-out,transform .14s cubic-bezier(.2,.8,.2,1),opacity .16s ease-out}'
+      + '@media (hover:hover){[data-emoji]:hover{background-color:rgba(128,128,128,.22)}}'
       + '@media (hover:hover){*{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,.35) transparent}}'
       + '@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}input[type=search]{-webkit-appearance:none;appearance:none}input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-search-decoration{-webkit-appearance:none;display:none}';
     document.head.appendChild(css);
-    const mark = (root: ParentNode) => root.querySelectorAll?.('input, textarea').forEach(fix);
+    // Most of what gets added to a page has no fields in it, so only look inside when there are children at all.
+    const mark = (root: ParentNode) => { if ((root as Element).firstElementChild !== null) root.querySelectorAll?.('input, textarea').forEach(fix); };
     mark(document);
     const obs = new MutationObserver((list) => list.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) { fix(n as Element); mark(n as Element); } })));
     obs.observe(document.body, { childList: true, subtree: true });

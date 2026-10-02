@@ -1,7 +1,7 @@
 // Accounts tab: every account grouped by type, with net worth at the top. Tap one for its
 // details (name, balance, history, planner settings, merge) in a pop-up.
 import { accountIcon, formatMoney } from '@budget-app/core';
-import { ROW } from '@/lib/layout';
+import { ROW, LIST } from '@/lib/layout';
 import { EmptyState, RowsSkeleton } from '@/components/States';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { bankLogo, customPicture, useLogoVersion } from '@/lib/logos';
@@ -82,7 +82,7 @@ export default function Accounts() {
           : <IconButton icon="sync" label="Sync now" onPress={syncNow} />}
       </TopBar>
       {!!msg && <Text style={{ color: t.muted, paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 }}>{msg}</Text>}
-      <SectionList style={COLUMN} contentContainerStyle={{ paddingBottom: UNDER_BAR }}
+      <SectionList {...LIST} style={COLUMN} contentContainerStyle={{ paddingBottom: UNDER_BAR }}
         sections={sections}
         keyExtractor={(a) => a.id}
         stickySectionHeadersEnabled={false}

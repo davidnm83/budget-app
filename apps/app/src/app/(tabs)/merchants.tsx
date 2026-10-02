@@ -3,7 +3,7 @@
 // future transactions from the bank get the same name.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tile } from '@/components/Tile';
-import { ROW } from '@/lib/layout';
+import { ROW, LIST } from '@/lib/layout';
 import { EmptyState, RowsSkeleton } from '@/components/States';
 import { ALL_TIME, DateRangeButton, type Range } from '@/components/DateRange';
 import { toast } from '@/lib/toast';
@@ -127,7 +127,7 @@ export default function Merchants() {
       </View>
       <View style={[{ flex: 1 }, wide && styles.split]}>
       <View style={{ flex: 1 }}>
-      <FlatList data={shown} keyExtractor={(r) => r.merchant} contentContainerStyle={styles.list}
+      <FlatList {...LIST} data={shown} keyExtractor={(r) => r.merchant} contentContainerStyle={styles.list}
         ListEmptyComponent={loaded ? <EmptyState icon="storefront-outline" title={q.trim() ? 'No merchants match' : 'No merchants yet'} text={q.trim() ? 'Try a shorter search or a wider date range.' : 'They appear here once you have transactions.'} /> : <RowsSkeleton />}
         renderItem={({ item }) => (
           <Pressable onPress={() => { setEdit(item); setName(item.merchant); setError(''); }}

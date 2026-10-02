@@ -2,8 +2,8 @@
 // is loaded the first time the picker opens.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { memo, useEffect, useMemo, useState } from 'react';
+import { FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
 import { useWide } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
@@ -11,6 +11,7 @@ import { useTheme } from '@/lib/theme';
 type Group = { name: string; items: [string, string][] };
 let cache: Group[] | null = null;
 const COLS = 8;
+const CELL = 46; // row height; fixed, so the list knows where every row is without measuring
 
 export function EmojiPicker({ value, onPick, onClose, title = 'Choose an emoji' }: { value?: string; onPick: (emoji: string) => void; onClose: () => void; title?: string }) {
   const t = useTheme();
@@ -28,6 +29,7 @@ export function EmojiPicker({ value, onPick, onClose, title = 'Choose an emoji' 
     for (let i = 0; i < list.length; i += COLS) rows.push(list.slice(i, i + COLS));
     return rows;
   }, [groups, g, q]);
+  const choose = (e: string) => { onPick(e); onClose(); };
   return (
     <Sheet title={title} onClose={onClose} scroll={false}>
       <View style={{ flex: 1, minHeight: 420 }}>
@@ -48,22 +50,40 @@ export function EmojiPicker({ value, onPick, onClose, title = 'Choose an emoji' 
         )}
         {!groups ? <Text style={{ color: t.muted, padding: 16 }}>Loading…</Text> : !shown.length ? <Text style={{ color: t.muted, padding: 16 }}>No emoji matches “{q}”.</Text> : (
           <FlatList data={shown} keyExtractor={(r) => r[0][0]} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 28 }}
-            ListHeaderComponent={<Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, paddingVertical: 6 }}>{q.trim() ? 'RESULTS' : groups[g].name.toUpperCase()}</Text>}
-            renderItem={({ item }) => (
-              <View style={{ flexDirection: 'row' }}>
-                {item.map(([e, name]) => (
-                  <Pressable key={e} onPress={() => { onPick(e); onClose(); }} accessibilityLabel={name}
-                    style={({ pressed, hovered }: any) => [styles.cell, (pressed || hovered || e === value) && { backgroundColor: t.line }]}>
-                    <Text style={{ fontSize: 26 }}>{e}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            )} />
+            initialNumToRender={8} maxToRenderPerBatch={8} updateCellsBatchingPeriod={30} windowSize={5}
+            getItemLayout={(_, index) => ({ length: CELL, offset: 26 + CELL * index, index })}
+            ListHeaderComponent={<Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, height: 26, lineHeight: 26 }}>{q.trim() ? 'RESULTS' : groups[g].name.toUpperCase()}</Text>}
+            renderItem={({ item }) => <Row item={item} value={value} hover={t.line} onPick={choose} />} />
         )}
       </View>
     </Sheet>
   );
 }
+
+/**
+ * One row of the grid. On the web each emoji is a single plain element and the row handles the
+ * tap for all of them (hover is done in CSS), which is far lighter than a button per emoji when
+ * a few hundred are on screen. Rows only redraw when their own emoji or the chosen one change.
+ */
+const Row = memo(function Row({ item, value, hover, onPick }: { item: [string, string][]; value?: string; hover: string; onPick: (e: string) => void }) {
+  if (Platform.OS !== 'web') {
+    return (
+      <View style={styles.row}>
+        {item.map(([e, name]) => (
+          <Pressable key={e} onPress={() => onPick(e)} accessibilityLabel={name} style={[styles.cell, e === value && { backgroundColor: hover }]}><Text style={styles.glyph}>{e}</Text></Pressable>
+        ))}
+      </View>
+    );
+  }
+  const click = (ev: any) => { const e = ev.target?.closest?.('[data-emoji]')?.getAttribute('data-emoji'); if (e) onPick(e); };
+  return (
+    <View style={styles.row} {...({ onClick: click } as any)}>
+      {item.map(([e, name]) => (
+        <Text key={e} accessibilityLabel={name} {...({ dataSet: { emoji: e } } as any)} style={[styles.cell, styles.glyph, e === value && { backgroundColor: hover }]}>{e}</Text>
+      ))}
+    </View>
+  );
+});
 
 /** The emoji shown as a button; tap to open the picker. An empty value shows the default in a muted state. */
 export function EmojiField({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
@@ -82,6 +102,8 @@ export function EmojiField({ value, onChange, placeholder }: { value: string; on
 const styles = StyleSheet.create({
   search: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, marginHorizontal: 12, marginTop: 14, marginBottom: 12 },
   group: { width: 40, height: 36, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  cell: { flex: 1, maxWidth: `${100 / COLS}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
+  row: { flexDirection: 'row', height: CELL },
+  cell: { flex: 1, maxWidth: `${100 / COLS}%`, height: CELL, alignItems: 'center', justifyContent: 'center', borderRadius: 10, cursor: 'pointer' as any },
+  glyph: { fontSize: 26, lineHeight: CELL, textAlign: 'center' },
   field: { width: 56, height: 44, borderWidth: 1, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
 });
