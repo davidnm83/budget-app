@@ -1,0 +1,24 @@
+{
+  "name": "Edge test E",
+  "short_name": "Edge E",
+  "id": "/edge-test/e/",
+  "start_url": "/edge-test/e/index.html",
+  "scope": "/edge-test/e/",
+  "display": "fullscreen",
+  "background_color": "#f0f0ec",
+  "theme_color": "#f0f0ec",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
