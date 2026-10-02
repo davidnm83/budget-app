@@ -26,7 +26,7 @@ the SQL Editor and fill it in there. Do not save the filled-in copy back to the 
 ## Settings to check in the Supabase dashboard
 
 - Authentication > Sign In / Providers: turn off "Allow new users to sign up" and add users yourself.
-- Authentication > Attack Protection: turn on leaked-password protection.
+- Authentication > Attack Protection: turn on leaked-password protection if your plan has it (not on the free tier).
 - Use a long unique password. Anyone with it can read your finances.
 
 ## Known limits

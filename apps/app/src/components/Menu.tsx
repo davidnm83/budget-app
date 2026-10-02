@@ -118,10 +118,6 @@ function MenuBody({ go, tabs, active, fit }: { go: (href: string) => void; tabs?
           <Text style={[styles.kbd, { color: t.muted, borderColor: t.line }]}>?</Text>
         </Pressable>
       )}
-      <Pressable onPress={() => supabase.auth.signOut()} style={styles.itemSmall}>
-        <Ionicons name="log-out-outline" size={17} color={t.muted} />
-        <Text style={{ color: t.muted, fontSize: 14 }}>Sign out</Text>
-      </Pressable>
     </>
   );
 }
