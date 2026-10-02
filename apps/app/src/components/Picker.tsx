@@ -31,6 +31,7 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
       <View style={{ flex: 1 }}>
         <View style={[styles.head, { borderColor: t.line }]}>
           <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: 1 }}>{title}{selected.length ? ` · ${selected.length}` : ''}</Text>
+          {list.some((i) => !selected.includes(i.id)) && <Pressable onPress={() => onChange([...new Set([...selected, ...list.map((i) => i.id)])])} hitSlop={8}><Text style={{ color: t.accent }}>{q.trim() ? `Select ${list.length} shown` : 'Select all'}</Text></Pressable>}
           {!!selected.length && <Pressable onPress={() => onChange([])} hitSlop={8}><Text style={{ color: t.accent }}>Clear</Text></Pressable>}
           <Pressable onPress={onClose} hitSlop={8} style={[styles.done, { backgroundColor: t.accent }]}><Text style={{ color: '#fff', fontWeight: '600' }}>Done</Text></Pressable>
         </View>

@@ -21,18 +21,23 @@ const FREQ_LABEL = { weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Mont
 
 interface Due { key: string; bill: Recurring; date: string; txn: { date: string; amount: number } | null }
 
-export default function Bills({ mode = 'month' }: { mode?: 'month' | 'all' }) {
+/** Inside the Planner (`embedded`) the planner's top bar owns the month arrows and the + button. */
+export default function Bills({ mode = 'month', month: monthProp, embedded }: { mode?: 'month' | 'all'; month?: string; embedded?: boolean }) {
   const t = useTheme();
   // Suggestions aren't a tab: a banner offers them when there are any, and opens this list.
   const [suggesting, setSuggesting] = useState(false);
   const view: 'month' | 'all' | 'suggest' = suggesting ? 'suggest' : mode;
   useEffect(() => { setSuggesting(false); }, [mode]);
-  const [month, setMonth] = useState(monthOf(today()));
+  const [suggestions, setSuggestions] = useState<RecurringSuggestion[] | null>(null);
+  const [ownMonth, setMonth] = useState(monthOf(today()));
+  const month = monthProp ?? ownMonth;
+  const [dismissed, setDismissed] = useState<string[]>(readDismissed);
+  const fresh = (suggestions ?? []).filter((x) => !dismissed.includes(sugKey(x)));
+  const dismiss = () => { const all = [...new Set([...dismissed, ...fresh.map(sugKey)])]; setDismissed(all); try { globalThis.localStorage?.setItem(DISMISS_KEY, JSON.stringify(all)); } catch { /* lasts until reload */ } };
   const [bills, setBills] = useState<Recurring[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [cats, setCats] = useState<{ id: string; name: string; group_name: string; icon: string | null }[]>([]);
   const [dues, setDues] = useState<Due[]>([]);
-  const [suggestions, setSuggestions] = useState<RecurringSuggestion[] | null>(null);
   const [editing, setEditing] = useState<Partial<Recurring> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -91,11 +96,12 @@ export default function Bills({ mode = 'month' }: { mode?: 'month' | 'all' }) {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-        {view !== 'suggest' && !!suggestions?.length && (
+        {view !== 'suggest' && fresh.length > 0 && (
           <Pressable onPress={() => setSuggesting(true)} style={[styles.banner, { borderColor: t.accent, backgroundColor: t.accent + '14' }]}>
             <Ionicons name="sparkles-outline" size={18} color={t.accent} />
-            <Text style={{ color: t.text, flex: 1 }}>{suggestions.length} repeating payment{suggestions.length === 1 ? '' : 's'} in your history {suggestions.length === 1 ? 'isn’t a bill' : 'aren’t bills'} yet</Text>
+            <Text style={{ color: t.text, flex: 1 }}>{fresh.length} repeating payment{fresh.length === 1 ? '' : 's'} in your history {fresh.length === 1 ? 'isn’t a bill' : 'aren’t bills'} yet</Text>
             <Text style={{ color: t.accent, fontWeight: '600' }}>Review ›</Text>
+            <Pressable onPress={dismiss} hitSlop={10} accessibilityLabel="Dismiss suggestions"><Ionicons name="close" size={18} color={t.muted} /></Pressable>
           </Pressable>
         )}
         {view === 'suggest' && (
@@ -107,7 +113,7 @@ export default function Bills({ mode = 'month' }: { mode?: 'month' | 'all' }) {
 
         {view === 'month' && (
           <>
-            <Stepper label={monthName(month)} onPrev={() => setMonth(addMonths(month, -1))} onNext={() => setMonth(addMonths(month, 1))} />
+            {!monthProp && <Stepper label={monthName(month)} onPrev={() => setMonth(addMonths(month, -1))} onNext={() => setMonth(addMonths(month, 1))} />}
             <View style={styles.tiles}>
               <Tile t={t} label="Still to pay" value={formatMoney(toPay)} strong />
               <Tile t={t} label="Bills this month" value={formatMoney(totalBills)} />
@@ -165,14 +171,18 @@ export default function Bills({ mode = 'month' }: { mode?: 'month' | 'all' }) {
         )}
       </ScrollView>
 
-      <Pressable onPress={() => setEditing({ kind: 'bill', frequency: 'monthly', start_date: now })} style={[styles.fab, { backgroundColor: t.accent }]} accessibilityLabel="Add a bill or income">
+      {!embedded && <Pressable onPress={() => setEditing({ kind: 'bill', frequency: 'monthly', start_date: now })} style={[styles.fab, { backgroundColor: t.accent }]} accessibilityLabel="Add a bill or income">
         <Ionicons name="add" size={28} color="#fff" />
-      </Pressable>
+      </Pressable>}
       {editing && <BillForm initial={editing} accounts={accounts} categories={cats} onClose={() => setEditing(null)}
         onSaved={() => { load(); if (view === 'suggest') setSuggestions((s) => s?.filter((x) => x.name !== editing.name) ?? null); }} />}
     </View>
   );
 }
+
+const DISMISS_KEY = 'budget.billSuggestionsDismissed';
+const sugKey = (x: RecurringSuggestion) => `${x.kind}|${x.name}`;
+function readDismissed(): string[] { try { return JSON.parse(globalThis.localStorage?.getItem(DISMISS_KEY) ?? '[]'); } catch { return []; } }
 
 /** A suggestion's next due date: step its schedule forward from the last time it happened. */
 function nextDue(s: RecurringSuggestion): string {

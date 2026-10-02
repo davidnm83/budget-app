@@ -43,7 +43,9 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
   const path = usePathname();
   const [pages, setPages] = useState<Page[]>([]);
   const [order, setOrder] = useState<string[]>([]);
+  const [toReview, setToReview] = useState(0);
   const [sorting, setSorting] = useState(false);
+  useEffect(() => { if (tabs) supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('reviewed', false).then((r) => setToReview(r.count ?? 0)); }, [tabs, path]);
   // Reload when shown and when the page changes (a custom page may have been added or renamed).
   useEffect(() => { if (active) loadPrefs().then((p) => { setPages(p.pages ?? []); setOrder(p.menu_order ?? []); }).catch(() => {}); else setSorting(false); }, [active, path]);
 
@@ -64,7 +66,8 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
       {tabs ? TAB_ITEMS.map((i) => (
         <Pressable key={i.href} onPress={() => go(i.href)} accessibilityRole="link" style={({ pressed, hovered }: any) => [styles.item, (pressed || hovered) && { backgroundColor: t.bg }, here(i.href) && { backgroundColor: t.line }]}>
           <Ionicons name={i.icon!} size={20} color={here(i.href) ? t.accent : t.text} />
-          <Text style={{ color: here(i.href) ? t.accent : t.text, fontSize: 15, fontWeight: '600' }}>{i.label}</Text>
+          <Text style={{ color: here(i.href) ? t.accent : t.text, fontSize: 15, fontWeight: '600', flex: 1 }}>{i.label}</Text>
+          {i.href === '/transactions' && toReview > 0 && <View style={[styles.badge, { backgroundColor: t.danger }]}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{toReview > 99 ? '99+' : toReview}</Text></View>}
         </Pressable>
       )) : (
         <Pressable onPress={() => go('/')} style={({ pressed }) => [styles.item, (pressed || TABS.includes(path)) && { backgroundColor: t.line }]}>
@@ -122,16 +125,7 @@ export function Sidebar() {
   const path = usePathname();
   const wide = useWide();
   const open = useSidebar();
-  if (!wide) return null;
-  if (!open) {
-    return (
-      <View style={[styles.rail, { backgroundColor: t.card, borderColor: t.line }]}>
-        <Pressable onPress={() => setSidebar(true)} accessibilityLabel="Show sidebar" hitSlop={6} style={({ hovered }: any) => [styles.iconBtn, { borderWidth: 0 }, hovered && { backgroundColor: t.bg }]}>
-          <Ionicons name="menu" size={22} color={t.text} />
-        </Pressable>
-      </View>
-    );
-  }
+  if (!wide || !open) return null;
   return (
     <View style={[styles.sidebar, { backgroundColor: t.card, borderColor: t.line }]}>
       <View style={[styles.between, { paddingLeft: 16, paddingRight: 8, height: 52 }]}>
@@ -150,16 +144,17 @@ export function MenuButton({ plain }: { plain?: boolean }) {
   const insets = useSafeAreaInsets();
   const path = usePathname();
   const wide = useWide();
+  const sidebar = useSidebar();
   const [open, setOpen] = useState(false);
   useBackToClose(open, () => setOpen(false));
   useEffect(() => { if (wide) setOpen(false); }, [wide]);
-  if (wide) return null; // the sidebar (or its slim rail when hidden) is the menu
+  if (wide && sidebar) return null; // the sidebar is the menu
   // Close the menu (and its history entry) first. From a tab a page opens on top; from another
   // menu page it takes that page's place, so pages don't pile up behind each other.
   const go = (href: string) => { setOpen(false); afterClose(() => navigateTo(href, path)); };
   return (
     <>
-      <Pressable onPress={() => setOpen(true)} accessibilityLabel="Menu" hitSlop={8}
+      <Pressable onPress={() => (wide ? setSidebar(true) : setOpen(true))} accessibilityLabel={wide ? 'Show sidebar' : 'Menu'} hitSlop={8}
         style={[styles.iconBtn, plain ? { borderWidth: 0 } : { borderColor: t.line, backgroundColor: t.card }]}>
         <Ionicons name="menu" size={plain ? 24 : 20} color={t.text} />
       </Pressable>
@@ -177,7 +172,7 @@ export function MenuButton({ plain }: { plain?: boolean }) {
 const styles = StyleSheet.create({
   iconBtn: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', flexDirection: 'row' },
-  rail: { width: 48, borderRightWidth: 1, alignItems: 'center', paddingTop: 6 },
+  badge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
   sidebar: { width: 232, borderRightWidth: 1, paddingBottom: 12 },
   drawer: { width: 280, maxWidth: '82%', height: '100%', paddingBottom: 24 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12 },

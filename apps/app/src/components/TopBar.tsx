@@ -19,7 +19,7 @@ export function TopBar({ children, title }: { children?: ReactNode; title?: stri
   const wide = useWide();
   return (
     <View style={[styles.bar, { paddingTop: insets.top + 8, backgroundColor: t.bg }]}>
-      {!wide && <MenuButton />}
+      <MenuButton />
       {title ? <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: children ? 0 : 1 }}>{title}</Text> : null}
       {children ? <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>{children}</View> : null}
     </View>
