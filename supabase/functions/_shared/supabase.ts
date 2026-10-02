@@ -33,10 +33,19 @@ export function bearer(req: Request): string {
   return (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
 }
 
+/** Compares two strings in constant time, so the secret can't be guessed from response timing. */
+function sameText(a: string, b: string): boolean {
+  const x = new TextEncoder().encode(a), y = new TextEncoder().encode(b);
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ (y[i % y.length] ?? 0);
+  return diff === 0;
+}
+
 /** True when the daily cron job is calling (shared CRON_SECRET in the x-cron-secret header). */
 export function isCronCall(req: Request): boolean {
   const expected = Deno.env.get('CRON_SECRET');
-  return !!expected && req.headers.get('x-cron-secret') === expected;
+  const given = req.headers.get('x-cron-secret');
+  return !!expected && !!given && sameText(given, expected);
 }
 
 /** The signed-in user's id, or null if the token is missing or invalid. */
@@ -46,4 +55,16 @@ export async function userIdFrom(req: Request): Promise<string | null> {
   const client = createClient(Deno.env.get('SUPABASE_URL')!, publishableKey(), { auth: { persistSession: false } });
   const { data, error } = await client.auth.getUser(token);
   return error || !data.user ? null : data.user.id;
+}
+
+/**
+ * True for a demo user (app_metadata.demo = true, which only the project owner can set).
+ * Demo users can't link banks, so a shared demo password can't use your Plaid account.
+ */
+export async function isDemoUser(req: Request): Promise<boolean> {
+  const token = bearer(req);
+  if (!token) return false;
+  const client = createClient(Deno.env.get('SUPABASE_URL')!, publishableKey(), { auth: { persistSession: false } });
+  const { data } = await client.auth.getUser(token);
+  return data.user?.app_metadata?.demo === true;
 }

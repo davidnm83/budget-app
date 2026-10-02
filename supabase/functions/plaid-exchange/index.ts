@@ -2,7 +2,7 @@
 // (access token encrypted in Vault), adds its accounts and runs a first sync.
 // Body: { publicToken: "...", institutionName: "..." }
 import { json, preflight } from '../_shared/cors.ts';
-import { adminClient, userIdFrom } from '../_shared/supabase.ts';
+import { adminClient, isDemoUser, userIdFrom } from '../_shared/supabase.ts';
 import { plaid } from '../_shared/plaid.ts';
 import { syncItem } from '../_shared/sync.ts';
 
@@ -12,6 +12,7 @@ Deno.serve(async (req) => {
   try {
     const userId = await userIdFrom(req);
     if (!userId) return json({ error: 'Sign in first.' }, 401);
+    if (await isDemoUser(req)) return json({ error: 'The demo account cannot link banks.' }, 403);
     const { publicToken, institutionName } = await req.json();
     if (!publicToken) return json({ error: 'publicToken is required.' }, 400);
 

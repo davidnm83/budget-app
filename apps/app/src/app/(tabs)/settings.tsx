@@ -71,7 +71,9 @@ export default function Settings() {
             <Button title="Remove" kind="danger" onPress={() => remove(it)} />
           </View>
         ))}
-        <PlaidLinkButton onDone={done} onError={setMsg} />
+        {session?.user.app_metadata?.demo === true
+          ? <Text style={{ color: t.muted, fontSize: 13 }}>This is a demo account, so linking a bank is turned off.</Text>
+          : <PlaidLinkButton onDone={done} onError={setMsg} />}
         <Text style={{ color: t.muted, fontSize: 13 }}>New transactions sync every morning at about 5 AM, or use Sync now on the Accounts tab.</Text>
       </Card>
       {!!msg && <Text style={{ color: t.muted, marginTop: 12 }}>{msg}</Text>}

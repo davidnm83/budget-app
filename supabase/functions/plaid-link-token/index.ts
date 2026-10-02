@@ -2,7 +2,7 @@
 // Body: {}                → link a new bank
 //       { itemId: "..." } → "update mode" to fix a connection that needs a new sign-in
 import { json, preflight } from '../_shared/cors.ts';
-import { adminClient, userIdFrom } from '../_shared/supabase.ts';
+import { adminClient, isDemoUser, userIdFrom } from '../_shared/supabase.ts';
 import { countryCodes, plaid } from '../_shared/plaid.ts';
 import { accessToken } from '../_shared/sync.ts';
 
@@ -12,6 +12,7 @@ Deno.serve(async (req) => {
   try {
     const userId = await userIdFrom(req);
     if (!userId) return json({ error: 'Sign in first.' }, 401);
+    if (await isDemoUser(req)) return json({ error: 'The demo account cannot link banks.' }, 403);
     const { itemId } = await req.json().catch(() => ({}));
 
     const body: Record<string, unknown> = {
