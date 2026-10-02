@@ -90,7 +90,7 @@ export default function Credit() {
         { key: 'credit:cards', title: 'Your cards', about: 'Each card’s balance, limit and statement', render: () => (
           <Card style={{ padding: 0 }}>
         {perCard.map((c, i) => (
-          <Pressable key={c.a.id} onPress={() => setOpen(c.a)} style={({ pressed }) => [styles.card, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }, pressed && { backgroundColor: t.line }]}>
+          <Pressable key={c.a.id} onPress={() => setOpen(c.a)} style={({ pressed, hovered }: any) => [styles.card, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }, (pressed || hovered) && { backgroundColor: t.line }]}>
             <View style={styles.between}>
               <Text style={{ color: t.text, fontWeight: '600', flex: 1 }} numberOfLines={1}>{c.a.icon ?? '💳'}  {c.a.name}{c.a.mask ? ` ••${c.a.mask}` : ''}</Text>
               <Text style={{ color: t.text, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{formatMoney(c.owed)}</Text>

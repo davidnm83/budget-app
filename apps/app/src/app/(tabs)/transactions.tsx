@@ -3,6 +3,7 @@
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import { Sheet } from '@/components/Forms';
+import { PANEL } from '@/lib/motion';
 import { UNDER_BAR } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { seedTxn } from '@/lib/txnCache';
@@ -224,7 +225,7 @@ export default function Transactions() {
         </Sheet>
       )}
       {wide && sel && (
-        <View style={[styles.side, { borderColor: t.line, backgroundColor: t.bg }]}>
+        <View style={[styles.side, PANEL, { borderColor: t.line, backgroundColor: t.bg }]}>
           <View style={[styles.sideHead, { borderColor: t.line }]}>
             <Text style={{ color: t.text, fontWeight: '700', flex: 1 }}>Transaction</Text>
             <Pressable onPress={() => setSel(null)} hitSlop={10} accessibilityLabel="Close details"><Ionicons name="close" size={22} color={t.text} /></Pressable>
@@ -300,7 +301,7 @@ function TxnRow({ t, item, showDate, onToggle, onOpen, selected }: { t: Theme; i
   const category = item.split_count ? `✂️ Split · ${item.split_count} parts` : item.category_name ? `${categoryIcon(item.category_name, item.category_icon)} ${item.category_name}` : null;
   return (
     <Pressable onPress={onOpen}
-      style={({ pressed }) => [styles.row, { backgroundColor: pressed || selected ? t.line : t.card }]}>
+      style={({ pressed, hovered }: any) => [styles.row, { backgroundColor: pressed || selected ? t.line : hovered ? t.bg : t.card }]}>
       <Pressable accessibilityLabel={item.reviewed ? 'Mark not reviewed' : 'Mark reviewed'} hitSlop={10} onPress={onToggle} style={styles.check}>
         <Ionicons name={item.reviewed ? 'checkmark-circle' : 'ellipse-outline'} size={24} color={item.reviewed ? t.accent : t.muted} />
       </Pressable>

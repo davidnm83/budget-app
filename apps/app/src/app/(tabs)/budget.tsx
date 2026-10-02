@@ -241,7 +241,7 @@ function MonthView(d: Data) {
                   <Line t={t} icon={groupIcon(g.group, d.groupIcons[g.group])} label={g.group} actual={g.actual} available={g.available} pace={pace} bold />
                 </Pressable>
                 {!single && open && g.lines.map((l) => (
-                  <Pressable key={l.key} onPress={() => setEditing(l)} style={({ pressed }) => [styles.lineRow, pressed && { backgroundColor: t.line }]}>
+                  <Pressable key={l.key} onPress={() => setEditing(l)} style={({ pressed, hovered }: any) => [styles.lineRow, (pressed || hovered) && { backgroundColor: t.line }]}>
                     <Line t={t} icon={l.groupName ? groupIcon(l.groupName, d.groupIcons[l.groupName]) : catIcon(l.categoryId)} label={l.label + (l.groupName ? ' (whole group)' : '')} actual={l.actual} available={l.available} pace={pace} carry={l.carryIn} />
                   </Pressable>
                 ))}
@@ -401,7 +401,7 @@ function MonthTxns({ d, line, reload, onOpen, onAll }: { d: Data; line: BudgetLi
       {rows === null && <Text style={{ color: t.muted }}>Loading…</Text>}
       {rows?.length === 0 && <Text style={{ color: t.muted }}>None yet this month.</Text>}
       {rows?.map((r) => (
-        <Pressable key={r.transaction_id + r.amount} onPress={() => { seedTxn({ id: r.transaction_id, date: r.date, amount: r.amount, display_name: (r as any).merchant }); onOpen(r.transaction_id); }} style={({ pressed }) => [styles.txn, { borderColor: t.line }, pressed && { backgroundColor: t.line }]}>
+        <Pressable key={r.transaction_id + r.amount} onPress={() => { seedTxn({ id: r.transaction_id, date: r.date, amount: r.amount, display_name: (r as any).merchant }); onOpen(r.transaction_id); }} style={({ pressed, hovered }: any) => [styles.txn, { borderColor: t.line }, (pressed || hovered) && { backgroundColor: t.line }]}>
           <Text style={{ color: t.muted, fontSize: 12, width: 48 }}>{shortDate(r.date)}</Text>
           <Text style={{ color: t.text, flex: 1, fontSize: 14 }} numberOfLines={1}>{r.merchant}</Text>
           <Text style={{ color: r.amount > 0 ? t.positive : t.text, fontSize: 14, fontVariant: ['tabular-nums'] }}>{formatMoney(r.amount)}</Text>

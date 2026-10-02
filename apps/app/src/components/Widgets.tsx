@@ -71,6 +71,8 @@ export const DEFAULT_HOME = ['review', 'week', 'budget', 'networth'];
 export const DEFAULT_BUDGET: string[] = [];
 
 /** `after` renders outside the pressable card (pop-ups opened from inside it, so their taps don't reach the card). */
+const HOVER: any = { transform: [{ translateY: -2 }], boxShadow: '0 6px 18px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)' };
+
 /** A title you gave a widget in its settings; the card shows it in place of its own. */
 export const TitleOverride = createContext<string | undefined>(undefined);
 
@@ -78,7 +80,7 @@ export function CardShell({ t, title: own, link, onPress, children, after }: { t
   const title = useContext(TitleOverride) ?? own;
   return (
     <>
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, LIFT, RISE, PRESS, { backgroundColor: t.card, borderColor: t.line }, pressed && onPress ? { transform: [{ scale: 0.985 }] } : null]}>
+    <Pressable onPress={onPress} style={({ pressed, hovered }: any) => [styles.card, LIFT, RISE, PRESS, { backgroundColor: t.card, borderColor: t.line }, hovered && onPress ? HOVER : null, pressed && onPress ? { transform: [{ scale: 0.985 }] } : null]}>
       <View style={styles.between}>
         <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title.toUpperCase()}</Text>
         {link && <Text style={{ color: t.accent, fontSize: 12 }}>{link} ›</Text>}

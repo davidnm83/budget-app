@@ -62,7 +62,7 @@ export default function Categories() {
             </Pressable>
             <Card style={{ padding: 0 }}>
               {list.map((c, i) => (
-                <Pressable key={c.id} onPress={() => setEditing(c)} style={({ pressed }) => [styles.row, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }, pressed && { backgroundColor: t.line }]}>
+                <Pressable key={c.id} onPress={() => setEditing(c)} style={({ pressed, hovered }: any) => [styles.row, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }, (pressed || hovered) && { backgroundColor: t.line }]}>
                   <Text style={styles.icon}>{categoryIcon(c.name, c.icon)}</Text>
                   <Text style={{ color: c.is_hidden ? t.muted : t.text, flex: 1, fontSize: 15 }} numberOfLines={1}>{c.name}{c.is_hidden ? ' (hidden)' : ''}</Text>
                   <Text style={{ color: t.muted, fontSize: 12 }}>{c.kind === 'income' ? 'income · ' : c.kind === 'transfer' ? 'transfer · ' : ''}{counts.get(c.id) ?? 0}</Text>

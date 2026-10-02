@@ -48,7 +48,9 @@ function useNoAutofill() {
       if (el.tagName === 'INPUT' && (el.getAttribute('type') ?? 'text') === 'text') el.setAttribute('type', 'search');
     };
     const css = document.createElement('style');
-    css.textContent = '@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}input[type=search]{-webkit-appearance:none;appearance:none}input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-search-decoration{-webkit-appearance:none;display:none}';
+    css.textContent = '[tabindex="0"],[role="button"],[role="tab"],[role="link"]{transition:background-color .16s ease-out,border-color .16s ease-out,box-shadow .2s ease-out,transform .14s cubic-bezier(.2,.8,.2,1),opacity .16s ease-out}'
+      + '@media (hover:hover){*{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,.35) transparent}}'
+      + '@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}input[type=search]{-webkit-appearance:none;appearance:none}input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-search-decoration{-webkit-appearance:none;display:none}';
     document.head.appendChild(css);
     const mark = (root: ParentNode) => root.querySelectorAll?.('input, textarea').forEach(fix);
     mark(document);

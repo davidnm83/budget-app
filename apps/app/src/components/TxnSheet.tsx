@@ -80,7 +80,7 @@ export function TxnSheet({ q, onClose }: { q: TxnQuery; onClose: () => void }) {
         keyExtractor={(l, i) => `${l.transaction_id}:${i}`}
         ListEmptyComponent={lines ? <Text style={{ color: t.muted, padding: 16 }}>No transactions in this period.</Text> : null}
         renderItem={({ item }) => (
-          <Pressable onPress={() => { seedTxn({ id: item.transaction_id, date: item.date, amount: item.amount, display_name: item.merchant }); setEditing(item.transaction_id); }} style={({ pressed }) => [styles.row, { borderColor: t.line }, pressed && { backgroundColor: t.line }]}>
+          <Pressable onPress={() => { seedTxn({ id: item.transaction_id, date: item.date, amount: item.amount, display_name: item.merchant }); setEditing(item.transaction_id); }} style={({ pressed, hovered }: any) => [styles.row, { borderColor: t.line }, (pressed || hovered) && { backgroundColor: t.line }]}>
             <Text style={{ color: t.muted, width: 52, fontSize: 13 }}>{shortDate(item.date)}</Text>
             <Text style={{ color: t.text, flex: 1 }} numberOfLines={1}>{item.merchant}</Text>
             <Text style={{ color: item.amount > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'] }}>{formatMoney(item.amount)}</Text>

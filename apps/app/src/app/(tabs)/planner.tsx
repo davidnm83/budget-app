@@ -173,7 +173,7 @@ function Row({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string
   const icon = r.kind === 'actual' ? 'flash-outline' : matched ? 'checkmark-circle' : r.overdue ? 'alert-circle' : 'time-outline';
   const color = r.kind === 'actual' ? t.muted : matched ? t.accent : r.overdue ? t.danger : t.muted;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && { backgroundColor: t.line }]}>
+    <Pressable onPress={onPress} style={({ pressed, hovered }: any) => [styles.row, (pressed || hovered) && { backgroundColor: t.line }]}>
       <Ionicons name={icon} size={17} color={color} />
       <View style={{ flex: 1 }}>
         <Text style={{ color: t.text, fontSize: 15, fontWeight: r.kind === 'actual' ? '400' : '600' }} numberOfLines={1}>{r.description}</Text>

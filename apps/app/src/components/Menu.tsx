@@ -2,6 +2,7 @@
 // with setup at the bottom. The same button sits in every tab's top strip, in the top tab bar on
 // wide screens, and in place of the back arrow on menu pages, so any page is two taps away.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { RISE } from '@/lib/motion';
 import { router, usePathname } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -68,6 +69,7 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
     <>
       {tabs ? TAB_ITEMS.map((i) => (
         <Pressable key={i.href} onPress={() => go(i.href)} accessibilityRole="link" style={({ pressed, hovered }: any) => [styles.item, (pressed || hovered) && { backgroundColor: t.bg }, here(i.href) && { backgroundColor: t.line }]}>
+          {here(i.href) && <View style={[styles.mark, { backgroundColor: t.accent }, RISE]} />}
           <Ionicons name={i.icon!} size={20} color={here(i.href) ? t.accent : t.text} />
           <Text style={{ color: here(i.href) ? t.accent : t.text, fontSize: 15, fontWeight: '600', flex: 1 }}>{i.label}</Text>
           {i.href === '/planner' && overdue > 0 && <View style={[styles.badge, { backgroundColor: t.danger }]}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{overdue}</Text></View>}
@@ -81,6 +83,7 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
       <ScrollView style={{ flexShrink: 1 }}>
         {items.map((i) => (
           <Pressable key={i.href} onPress={() => !sorting && go(i.href)} style={({ pressed, hovered }: any) => [styles.item, tabs && { paddingVertical: 10 }, hovered && !sorting && { backgroundColor: t.bg }, ((pressed && !sorting) || here(i.href)) && { backgroundColor: t.line }]}>
+            {tabs && here(i.href) && <View style={[styles.mark, { backgroundColor: t.accent }, RISE]} />}
             {i.emoji ? <Text style={{ fontSize: 18, width: 20, textAlign: 'center' }}>{i.emoji}</Text> : <Ionicons name={i.icon!} size={20} color={t.text} />}
             <Text style={{ color: t.text, fontSize: tabs ? 15 : 16, flex: 1 }} numberOfLines={1}>{i.label}</Text>
             {sorting && (
@@ -91,7 +94,7 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
             )}
           </Pressable>
         ))}
-        <Pressable onPress={() => go('/page/new')} style={({ pressed }) => [styles.item, tabs && { paddingVertical: 10 }, pressed && { backgroundColor: t.line }]}>
+        <Pressable onPress={() => go('/page/new')} style={({ pressed, hovered }: any) => [styles.item, tabs && { paddingVertical: 10 }, (pressed || hovered) && { backgroundColor: t.line }]}>
           <Ionicons name="add-circle-outline" size={20} color={t.accent} />
           <Text style={{ color: t.accent, fontSize: tabs ? 15 : 16 }}>New page</Text>
         </Pressable>
@@ -131,16 +134,16 @@ export function Sidebar() {
   const wide = useWide();
   const open = useSidebar();
   if (!wide) return null;
-  if (!open) {
-    return (
-      <Pressable onPress={() => setSidebar(true)} accessibilityLabel="Show sidebar" hitSlop={6}
-        style={({ hovered }: any) => [styles.iconBtn, styles.expand, { borderWidth: 0 }, hovered && { backgroundColor: t.line }]}>
-        <PanelIcon color={t.muted} />
-      </Pressable>
-    );
-  }
+  // Always there on wide screens: its width eases between open and tucked away, and the button
+  // to bring it back fades in at the window's top left.
   return (
-    <View style={[styles.sidebar, { backgroundColor: t.card, borderColor: t.line }]}>
+    <>
+    <Pressable onPress={() => setSidebar(true)} accessibilityLabel="Show sidebar" hitSlop={6} disabled={open}
+      style={({ hovered }: any) => [styles.iconBtn, styles.expand, { borderWidth: 0, opacity: open ? 0 : 1 }, hovered && { backgroundColor: t.line }]}>
+      <PanelIcon color={t.muted} />
+    </Pressable>
+    <View style={[styles.sidebarWrap, { width: open ? 232 : 0, borderRightWidth: open ? 1 : 0, borderColor: t.line, backgroundColor: t.card }]}>
+    <View style={[styles.sidebar, { backgroundColor: t.card, opacity: open ? 1 : 0 }]}>
       <View style={[styles.between, { paddingLeft: 16, paddingRight: 8, height: 52 }]}>
         <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>Budget</Text>
         <Pressable onPress={() => setSidebar(false)} accessibilityLabel="Hide sidebar" hitSlop={6} style={({ hovered }: any) => [styles.iconBtn, { borderWidth: 0 }, hovered && { backgroundColor: t.bg }]}>
@@ -149,6 +152,8 @@ export function Sidebar() {
       </View>
       <MenuBody tabs active go={(href) => navigateTo(href, path)} />
     </View>
+    </View>
+    </>
   );
 }
 
@@ -190,7 +195,9 @@ const styles = StyleSheet.create({
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', flexDirection: 'row' },
   badge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
   expand: { position: 'absolute', top: 10, left: 6, zIndex: 20 },
-  sidebar: { width: 232, borderRightWidth: 1, paddingBottom: 12 },
+  sidebarWrap: { overflow: 'hidden', transitionProperty: 'width', transitionDuration: '240ms', transitionTimingFunction: 'cubic-bezier(0.2, 0.9, 0.2, 1)' } as any,
+  sidebar: { width: 231, flex: 1, paddingBottom: 12, transitionProperty: 'opacity', transitionDuration: '200ms' } as any,
+  mark: { position: 'absolute', left: 0, top: 9, bottom: 9, width: 3, borderTopRightRadius: 3, borderBottomRightRadius: 3 },
   drawer: { width: 280, maxWidth: '82%', height: '100%', paddingBottom: 24 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12 },
   itemSmall: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 9 },

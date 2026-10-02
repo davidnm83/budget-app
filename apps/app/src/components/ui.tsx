@@ -14,7 +14,7 @@ export function Button({ title, onPress, kind = 'primary', disabled, busy, style
       accessibilityRole="button"
       onPress={onPress}
       disabled={disabled || busy}
-      style={({ pressed }) => [styles.btn, PRESS, { backgroundColor: bg, borderColor: kind === 'primary' ? t.accent : t.line, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 }, pressed && { transform: [{ scale: 0.97 }] }, style]}>
+      style={({ pressed, hovered }: any) => [styles.btn, PRESS, { backgroundColor: bg, borderColor: kind === 'primary' ? t.accent : t.line, opacity: disabled ? 0.5 : pressed ? 0.85 : 1 }, hovered && !disabled && (kind === 'primary' ? { boxShadow: '0 4px 14px rgba(31,111,92,0.35)', transform: [{ translateY: -1 }] } : { backgroundColor: t.line }), pressed && { transform: [{ scale: 0.97 }] }, style]}>
       {busy ? <ActivityIndicator color={fg} /> : <Text style={[styles.btnText, { color: fg }]}>{title}</Text>}
     </Pressable>
   );
@@ -64,7 +64,7 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
         const on = o.value === value;
         return (
           <Pressable key={o.value} onPress={() => onChange(o.value)} accessibilityRole="button" accessibilityState={{ selected: on }}
-            style={[styles.segItem, EASE, { backgroundColor: on ? t.accent : 'transparent' }]}>
+            style={({ hovered }: any) => [styles.segItem, EASE, { backgroundColor: on ? t.accent : hovered ? t.line : 'transparent' }]}>
             <Text style={{ color: on ? '#fff' : t.text, fontWeight: on ? '600' : '400', fontSize: 14 }}>{o.label}</Text>
           </Pressable>
         );
@@ -77,7 +77,7 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
 export function Chip({ label, on, onPress }: { label: string; on?: boolean; onPress: () => void }) {
   const t = useTheme();
   return (
-    <Pressable onPress={onPress} style={[styles.chip, EASE, { borderColor: on ? t.accent : t.line, backgroundColor: on ? t.accent : 'transparent' }]}>
+    <Pressable onPress={onPress} style={({ hovered }: any) => [styles.chip, EASE, { borderColor: on ? t.accent : t.line, backgroundColor: on ? t.accent : hovered ? t.line : 'transparent' }]}>
       <Text style={{ color: on ? '#fff' : t.text, fontSize: 13 }}>{label}</Text>
     </Pressable>
   );

@@ -2,6 +2,7 @@
 // it is a centred panel over a dimmed page (click outside to close).
 //   fit: the panel is only as tall as its content (forms); otherwise it takes most of the height (lists).
 import { useEffect, useRef, type ReactNode } from 'react';
+import { POP } from '@/lib/motion';
 import { Animated, Easing, Modal, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWide } from '@/lib/layout';
@@ -21,7 +22,7 @@ export function ModalFrame({ visible = true, onClose, children, fit, width = 560
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose}>
-        <Pressable onPress={() => {}} style={[styles.panel, { backgroundColor: t.bg, borderColor: t.line, maxWidth: width }, fit ? { maxHeight: '90%' } : { height: '90%' }]}>
+        <Pressable onPress={() => {}} style={[styles.panel, POP, { backgroundColor: t.bg, borderColor: t.line, maxWidth: width }, fit ? { maxHeight: '90%' } : { height: '90%' }]}>
           {children}
         </Pressable>
       </Pressable>
@@ -57,6 +58,6 @@ const styles = StyleSheet.create({
   phoneScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'flex-end', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' } as any,
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: '0 -8px 30px rgba(0,0,0,0.18)' as any, overflow: 'hidden', flexShrink: 1, cursor: 'auto' as any },
   grabber: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 8 },
-  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  panel: { width: '100%', borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', cursor: 'auto' as any },
+  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' } as any,
+  panel: { width: '100%', borderRadius: 20, boxShadow: '0 24px 60px rgba(0,0,0,0.28)' as any, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', cursor: 'auto' as any },
 });

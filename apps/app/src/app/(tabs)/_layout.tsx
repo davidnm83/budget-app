@@ -1,12 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router, Tabs } from 'expo-router';
-import { useEffect } from 'react';
+import { router, Tabs, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MenuButton } from '@/components/Menu';
 import { refreshPlannerBadge, usePlannerBadge } from '@/lib/badges';
 import { useWide } from '@/lib/layout';
-import { EASE, PRESS } from '@/lib/motion';
+import { EASE, ENTER, PRESS } from '@/lib/motion';
 import { useScheme, useTheme } from '@/lib/theme';
 
 // Every signed-in page lives here, so the navigation bar stays put wherever you are.
@@ -34,8 +34,8 @@ export default function TabLayout() {
   useEffect(() => { refreshPlannerBadge(); }, []);
   const header = { headerShown: true, headerStyle: { backgroundColor: t.bg, borderBottomWidth: 0 }, headerTintColor: t.text, headerShadowVisible: false, headerTitleAlign: 'left' as const, headerTitleStyle: { fontSize: 20, fontWeight: '700' as const } };
   return (
-    <Tabs backBehavior="history" tabBar={(p: any) => (wide ? null : <FloatingBar {...p} />)}
-      screenOptions={{ headerShown: false, animation: 'fade', sceneStyle: { backgroundColor: t.bg } }}>
+    <Tabs backBehavior="history" screenLayout={({ children }: any) => <Enter>{children}</Enter>} tabBar={(p: any) => (wide ? null : <FloatingBar {...p} />)}
+      screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: t.bg } }}>
       {TABS.map((x) => <Tabs.Screen key={x.name} name={x.name} options={{ title: x.title, tabBarBadge: x.name === 'planner' ? overdue || undefined : undefined }} />)}
       {PAGES.map(([name, title]) => (
         <Tabs.Screen key={name} name={name} options={{ title, ...header, headerLeft: () => <View style={{ marginLeft: 8, marginRight: 4 }}><MenuButton plain /></View> }} />
@@ -49,6 +49,13 @@ export default function TabLayout() {
       ))}
     </Tabs>
   );
+}
+
+/** Replays a short rise-and-fade each time its page comes into view, without rebuilding the page. */
+function Enter({ children }: { children: React.ReactNode }) {
+  const [n, setN] = useState(0);
+  useFocusEffect(useCallback(() => { setN((x) => x + 1); }, []));
+  return <View style={[{ flex: 1 }, ENTER[n % 2]]}>{children}</View>;
 }
 
 /** A rounded bar of five icons that sits clear of the screen edges. The current tab's icon is filled inside a soft pill. */

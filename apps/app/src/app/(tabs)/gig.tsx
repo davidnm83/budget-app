@@ -297,7 +297,7 @@ function ShiftLine({ t, s, cpk, onPress }: { t: Theme; s: ShiftRow; cpk: number 
     s.km && `${s.km} km`, st.deliveries && `${st.deliveries} order${st.deliveries === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
   const line2 = [st.perHour != null && `${formatMoney(st.perHour)}/h`, st.perActiveHour != null && `${formatMoney(st.perActiveHour)}/active h`, st.perKm != null && `${formatMoney(st.perKm)}/km`].filter(Boolean).join(' · ');
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.shift, { borderColor: t.line }, pressed && { backgroundColor: t.line }]}>
+    <Pressable onPress={onPress} style={({ pressed, hovered }: any) => [styles.shift, { borderColor: t.line }, (pressed || hovered) && { backgroundColor: t.line }]}>
       <Text style={{ fontSize: 16, width: 30, textAlign: 'center' }}>{parts.map((p) => platformByKey(p.platform).icon).join('')}</Text>
       <View style={{ flex: 1, gap: 1 }}>
         <Text style={{ color: t.text }} numberOfLines={1}>{shortDate(s.date)} · {name}{s.start && s.end ? ` · ${s.start}–${s.end}` : ''}</Text>
