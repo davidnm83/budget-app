@@ -122,6 +122,15 @@ function navigateTo(href: string, path: string) {
   else router.replace(href as any);
 }
 
+/** The sidebar toggle: a page outline with a strip down its left side (filled in while the sidebar is open). */
+function PanelIcon({ color, open }: { color: string; open?: boolean }) {
+  return (
+    <View style={{ width: 20, height: 16, borderWidth: 1.5, borderColor: color, borderRadius: 4, overflow: 'hidden' }}>
+      <View style={{ width: 6, height: '100%', borderRightWidth: 1.5, borderColor: color, backgroundColor: open ? color + '55' : 'transparent' }} />
+    </View>
+  );
+}
+
 /** Wide screens: the menu as a permanent column on the left, with a button to tuck it away. */
 export function Sidebar() {
   const t = useTheme();
@@ -133,7 +142,7 @@ export function Sidebar() {
     return (
       <Pressable onPress={() => setSidebar(true)} accessibilityLabel="Show sidebar" hitSlop={6}
         style={({ hovered }: any) => [styles.iconBtn, styles.expand, { borderWidth: 0 }, hovered && { backgroundColor: t.line }]}>
-        <Ionicons name="chevron-forward" size={20} color={t.muted} />
+        <PanelIcon color={t.muted} />
       </Pressable>
     );
   }
@@ -142,7 +151,7 @@ export function Sidebar() {
       <View style={[styles.between, { paddingLeft: 16, paddingRight: 8, height: 52 }]}>
         <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>Budget</Text>
         <Pressable onPress={() => setSidebar(false)} accessibilityLabel="Hide sidebar" hitSlop={6} style={({ hovered }: any) => [styles.iconBtn, { borderWidth: 0 }, hovered && { backgroundColor: t.bg }]}>
-          <Ionicons name="chevron-back" size={20} color={t.muted} />
+          <PanelIcon color={t.muted} open />
         </Pressable>
       </View>
       <MenuBody tabs active go={(href) => navigateTo(href, path)} />
