@@ -122,7 +122,16 @@ export function Sidebar() {
   const path = usePathname();
   const wide = useWide();
   const open = useSidebar();
-  if (!wide || !open) return null;
+  if (!wide) return null;
+  if (!open) {
+    return (
+      <View style={[styles.rail, { backgroundColor: t.card, borderColor: t.line }]}>
+        <Pressable onPress={() => setSidebar(true)} accessibilityLabel="Show sidebar" hitSlop={6} style={({ hovered }: any) => [styles.iconBtn, { borderWidth: 0 }, hovered && { backgroundColor: t.bg }]}>
+          <Ionicons name="menu" size={22} color={t.text} />
+        </Pressable>
+      </View>
+    );
+  }
   return (
     <View style={[styles.sidebar, { backgroundColor: t.card, borderColor: t.line }]}>
       <View style={[styles.between, { paddingLeft: 16, paddingRight: 8, height: 52 }]}>
@@ -141,17 +150,16 @@ export function MenuButton({ plain }: { plain?: boolean }) {
   const insets = useSafeAreaInsets();
   const path = usePathname();
   const wide = useWide();
-  const sidebar = useSidebar();
   const [open, setOpen] = useState(false);
   useBackToClose(open, () => setOpen(false));
   useEffect(() => { if (wide) setOpen(false); }, [wide]);
-  if (wide && sidebar) return null; // the sidebar is the menu
+  if (wide) return null; // the sidebar (or its slim rail when hidden) is the menu
   // Close the menu (and its history entry) first. From a tab a page opens on top; from another
   // menu page it takes that page's place, so pages don't pile up behind each other.
   const go = (href: string) => { setOpen(false); afterClose(() => navigateTo(href, path)); };
   return (
     <>
-      <Pressable onPress={() => (wide ? setSidebar(true) : setOpen(true))} accessibilityLabel={wide ? 'Show sidebar' : 'Menu'} hitSlop={8}
+      <Pressable onPress={() => setOpen(true)} accessibilityLabel="Menu" hitSlop={8}
         style={[styles.iconBtn, plain ? { borderWidth: 0 } : { borderColor: t.line, backgroundColor: t.card }]}>
         <Ionicons name="menu" size={plain ? 24 : 20} color={t.text} />
       </Pressable>
@@ -169,6 +177,7 @@ export function MenuButton({ plain }: { plain?: boolean }) {
 const styles = StyleSheet.create({
   iconBtn: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', flexDirection: 'row' },
+  rail: { width: 48, borderRightWidth: 1, alignItems: 'center', paddingTop: 6 },
   sidebar: { width: 232, borderRightWidth: 1, paddingBottom: 12 },
   drawer: { width: 280, maxWidth: '82%', height: '100%', paddingBottom: 24 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12 },

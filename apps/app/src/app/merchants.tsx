@@ -2,17 +2,20 @@
 // (or merge it into another by giving it that name) and the change is remembered as a rule, so
 // future transactions from the bank get the same name.
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { formatMoney, shortDate } from '@budget-app/core';
+import { addMonths, formatMoney, monthEnd, monthOf, shortDate } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { DateField } from '@/components/DateField';
 import { Field, Sheet } from '@/components/Forms';
+import { MultiPicker } from '@/components/Picker';
 import { useTxnSheet } from '@/components/TxnSheet';
-import { Button, Segmented } from '@/components/ui';
+import { Button, Chip, Segmented } from '@/components/ui';
 import { PAGE_MAX, TYPE } from '@/lib/layout';
-import { today } from '@/lib/plan';
+import { loadAccounts, today } from '@/lib/plan';
+import type { Account } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
-import { useTheme } from '@/lib/theme';
+import { useTheme, type Theme } from '@/lib/theme';
 
 interface M { merchant: string; txns: number; total: number; last_date: string }
 
@@ -26,12 +29,27 @@ export default function Merchants() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showTxns, txnSheet] = useTxnSheet();
+  // Filters: a date range (empty = all time) and accounts (empty = all).
+  const [range, setRange] = useState<{ label: string; from: string; to: string }>({ label: 'All time', from: '', to: '' });
+  const [accountIds, setAccountIds] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [pick, setPick] = useState<'date' | 'accounts' | null>(null);
+  useEffect(() => { loadAccounts().then(setAccounts).catch(() => {}); }, []);
+  const now = today(), m0 = monthOf(now);
+  const presets = [
+    { label: 'All time', from: '', to: '' },
+    { label: 'This month', from: m0, to: monthEnd(m0) },
+    { label: 'Last month', from: addMonths(m0, -1), to: monthEnd(addMonths(m0, -1)) },
+    { label: 'Last 3 months', from: addMonths(m0, -2), to: monthEnd(m0) },
+    { label: 'Last 12 months', from: addMonths(m0, -11), to: monthEnd(m0) },
+    { label: 'This year', from: `${now.slice(0, 4)}-01-01`, to: `${now.slice(0, 4)}-12-31` },
+  ];
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.rpc('merchant_list');
+    const { data, error } = await supabase.rpc('merchant_list', { p_from: range.from || null, p_to: range.to || null, p_accounts: accountIds.length ? accountIds : null });
     if (error) setError(error.message);
-    else setRows(((data ?? []) as any[]).map((r) => ({ merchant: r.merchant, txns: Number(r.txns), total: Number(r.total), last_date: r.last_date })));
-  }, []);
+    else setError(''), setRows(((data ?? []) as any[]).map((r) => ({ merchant: r.merchant, txns: Number(r.txns), total: Number(r.total), last_date: r.last_date })));
+  }, [range.from, range.to, accountIds.join(',')]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const shown = useMemo(() => {
@@ -73,9 +91,13 @@ export default function Merchants() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <View style={styles.head}>
-        <View style={[styles.search, { backgroundColor: t.card, borderColor: t.line }]}>
-          <Ionicons name="search" size={16} color={t.muted} />
-          <TextInput value={q} onChangeText={setQ} placeholder={`Search ${rows.length} merchants`} placeholderTextColor={t.muted} style={{ flex: 1, color: t.text, fontSize: TYPE.body, paddingVertical: 8 }} />
+        <View style={styles.filters}>
+          <View style={[styles.search, { flexGrow: 1, flexBasis: 220, backgroundColor: t.card, borderColor: t.line }]}>
+            <Ionicons name="search" size={16} color={t.muted} />
+            <TextInput value={q} onChangeText={setQ} placeholder={`Search ${rows.length} merchants`} placeholderTextColor={t.muted} style={{ flex: 1, color: t.text, fontSize: TYPE.body, paddingVertical: 8 }} />
+          </View>
+          <FilterButton t={t} icon="calendar-outline" label={range.label} on={!!range.from || !!range.to} onPress={() => setPick('date')} />
+          <FilterButton t={t} icon="wallet-outline" label={accountIds.length ? (accountIds.length === 1 ? accounts.find((a) => a.id === accountIds[0])?.name ?? '1 account' : `${accountIds.length} accounts`) : 'All accounts'} on={accountIds.length > 0} onPress={() => setPick('accounts')} />
         </View>
         <Segmented value={sort} onChange={setSort} options={[{ value: 'count', label: 'Most used' }, { value: 'recent', label: 'Recent' }, { value: 'name', label: 'A–Z' }]} />
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
@@ -94,7 +116,7 @@ export default function Merchants() {
         )} />
       {edit && (
         <Sheet title="Merchant" onClose={() => setEdit(null)} footer={<Button title={merging ? `Merge into ${merging.merchant}` : 'Save name'} onPress={save} busy={busy} disabled={!target} />}>
-          <Field t={t} label="Name" hint={merging ? `“${merging.merchant}” already exists: these ${edit.txns} transactions will join its ${merging.txns}.` : 'Renames it on every transaction and on new ones from the bank.'}>
+          <Field t={t} label="Name" hint={merging ? `“${merging.merchant}” already exists: these ${edit.txns} transactions will join its ${merging.txns}.` : 'Renames it on every transaction (not only the ones in the filter) and on new ones from the bank.'}>
             <TextInput value={name} onChangeText={setName} autoCapitalize="words" style={[styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.bg }]} />
           </Field>
           {similar.length > 0 && (
@@ -109,15 +131,42 @@ export default function Merchants() {
             </Field>
           )}
           {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-          <Button title={`See its ${edit.txns} transactions`} kind="plain" onPress={() => showTxns({ title: edit.merchant, from: '1900-01-01', to: today(), merchant: edit.merchant })} />
+          <Button title={`See its ${edit.txns} transactions`} kind="plain" onPress={() => showTxns({ title: edit.merchant, from: range.from || '1900-01-01', to: range.to || today(), merchant: edit.merchant, accountIds: accountIds.length ? accountIds : undefined })} />
         </Sheet>
       )}
+      {pick === 'date' && (
+        <Sheet title="Dates" onClose={() => setPick(null)} footer={<Button title="Done" onPress={() => setPick(null)} />}>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {presets.map((p) => <Chip key={p.label} label={p.label} on={range.label === p.label} onPress={() => { setRange(p); setPick(null); }} />)}
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}><Field t={t} label="From"><DateField value={range.from} onChange={(v) => setRange((r) => ({ from: v, to: r.to, label: customLabel(v, r.to) }))} /></Field></View>
+            <View style={{ flex: 1 }}><Field t={t} label="To"><DateField value={range.to} onChange={(v) => setRange((r) => ({ from: r.from, to: v, label: customLabel(r.from, v) }))} /></Field></View>
+          </View>
+        </Sheet>
+      )}
+      <MultiPicker visible={pick === 'accounts'} title="Accounts" onClose={() => setPick(null)} selected={accountIds} onChange={setAccountIds}
+        items={accounts.map((a) => ({ id: a.id, label: `${a.icon ?? ''} ${a.name}${a.mask ? ` ••${a.mask}` : ''}`.trim(), group: a.type ?? undefined }))} />
       {txnSheet}
     </View>
   );
 }
 
+const customLabel = (from: string, to: string) => (!from && !to ? 'All time' : `${from ? shortDate(from) : 'Start'} – ${to ? shortDate(to) : 'now'}`);
+
+function FilterButton({ t, icon, label, on, onPress }: { t: Theme; icon: keyof typeof Ionicons.glyphMap; label: string; on: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityLabel={`Filter: ${label}`} style={({ hovered }: any) => [styles.filter, { borderColor: on ? t.accent : t.line, backgroundColor: hovered ? t.line : t.card }]}>
+      <Ionicons name={icon} size={16} color={on ? t.accent : t.muted} />
+      <Text style={{ color: on ? t.accent : t.text, fontSize: TYPE.small, fontWeight: '600' }} numberOfLines={1}>{label}</Text>
+      <Ionicons name="chevron-down" size={14} color={t.muted} />
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
+  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  filter: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, minHeight: 38, maxWidth: 220 },
   head: { padding: 12, gap: 8, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   list: { paddingHorizontal: 12, paddingBottom: 48, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   search: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10 },

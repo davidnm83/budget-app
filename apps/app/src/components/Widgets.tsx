@@ -9,7 +9,7 @@ import {
 } from '@budget-app/core';
 import { router } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { BalanceChart } from '@/components/AccountSheet';
 import { Skeleton } from '@/components/Columns';
 import { Field, Sheet } from '@/components/Forms';
@@ -30,7 +30,9 @@ const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
 export interface WidgetDef { key: string; title: string; about: string; home: boolean; budget: boolean; config?: 'spend' | 'account' }
 
 /** A placed widget is its key, or `key::{json settings}` for the ones with settings of their own (VIEW-15). */
-export interface WidgetCfg { title?: string; categoryIds?: string[]; group?: string; names?: string[]; months?: number; accountId?: string; accountMatch?: string }
+export interface WidgetCfg { title?: string; categoryIds?: string[]; group?: string; names?: string[]; months?: number; accountId?: string; accountMatch?: string; chart?: Chart }
+/** How a Category spending widget draws: monthly bars, a pie of the categories, or a ranked list. */
+export type Chart = 'bars' | 'pie' | 'list';
 export function parseEntry(e: string): [string, WidgetCfg] {
   const i = e.indexOf('::');
   if (i < 0) return [e, {}];
@@ -50,7 +52,7 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'gig', title: 'Gig work this week', about: 'Earnings, hours and $/hour so far this week', home: true, budget: true },
   { key: 'calendar', title: 'Bills calendar', about: 'This month’s bills and income on a calendar', home: true, budget: true },
   { key: 'nwtypes', title: 'Net worth by type', about: 'Cash, cards, loans and investments', home: true, budget: false },
-  { key: 'spend', title: 'Category spending', about: 'Categories you choose, month by month', home: true, budget: true, config: 'spend' },
+  { key: 'spend', title: 'Category spending', about: 'Categories you choose: monthly bars, a pie chart or a ranked list', home: true, budget: true, config: 'spend' },
   { key: 'account', title: 'Account', about: 'One account: balance, past year, loan payoff', home: true, budget: true, config: 'account' },
   { key: 'groups', title: 'Spending by group', about: 'This month by category group, with last month beside it', home: true, budget: true },
 ];
@@ -113,6 +115,7 @@ function cfgCategories(cfg: WidgetCfg, cats: Category[]): Category[] {
 function CategorySpend({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: WidgetCfg }) {
   const [showTxns, txnSheet] = useTxnSheet();
   const n = cfg.months ?? 6;
+  const chart: Chart = cfg.chart ?? 'bars';
   const cur = thisMonth(), first = addMonths(cur, -(n - 1));
   const { data } = useLoad(async () => {
     const [cats, rows] = await Promise.all([loadCategories(), loadCategoryMonths(first, cur)]);
@@ -121,11 +124,19 @@ function CategorySpend({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: Wi
     const months = Array.from({ length: n }, (_, i) => addMonths(first, i)).map((m) => ({
       month: m, total: -rows.filter((r) => r.month === m && r.category_id && ids.has(r.category_id) && r.kind !== 'transfer').reduce((s, r) => s + r.total, 0),
     }));
-    return { mine, months };
+    // Pie and list with nothing chosen cover every expense category.
+    const scope = mine.length || chart === 'bars' ? mine : cats.filter((c) => c.kind === 'expense');
+    const sid = new Map(scope.map((c) => [c.id, c]));
+    const by = new Map<string, number>();
+    for (const r of rows) if (r.category_id && sid.has(r.category_id) && r.kind !== 'transfer') by.set(r.category_id, (by.get(r.category_id) ?? 0) - r.total);
+    const ranked = [...by.entries()].filter(([, v]) => v > 0.5).sort((a, b) => b[1] - a[1]).map(([id, total]) => ({ c: sid.get(id)!, total }));
+    return { mine: scope, months, ranked };
   }, [refresh, JSON.stringify(cfg)]);
-  const title = cfg.title || cfg.group || (data?.mine.length === 1 ? data.mine[0].name : 'Category spending');
+  const title = cfg.title || cfg.group || (data?.mine.length === 1 ? data.mine[0].name : chart === 'bars' ? 'Category spending' : 'Spending by category');
   if (!data) return <CardShell t={t} title={title}><Skeleton color={t.track} /></CardShell>;
-  const { mine, months } = data;
+  const { mine, months, ranked } = data;
+  const span = n === 1 ? 'this month' : `last ${n} months`;
+  const openCat = (c: Category) => showTxns({ title: `${c.name} · ${span}`, from: first, to: monthEnd(cur), categoryIds: [c.id], noTransfers: true });
   const now = months[months.length - 1].total;
   const prior = months.slice(0, -1);
   const avg = prior.length ? prior.reduce((s, m) => s + m.total, 0) / prior.length : 0;
@@ -134,6 +145,7 @@ function CategorySpend({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: Wi
     <CardShell t={t} after={txnSheet} title={title}>
       {!mine.length ? <Text style={{ color: t.muted }}>No matching categories. Edit the page to pick some.</Text> : (
         <>
+          {chart === 'pie' ? <Pie t={t} rows={ranked} onPick={openCat} note={span} /> : chart === 'list' ? <Ranked t={t} rows={ranked} onPick={openCat} note={span} /> : (<>
           <View style={styles.tiles}>
             <Mini t={t} label="This month" value={money0(now)} color={avg && now > avg ? t.series2 : undefined} />
             <Mini t={t} label={`Average · ${prior.length} mo`} value={money0(avg)} sub="per month" />
@@ -152,11 +164,74 @@ function CategorySpend({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: Wi
             ))}
           </View>
           <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={2}>{mine.map((c) => c.name).join(' · ')} · tap a month for its transactions</Text>
+          </>)}
         </>
       )}
     </CardShell>
   );
 }
+const SLICES = ['#2a78d6', '#eb6834', '#1f9d7a', '#b05cc6', '#d9a521', '#d6457a', '#4bb3c8', '#7a8a3a'];
+type Ranked = { c: Category; total: number }[];
+/** Top seven and "Everything else", so a chart never has more slices than colours. */
+function topSlices(rows: Ranked) {
+  const top = rows.slice(0, 7).map((r, i) => ({ ...r, label: r.c.name, color: SLICES[i], rest: false }));
+  const rest = rows.slice(7).reduce((s, r) => s + r.total, 0);
+  return rest > 0.5 ? [...top, { c: rows[7].c, total: rest, label: `${rows.length - 7} others`, color: '#9a9a94', rest: true }] : top;
+}
+
+/** A donut of spending by category with a tappable legend. Drawn with a CSS gradient on the web; elsewhere a split bar. */
+function Pie({ t, rows, onPick, note }: { t: Theme; rows: Ranked; onPick: (c: Category) => void; note: string }) {
+  const parts = topSlices(rows);
+  const total = parts.reduce((s, p) => s + p.total, 0);
+  if (!total) return <Text style={{ color: t.muted }}>Nothing spent {note}.</Text>;
+  let at = 0;
+  const stops = parts.map((p) => { const a = at; at += (p.total / total) * 100; return `${p.color} ${a.toFixed(2)}% ${at.toFixed(2)}%`; }).join(', ');
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
+      {Platform.OS === 'web' ? (
+        <View style={[{ width: 132, height: 132, borderRadius: 66, alignItems: 'center', justifyContent: 'center' }, { backgroundImage: `conic-gradient(${stops})` } as any]}>
+          <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: t.card, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ color: t.text, fontWeight: '700', fontSize: 15, fontVariant: ['tabular-nums'] }}>{money0(total)}</Text>
+            <Text style={{ color: t.muted, fontSize: 10 }}>{note}</Text>
+          </View>
+        </View>
+      ) : (
+        <View style={{ flexDirection: 'row', height: 14, width: '100%', borderRadius: 7, overflow: 'hidden' }}>{parts.map((p) => <View key={p.label} style={{ flex: p.total, backgroundColor: p.color }} />)}</View>
+      )}
+      <View style={{ flex: 1, minWidth: 170, gap: 3 }}>
+        {parts.map((p) => (
+          <Pressable key={p.label} disabled={p.rest} onPress={() => onPick(p.c)} style={styles.row}>
+            <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: p.color }} />
+            <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{p.rest ? p.label : `${categoryIcon(p.c.name, p.c.icon)} ${p.label}`}</Text>
+            <Text style={{ color: t.muted, fontSize: 12, fontVariant: ['tabular-nums'] }}>{Math.round((p.total / total) * 100)}%</Text>
+            <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'], minWidth: 56, textAlign: 'right' }}>{money0(p.total)}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/** Categories as horizontal bars, biggest first. */
+function Ranked({ t, rows, onPick, note }: { t: Theme; rows: Ranked; onPick: (c: Category) => void; note: string }) {
+  if (!rows.length) return <Text style={{ color: t.muted }}>Nothing spent {note}.</Text>;
+  const max = rows[0].total;
+  return (
+    <>
+      {rows.slice(0, 10).map((r) => (
+        <Pressable key={r.c.id} style={{ gap: 3 }} onPress={() => onPick(r.c)}>
+          <View style={styles.between}>
+            <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{categoryIcon(r.c.name, r.c.icon)} {r.c.name}</Text>
+            <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{money0(r.total)}</Text>
+          </View>
+          <Bar value={r.total} max={max} color={t.series1} height={5} />
+        </Pressable>
+      ))}
+      <Text style={{ color: t.muted, fontSize: 12 }}>{note}{rows.length > 10 ? ` · top 10 of ${rows.length}` : ''} · tap one for its transactions</Text>
+    </>
+  );
+}
+
 const monthShort = (m: string) => new Date(m + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' });
 
 function AccountWidget({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: WidgetCfg }) {
@@ -458,7 +533,7 @@ export function WidgetPicker({ place, current, onClose, onSaved, save: saveFn, t
     }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
-  const label = (e: string) => { const [, c] = parseEntry(e); const w = def(e)!; return w.config ? `${w.title}: ${c.title || c.group || (c.categoryIds?.length ? `${c.categoryIds.length} categories` : c.names?.join(', ') || c.accountMatch || 'tap ⚙ to set up')}` : w.title; };
+  const label = (e: string) => { const [, c] = parseEntry(e); const w = def(e)!; return w.config ? `${w.title}: ${c.title || c.group || (c.categoryIds?.length ? `${c.categoryIds.length} categories` : c.names?.join(', ') || c.accountMatch || (c.chart && c.chart !== 'bars' ? 'all categories' : 'tap ⚙ to set up'))}${c.chart === 'pie' ? ' · pie' : c.chart === 'list' ? ' · list' : ''}` : w.title; };
   return (
     <Sheet title={title ?? (place === 'home' ? 'Home widgets' : 'Budget widgets')} onClose={onClose}
       footer={<View style={{ flexDirection: 'row', gap: 8 }}>
@@ -466,7 +541,7 @@ export function WidgetPicker({ place, current, onClose, onSaved, save: saveFn, t
         <Button title="Save" onPress={save} style={{ flex: 1 }} />
       </View>}>
       {header}
-      <Text style={{ color: t.muted, fontSize: 13 }}>Turn widgets on or off; arrows change the order (rows that are off are skipped).{place === 'budget' ? ' They show above your budget.' : ''}</Text>
+      <Text style={{ color: t.muted, fontSize: 13 }}>Turn widgets on or off; arrows change the order (rows that are off are skipped).{place === 'budget' ? ' They show below your budget, above past months.' : ''}</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {avail.filter((w) => w.config).map((w) => (
           <Button key={w.key} kind="plain" title={`+ ${w.title}`} onPress={() => setEditing({ index: null, key: w.key, cfg: w.config === 'spend' ? { months: 6 } : {} })} />
@@ -510,6 +585,7 @@ function WidgetSettings({ kind, cfg, onDone, onClose }: { kind: 'spend' | 'accou
   const t = useTheme();
   const [title, setTitle] = useState(cfg.title ?? '');
   const [months, setMonths] = useState(cfg.months ?? 6);
+  const [chart, setChart] = useState<Chart>(cfg.chart ?? 'bars');
   const [ids, setIds] = useState<string[] | null>(cfg.categoryIds ?? null);
   const [accountId, setAccountId] = useState(cfg.accountId ?? '');
   const [pick, setPick] = useState(false);
@@ -521,19 +597,22 @@ function WidgetSettings({ kind, cfg, onDone, onClose }: { kind: 'spend' | 'accou
   const selected = ids ?? (data ? cfgCategories(cfg, data.cats).map((c) => c.id) : []);
   const input = { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15, color: t.text, borderColor: t.line, backgroundColor: t.card };
   const done = () => onDone(kind === 'spend'
-    ? { title: title.trim() || undefined, months, categoryIds: selected }
+    ? { title: title.trim() || undefined, months, categoryIds: selected, chart }
     : { title: title.trim() || undefined, accountId: accountId || (data?.accounts.find((a) => cfg.accountMatch && new RegExp(cfg.accountMatch, 'i').test(a.name))?.id) });
   return (
     <Sheet title={kind === 'spend' ? 'Category spending' : 'Account'} onClose={onClose} footer={<Button title="Done" onPress={done} />}>
       <Field t={t} label="Title (optional)"><TextInput value={title} onChangeText={setTitle} placeholder={kind === 'spend' ? 'e.g. Car costs' : 'e.g. Car loan'} placeholderTextColor={t.muted} style={input} /></Field>
       {kind === 'spend' ? (
         <>
+          <Field t={t} label="Chart" hint={chart === 'bars' ? 'The total each month.' : 'Each category’s share over the months shown. With no categories chosen it covers all spending.'}>
+            <Segmented value={chart} onChange={setChart} options={[{ value: 'bars', label: 'Monthly bars' }, { value: 'pie', label: 'Pie' }, { value: 'list', label: 'Ranked list' }]} />
+          </Field>
           <Field t={t} label="Categories">
             <Button kind="plain" title={selected.length ? `${selected.length} chosen · change` : 'Choose categories'} onPress={() => setPick(true)} />
             <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={3}>{data?.cats.filter((c) => selected.includes(c.id)).map((c) => c.name).join(' · ')}</Text>
           </Field>
           <Field t={t} label="Months shown">
-            <View style={{ flexDirection: 'row', gap: 6 }}>{[3, 6, 12].map((m) => <Chip key={m} label={`${m} months`} on={months === m} onPress={() => setMonths(m)} />)}</View>
+            <View style={{ flexDirection: 'row', gap: 6 }}>{[1, 3, 6, 12].map((m) => <Chip key={m} label={m === 1 ? 'This month' : `${m} months`} on={months === m} onPress={() => setMonths(m)} />)}</View>
           </Field>
           {data && <MultiPicker visible={pick} title="Categories" onClose={() => setPick(false)} selected={selected} onChange={setIds}
             items={data.cats.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group }))} />}

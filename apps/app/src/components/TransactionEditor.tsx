@@ -6,7 +6,8 @@ import { categoryIcon, formatMoney, normalizeDescription, parseMoney, round2, se
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { MultiPicker } from '@/components/Picker';
+import { SinglePicker } from '@/components/Picker';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Button, Card } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
@@ -33,6 +34,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   // Split editor (TXN-6): null = not split; otherwise the parts being edited.
   const [parts, setParts] = useState<{ category_id: string | null; amount: string; notes: string }[] | null>(null);
   const [pickFor, setPickFor] = useState<number | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [suggested, setSuggested] = useState<string[]>([]);
   const [pair, setPair] = useState<{ id: string; date: string; amount: number; account: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -59,6 +62,16 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
         setParts(sp.length ? sp.map((p) => ({ category_id: p.category_id, amount: Number(p.amount).toFixed(2), notes: p.notes ?? '' })) : null);
       }
       setCats((c ?? []) as Category[]);
+      // Suggestions: what this merchant got before, then the categories you've used most recently.
+      if (tx) {
+        const who = tx.merchant || tx.name;
+        const [same, recent] = await Promise.all([
+          supabase.from('transactions').select('category_id').or(`merchant.eq."${String(who).replace(/"/g, '')}",name.eq."${String(tx.name).replace(/"/g, '')}"`).not('category_id', 'is', null).neq('id', tx.id).order('date', { ascending: false }).limit(10),
+          supabase.from('transactions').select('category_id').eq('category_source', 'manual').not('category_id', 'is', null).order('date', { ascending: false }).limit(60),
+        ]);
+        const ids = [...(same.data ?? []), ...(recent.data ?? [])].map((r: any) => r.category_id as string);
+        setSuggested([...new Set(ids)].filter((x) => (c ?? []).some((k: any) => k.id === x)).slice(0, 5));
+      }
     })();
   }, [id]);
 
@@ -228,23 +241,21 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
           </View>
         </Card>
       )}
-      {!split && <Card style={{ padding: 8 }}>
-        {groups.map(([group, list]) => (
-          <View key={group} style={{ marginBottom: 8 }}>
-            <Text style={{ color: t.muted, fontSize: 12, margin: 4 }}>{group}</Text>
-            <View style={styles.chips}>
-              {list.map((c: any) => {
-                const on = c.id === categoryId;
-                return (
-                  <Pressable key={c.id} onPress={() => setCategoryId(c.id)}
-                    style={[styles.chip, { borderColor: on ? t.accent : t.line, backgroundColor: on ? t.accent : 'transparent' }]}>
-                    <Text style={{ color: on ? '#fff' : t.text }}>{categoryIcon(c.name, c.icon)} {c.name}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+      {!split && <Card style={{ padding: 0 }}>
+        <Pressable onPress={() => setPicking(true)} accessibilityLabel="Choose category" style={({ pressed, hovered }: any) => [styles.catRow, (pressed || hovered) && { backgroundColor: t.line }]}>
+          <Text style={{ color: categoryId ? t.text : t.muted, fontSize: 16, fontWeight: '600', flex: 1 }} numberOfLines={1}>{catName(categoryId)}</Text>
+          <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={1}>{(cats.find((c) => c.id === categoryId) as any)?.group_name ?? ''}</Text>
+          <Ionicons name="chevron-forward" size={18} color={t.muted} />
+        </Pressable>
+        {suggested.filter((x) => x !== categoryId).length > 0 && (
+          <View style={[styles.chips, { paddingHorizontal: 10, paddingBottom: 10 }]}>
+            {suggested.filter((x) => x !== categoryId).slice(0, 4).map((cid) => (
+              <Pressable key={cid} onPress={() => setCategoryId(cid)} style={[styles.chip, { borderColor: t.line }]}>
+                <Text style={{ color: t.text, fontSize: 13 }}>{catName(cid)}</Text>
+              </Pressable>
+            ))}
           </View>
-        ))}
+        )}
       </Card>}
 
       {!split && <View style={styles.ruleRow}>
@@ -266,14 +277,16 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
 
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <Button title="Save and mark reviewed" onPress={save} busy={busy} style={{ marginTop: 16 }} />
-      <MultiPicker visible={pickFor != null} title="Category" onClose={() => setPickFor(null)} selected={pickFor != null && parts?.[pickFor]?.category_id ? [parts[pickFor].category_id!] : []}
+      <SinglePicker visible={picking || pickFor != null} title="Category" onClose={() => { setPicking(false); setPickFor(null); }}
+        selected={pickFor != null ? parts?.[pickFor]?.category_id ?? null : categoryId} suggested={suggested}
         items={cats.map((c: any) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))}
-        onChange={(ids) => { if (pickFor != null) setPart(pickFor, { category_id: ids[ids.length - 1] ?? null }); setPickFor(null); }} />
+        onPick={(cid) => { if (pickFor != null) setPart(pickFor, { category_id: cid }); else setCategoryId(cid); setPicking(false); setPickFor(null); }} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
+  catRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12 },
   page: { padding: 16, paddingBottom: 48, gap: 4, maxWidth: 640, width: '100%', alignSelf: 'center' },
   label: { fontSize: 13, marginTop: 16, marginBottom: 6 },
   input: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 16 },

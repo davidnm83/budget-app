@@ -25,10 +25,10 @@ export default function Planner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState<any | null>(null);
-  const [view, setView] = useState<'week' | 'bills'>('week');
+  const [view, setView] = useState<'week' | 'month' | 'all'>('week');
   // Links elsewhere (the bills calendar) open straight on Bills & income.
   const params = useLocalSearchParams<{ view?: string }>();
-  useEffect(() => { if (params.view === 'bills') { setView('bills'); router.setParams({ view: undefined } as any); } }, [params.view]);
+  useEffect(() => { if (params.view === 'bills') { setView('month'); router.setParams({ view: undefined } as any); } }, [params.view]);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -60,7 +60,7 @@ export default function Planner() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <TopBar>
-        {view === 'bills' ? <Text style={{ color: t.text, fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center' }}>Bills & income</Text> : <>
+        {view !== 'week' ? <Text style={{ color: t.text, fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center' }}>{view === 'month' ? 'Bills & income by month' : 'All bills & income'}</Text> : <>
         <Pressable onPress={() => setWeek(addDays(week, -7))} hitSlop={10} accessibilityLabel="Previous week"><Ionicons name="chevron-back" size={22} color={t.accent} /></Pressable>
         <Pressable onPress={() => setWeek(thisWeek)} style={{ flex: 1, alignItems: 'center' }}>
           <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{label}</Text>
@@ -71,9 +71,9 @@ export default function Planner() {
         </>}
       </TopBar>
       <View style={styles.viewSwitch}>
-        <Segmented value={view} onChange={setView} options={[{ value: 'week', label: 'Week' }, { value: 'bills', label: 'Bills & income' }]} />
+        <Segmented value={view} onChange={setView} options={[{ value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }, { value: 'all', label: 'All bills' }]} />
       </View>
-      {view === 'bills' ? <Bills /> : (
+      {view !== 'week' ? <Bills mode={view} /> : (
 
       <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         {planAccounts.length > 1 && (

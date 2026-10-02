@@ -210,7 +210,6 @@ function MonthView(d: Data) {
       })()}
       {tot.unbudgetedExpenses > 0 && <Text style={{ color: t.muted, fontSize: 12 }}>{formatMoney(tot.unbudgetedExpenses)} spent outside the budget (listed at the bottom).</Text>}
       {!!d.gigGas[month] && <Text style={{ color: t.muted, fontSize: 12 }}>⛽ Gas leaves out ≈ {formatMoney(d.gigGas[month])} used on gig shifts (Gig work settings).</Text>}
-      {month === current && d.widgets.map((k) => <Widget key={k} k={k} refresh={d.refresh} />)}
 
       {!monthBudgets.length && (
         <Card style={{ gap: 8 }}>
@@ -286,6 +285,7 @@ function MonthView(d: Data) {
       {monthBudgets.length > 0 && <Button title={adding ? 'Close' : 'Add a budget'} kind="plain" onPress={() => setAdding(!adding)} />}
       {adding && <AddBudget d={d} monthBudgets={monthBudgets} onAdd={(r) => { add([r]); setAdding(false); }} suggestion={suggestion} />}
 
+      {month === current && d.widgets.map((k) => <Widget key={k} k={k} refresh={d.refresh} />)}
       <Pressable onPress={() => setPicking(true)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 8 }}>
         <Ionicons name="options-outline" size={16} color={t.accent} />
         <Text style={{ color: t.accent }}>{d.widgets.length ? 'Change widgets' : 'Add widgets (watch list, averages…)'}</Text>

@@ -8,10 +8,10 @@ import {
   occurrences, shortDate, type Recurring, type RecurringSuggestion,
 } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BillForm } from '@/components/Forms';
-import { Button, Card, Empty, Segmented, Stepper } from '@/components/ui';
+import { Button, Card, Empty, Stepper } from '@/components/ui';
 import { loadAccounts, loadPosted, loadRecurring, today } from '@/lib/plan';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
@@ -21,9 +21,12 @@ const FREQ_LABEL = { weekly: 'Weekly', biweekly: 'Every 2 weeks', monthly: 'Mont
 
 interface Due { key: string; bill: Recurring; date: string; txn: { date: string; amount: number } | null }
 
-export default function Bills() {
+export default function Bills({ mode = 'month' }: { mode?: 'month' | 'all' }) {
   const t = useTheme();
-  const [view, setView] = useState<'month' | 'all' | 'suggest'>('month');
+  // Suggestions aren't a tab: a banner offers them when there are any, and opens this list.
+  const [suggesting, setSuggesting] = useState(false);
+  const view: 'month' | 'all' | 'suggest' = suggesting ? 'suggest' : mode;
+  useEffect(() => { setSuggesting(false); }, [mode]);
   const [month, setMonth] = useState(monthOf(today()));
   const [bills, setBills] = useState<Recurring[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -57,10 +60,12 @@ export default function Bills() {
     }
   }, [month]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+  // Look for repeating payments once, quietly, after the bills have loaded.
+  const looked = useRef(false);
+  useEffect(() => { if (!loading && !looked.current && accounts.length) { looked.current = true; findSuggestions(bills).catch(() => setSuggestions([])); } }, [loading, accounts.length]);
 
   // BIL-2: look through the last 6 months for things that repeat and aren't bills yet.
-  const findSuggestions = async () => {
-    setSuggestions(null); setView('suggest');
+  const findSuggestions = async (list: Recurring[] = bills) => {
     const now = today();
     const rows: any[] = [];
     for (let p = 0; ; p += 1000) {
@@ -69,7 +74,7 @@ export default function Bills() {
       rows.push(...(data ?? []));
       if (!data || data.length < 1000) break;
     }
-    const known = bills.map((b) => normalizeDescription(b.match_text || b.name));
+    const known = list.map((b) => normalizeDescription(b.match_text || b.name));
     const found = detectRecurring(rows.filter((r) => !r.is_transfer || Number(r.amount) < 0)
       .map((r) => ({ date: r.date, amount: Number(r.amount), merchant: r.display_name, name: r.name, account_id: r.account_id, category_id: r.category_id })), now)
       .filter((s) => !known.some((k) => k && (normalizeDescription(s.match_text).includes(k) || k.includes(normalizeDescription(s.match_text)))));
@@ -86,8 +91,18 @@ export default function Bills() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-        <Segmented value={view} onChange={(v) => (v === 'suggest' ? findSuggestions() : setView(v))}
-          options={[{ value: 'month', label: 'This month' }, { value: 'all', label: 'All' }, { value: 'suggest', label: 'Suggestions' }]} />
+        {view !== 'suggest' && !!suggestions?.length && (
+          <Pressable onPress={() => setSuggesting(true)} style={[styles.banner, { borderColor: t.accent, backgroundColor: t.accent + '14' }]}>
+            <Ionicons name="sparkles-outline" size={18} color={t.accent} />
+            <Text style={{ color: t.text, flex: 1 }}>{suggestions.length} repeating payment{suggestions.length === 1 ? '' : 's'} in your history {suggestions.length === 1 ? 'isn’t a bill' : 'aren’t bills'} yet</Text>
+            <Text style={{ color: t.accent, fontWeight: '600' }}>Review ›</Text>
+          </Pressable>
+        )}
+        {view === 'suggest' && (
+          <Pressable onPress={() => setSuggesting(false)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="chevron-back" size={18} color={t.accent} /><Text style={{ color: t.accent, fontWeight: '600' }}>Back to bills</Text>
+          </Pressable>
+        )}
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
 
         {view === 'month' && (
@@ -101,7 +116,7 @@ export default function Bills() {
             {!bills.length && (
               <Card style={{ gap: 8 }}>
                 <Text style={{ color: t.text }}>No bills yet. Add them one by one, or let the app look through your history for ones that repeat.</Text>
-                <Button title="Find recurring bills and income" onPress={findSuggestions} />
+                <Button title="Find recurring bills and income" onPress={() => setSuggesting(true)} />
               </Card>
             )}
             {billsDue.length > 0 && <Section t={t} title="Bills" dues={billsDue} now={now} accountName={accountName} onEdit={(b) => setEditing(b)} />}
@@ -199,6 +214,7 @@ function Section({ t, title, dues, now, accountName, onEdit }: {
 
 
 const styles = StyleSheet.create({
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
   page: { padding: 16, gap: 10, paddingBottom: 96, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   h: { fontSize: 12, fontWeight: '700', marginTop: 6, letterSpacing: 0.5, textTransform: 'uppercase' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
