@@ -5,6 +5,8 @@ import { supabase } from './supabase';
 
 const TABLES = ['accounts', 'categories', 'category_groups', 'category_rules', 'merchant_rules', 'merchant_sites', 'transactions',
   'transaction_splits', 'budgets', 'recurring', 'plan_entries', 'user_prefs', 'plaid_items', 'sync_runs'];
+/** Newer tables: an install that hasn't run their migration yet doesn't have them, so they are skipped when missing. */
+const LATER_TABLES = ['payment_plans'];
 /** Tables some installs have and others don't; skipped when missing. */
 const EXTRA_TABLES: string[] = [];
 
@@ -23,7 +25,7 @@ export const canExport = Platform.OS === 'web';
 export async function exportEverything(progress: (msg: string) => void): Promise<{ tables: number; rows: number }> {
   const tables: Record<string, unknown[]> = {};
   let rows = 0;
-  for (const name of [...TABLES, ...EXTRA_TABLES]) {
+  for (const name of [...TABLES, ...LATER_TABLES, ...EXTRA_TABLES]) {
     progress(`Reading ${name.replace(/_/g, ' ')}…`);
     const list = await all(name);
     if (list == null) { if (TABLES.includes(name)) throw new Error(`Couldn't read ${name}.`); continue; }

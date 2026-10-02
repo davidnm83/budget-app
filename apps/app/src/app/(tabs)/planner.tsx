@@ -8,7 +8,7 @@ import { UNDER_BAR } from '@/lib/layout';
 import { seedTxn } from '@/lib/txnCache';
 import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { addDays, addMonths, formatMoney, monthName, monthOf, shortDate, weekStart as mondayOf, type WeekRow } from '@budget-app/core';
+import { addDays, addMonths, formatMoney, monthName, monthOf, shortDate, weekStart as mondayOf, type WeekRow , instalmentsBetween } from '@budget-app/core';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -16,6 +16,7 @@ import { BillForm, PlanEntryForm, Sheet } from '@/components/Forms';
 import { TransactionEditor } from '@/components/TransactionEditor';
 import { refreshPlannerBadge, setPlannerBadge } from '@/lib/badges';
 import { supabase } from '@/lib/supabase';
+import { loadPlans, type CardPlan } from '@/lib/paymentPlans';
 import { IconButton, TopBar } from '@/components/TopBar';
 import { Card, Chip, Empty, Segmented } from '@/components/ui';
 import Bills from './bills';
@@ -48,9 +49,10 @@ export default function Planner() {
   const params = useLocalSearchParams<{ view?: string }>();
   useEffect(() => { if (params.view === 'bills') { setView('month'); router.setParams({ view: undefined } as any); } }, [params.view]);
 
+  const [cardPlans, setCardPlans] = useState<CardPlan[]>([]);
   const load = useCallback(async () => {
     setLoading(true); setError('');
-    try { const d = await loadWeek(week, only); setData(d); if (week === mondayOf(today()) && !only) setPlannerBadge(d.view?.summary.overdue ?? 0); else refreshPlannerBadge(); }
+    try { const d = await loadWeek(week, only); setData(d); loadPlans().then(setCardPlans).catch(() => {}); if (week === mondayOf(today()) && !only) setPlannerBadge(d.view?.summary.overdue ?? 0); else refreshPlannerBadge(); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, [week, only]);
@@ -170,6 +172,29 @@ export default function Planner() {
             </Text>
           </>
         )}
+        {/* Card payment plans: listed apart from the cash accounts. The money leaves when the card itself is paid, so these don't move the balances above. */}
+        {v && (() => {
+          const due = instalmentsBetween(cardPlans, week, addDays(week, 6));
+          if (!due.length) return null;
+          return (
+            <>
+              <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, marginTop: 6 }}>CARD PAYMENT PLANS THIS WEEK</Text>
+              <Card style={{ padding: 0 }}>
+                {due.map(({ plan, inst, count }, i) => (
+                  <Pressable key={plan.id + inst.n} onPress={() => router.navigate('/credit' as any)} style={({ pressed, hovered }: any) => [{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10 }, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }, (pressed || hovered) && { backgroundColor: t.line }]}>
+                    <Text style={{ color: t.muted, width: 52, fontSize: 13 }}>{shortDate(inst.date)}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: t.text }} numberOfLines={1}>{plan.description} · {inst.n} of {count}</Text>
+                      <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={1}>on {name(plan.accountId) || 'a card'}{plan.payingAccountId ? ` · paid from ${name(plan.payingAccountId)}` : ''}</Text>
+                    </View>
+                    <Text style={{ color: t.text, fontVariant: ['tabular-nums'] }}>{formatMoney(inst.total)}</Text>
+                  </Pressable>
+                ))}
+              </Card>
+              <Text style={{ color: t.muted, fontSize: 12 }}>These are added to that card’s bill, not taken from an account on their date, so they aren’t in the balances above. The card’s payment in the plan includes them.</Text>
+            </>
+          );
+        })()}
         {!data && loading && <PageSkeleton tiles={2} cards={2} />}
         {v && planAccounts.length > 0 && v.days.every((d) => !d.rows.length) && <EmptyState icon="calendar-outline" title="Nothing this week" text="Nothing is planned or posted for these seven days." action="Plan a one-off" onAction={() => setForm({ date: week > now ? week : now, description: '', amount: null, account_id: planAccounts[0]?.id ?? null })} />}
       </ScrollView>

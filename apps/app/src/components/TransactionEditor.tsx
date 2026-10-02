@@ -4,6 +4,9 @@
 // Bank transactions keep the bank's original date and amount beside your changes (TXN-12).
 import { categoryIcon, formatMoney, normalizeDescription, parseMoney, round2, searchPattern, shortDate, toIsoDate } from '@budget-app/core';
 import { deleteWithUndo, toast } from '@/lib/toast';
+import { PlanForm, type PlanSeed } from '@/components/PaymentPlans';
+import { loadAccounts } from '@/lib/plan';
+import type { Account } from '@/lib/types';
 import { merchantLogo, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { router } from 'expo-router';
@@ -57,7 +60,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   useEffect(() => {
     (async () => {
       const [{ data: tx }, { data: c }] = await Promise.all([
-        supabase.from('transactions').select('*, accounts(name, mask), transaction_splits(id, amount, notes, category_id, categories(name))').eq('id', id).single(),
+        supabase.from('transactions').select('*, accounts(name, mask, type), transaction_splits(id, amount, notes, category_id, categories(name))').eq('id', id).single(),
         supabase.from('categories').select('id, name, group_name, kind, sort, icon').eq('is_hidden', false).order('sort'),
       ]);
       if (tx) {
@@ -129,6 +132,15 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     if (error) setError(error.message); else onDone();
   };
 
+  // A card purchase being paid off in instalments: the plan form opens filled in from this transaction.
+  const [planFor, setPlanFor] = useState<{ accounts: Account[]; seed: PlanSeed } | null>(null);
+  const startPlan = async () => {
+    if (!txn) return;
+    try {
+      setPlanFor({ accounts: await loadAccounts(), seed: { description: merchant.trim() || txn.merchant || txn.name, accountId: txn.account_id, principal: Math.abs(txn.amount),
+        transactionId: txn.id, categoryId: categoryId ?? txn.category_id, purchaseDate: txn.date } });
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
   // Delete, with Undo in the message that follows. Splits go with it and come back with it.
   const remove = async () => {
     if (!txn) return;
@@ -308,8 +320,12 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
 
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <Button title="Save and mark reviewed" onPress={save} busy={busy || !ready} style={{ marginTop: 16 }} />
+      {(txn as any)?.accounts?.type === 'credit' && txn!.amount < 0 && !String((txn as any).import_id ?? '').startsWith('plan:') && (
+        <Button title="Put on a payment plan" kind="plain" disabled={busy || !ready} onPress={startPlan} />
+      )}
       <Button title="Delete transaction" kind="danger" onPress={remove} disabled={busy || !ready} />
       {!!(txn as any)?.plaid_transaction_id && <Text style={{ color: t.muted, fontSize: 12 }}>This one came from your bank. Deleting it removes it here only; it stays gone unless the bank later changes it.</Text>}
+      {planFor && <PlanForm seed={planFor.seed} accounts={planFor.accounts} onClose={() => setPlanFor(null)} onSaved={onDone} />}
       <SinglePicker visible={picking || pickFor != null} title="Category" onClose={() => { setPicking(false); setPickFor(null); }}
         selected={pickFor != null ? parts?.[pickFor]?.category_id ?? null : categoryId} suggested={shownSuggested}
         items={cats.map((c: any) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))}

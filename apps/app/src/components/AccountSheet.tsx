@@ -19,7 +19,7 @@ export { Tile } from '@/components/Tile';
 import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  accountIcon, addDays, balanceHistory, cardCycle, cardStatus, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatus, plansDeferred, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
   monthlyFlow, shortDate, todayIn, utilization,
 } from '@budget-app/core';
 import { router } from 'expo-router';
@@ -29,6 +29,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bar, Button, Chip, Segmented } from '@/components/ui';
 import { mergeAccounts } from '@/lib/mergeAccounts';
 import { loadEntries, loadRecurring } from '@/lib/plan';
+import { loadPlans, type CardPlan } from '@/lib/paymentPlans';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
@@ -229,7 +230,10 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
   const u = utilization(owed, a.credit_limit);
   const set = a.statement_day && a.due_day;
   const cycle = set ? cardCycle(today(), a.statement_day!, a.due_day!) : null;
-  const st = cycle ? cardStatus(owed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null) : null;
+  const [plans, setPlans] = useState<CardPlan[]>([]);
+  useEffect(() => { loadPlans().then((ps) => setPlans(ps.filter((p) => p.accountId === a.id))).catch(() => {}); }, [a.id]);
+  const deferred = cycle ? plansDeferred(plans, cycle.lastClose) : 0;
+  const st = cycle ? cardStatus(owed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, deferred) : null;
   return (
     <>
       <Section t={t} title="Utilisation">

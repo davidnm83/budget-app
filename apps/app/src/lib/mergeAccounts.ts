@@ -95,6 +95,7 @@ export async function mergeAccounts(manualId: string, bankId: string): Promise<M
     result.moved = plan.manualOnly.length;
   }
   check(await supabase.from('category_rules').update({ account_id: bankId }).eq('account_id', manualId));
+  { const r = await supabase.from('payment_plans').update({ account_id: bankId }).eq('account_id', manualId); if (r.error && r.error.code !== 'PGRST205' && r.error.code !== '42P01') throw new Error(r.error.message); }
   check(await supabase.from('accounts').delete().eq('id', manualId));
   return result;
 }

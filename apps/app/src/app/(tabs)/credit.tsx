@@ -7,13 +7,15 @@ import { usePullRefresh } from '@/lib/pullRefresh';
 import { bankLogo, customPicture, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { UNDER_BAR } from '@/lib/layout';
-import { addDays, balanceHistory, cardCycle, cardStatus, formatMoney, monthEnd, monthName, shortDate, utilization } from '@budget-app/core';
+import { plansDeferred, addDays, balanceHistory, cardCycle, cardStatus, formatMoney, monthEnd, monthName, shortDate, utilization } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AccountSheet, BalanceChart } from '@/components/AccountSheet';
 import { BarChart } from '@/components/Charts';
 import { PageBoard } from '@/components/PageBoard';
+import { PlansCard } from '@/components/PaymentPlans';
+import { loadPlans, syncPlans, type CardPlan } from '@/lib/paymentPlans';
 import { makeEntry } from '@/components/Widgets';
 import { useTxnSheet } from '@/components/TxnSheet';
 import { Bar, Card } from '@/components/ui';
@@ -36,11 +38,16 @@ export default function Credit() {
   const [refresh, setRefresh] = useState(0);
   const [showTxns, txnSheet] = useTxnSheet();
 
+  const [plans, setPlans] = useState<CardPlan[]>([]);
   const load = useCallback(async () => {
     try {
       const all = await loadAccounts();
       const cards = all.filter((a) => a.type === 'credit');
       setAccounts(all);
+      // Payment plans: write any instalment that has come due since last time, then read the cards' transactions.
+      const ps = await loadPlans();
+      setPlans(ps);
+      await syncPlans(ps).catch(() => 0);
       setTxns(await loadTxnsFor(cards.map((c) => c.id), addDays(today(), -400)));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
@@ -59,9 +66,10 @@ export default function Credit() {
     const mine = txns.filter((x) => x.account_id === a.id);
     const owed = owedOf(a);
     const cycle = a.statement_day && a.due_day ? cardCycle(now, a.statement_day, a.due_day) : null;
-    const st = cycle ? cardStatus(owed, mine, cycle.lastClose, cycle.cycleDays, a.apr ?? null) : null;
+    // The part of the balance on payment plans that isn't billed yet isn't part of what the statement asks for.
+    const st = cycle ? cardStatus(owed, mine, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plansDeferred(plans.filter((p) => p.accountId === a.id), cycle.lastClose)) : null;
     return { a, owed, u: utilization(owed, a.credit_limit), cycle, st, history: balanceHistory(signedBalance(a), mine, now, 53, 7) };
-  }).sort((x, y) => y.owed - x.owed), [cards, txns, now]);
+  }).sort((x, y) => y.owed - x.owed), [cards, txns, now, plans]);
 
   // Total card debt, weekly for the past year (as a positive amount owed).
   const debtTrend = useMemo(() => {
@@ -135,6 +143,7 @@ export default function Credit() {
         </Card>) : null
         ) },
       ]} />
+      <PlansCard t={t} plans={plans} accounts={accounts} onChanged={load} />
       {txnSheet}
       <AccountSheet account={open} accounts={accounts} onClose={() => setOpen(null)} onChanged={load} />
     </ScrollView>

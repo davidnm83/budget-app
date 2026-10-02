@@ -43,11 +43,12 @@ export interface CardStatus {
 }
 
 /** `owedNow` positive; txns in app sign (charges negative, payments positive). */
-export function cardStatus(owedNow: number, txns: { date: IsoDate; amount: number }[], lastClose: IsoDate, cycleDays: number, apr: number | null): CardStatus {
+/** `deferred`: the part of the balance on payment plans that wasn't billed yet when the statement closed (see plansDeferred); a statement doesn't ask for it. */
+export function cardStatus(owedNow: number, txns: { date: IsoDate; amount: number }[], lastClose: IsoDate, cycleDays: number, apr: number | null, deferred = 0): CardStatus {
   const after = txns.filter((t) => t.date > lastClose);
   const paidSince = round2(after.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0));
   const spentThisCycle = round2(-after.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0));
-  const statementOwed = round2(owedNow + paidSince - spentThisCycle);
+  const statementOwed = round2(Math.max(0, owedNow + paidSince - spentThisCycle - Math.max(0, deferred)));
   const leftToPay = round2(Math.max(0, statementOwed - paidSince));
   return { statementOwed, paidSince, leftToPay, spentThisCycle, interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
 }

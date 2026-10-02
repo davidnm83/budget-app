@@ -1,7 +1,7 @@
 // Data for Bills and the Planner: recurring bills/income, one-off planned entries, the
 // accounts the plan covers, and posted transactions to match against.
 import {
-  addDays, balanceAt, buildWeek, cardCycle, cardStatus, expandPlan, round2, todayIn, weekStart as mondayOf,
+  addDays, balanceAt, buildWeek, cardCycle, cardStatus, plansDeferred, expandPlan, round2, todayIn, weekStart as mondayOf,
   type PlanEntry, type PostedTxn, type Recurring, type WeekView,
 } from '@budget-app/core';
 import { supabase } from './supabase';
@@ -39,13 +39,15 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
     supabase.from('account_balances').select('id, type, balance, statement_day, due_day').in('id', cards),
     supabase.from('transactions').select('account_id, date, amount').in('account_id', cards).gte('date', addDays(now, -70)),
   ]);
+  // Payment plans on these cards: what isn't billed yet is left out of the amount to pay.
+  const plans = await import('./paymentPlans').then((m) => m.loadPlans()).catch(() => []);
   const due = new Map<string, number>();
   for (const a of (accts ?? []) as any[]) {
     const owed = Math.max(0, Number(a.balance ?? 0)); // cards: amount owing is positive in balance
     let amount = owed;
     if (a.statement_day && a.due_day) {
       const c = cardCycle(now, a.statement_day, a.due_day);
-      const st = cardStatus(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null);
+      const st = cardStatus(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null, plansDeferred(plans.filter((p) => p.accountId === a.id), c.lastClose));
       amount = st.leftToPay > 0 ? st.leftToPay : owed;
     }
     due.set(a.id, round2(amount));

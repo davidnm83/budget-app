@@ -16,7 +16,11 @@ let warmed: ReturnType<typeof setTimeout> | null = null;
 function signedIn(s: Session) {
   offlineUser(s.user.id);
   if (warmed) clearTimeout(warmed);
-  warmed = setTimeout(() => { refreshSaved(s.access_token).catch(() => {}); }, 4000);
+  warmed = setTimeout(() => {
+    refreshSaved(s.access_token).catch(() => {});
+    // Card payment plans: add any instalment that has come due since the app was last open.
+    import('./paymentPlans').then((m) => m.syncPlans()).catch(() => {});
+  }, 4000);
 }
 
 const SessionContext = createContext<{ session: Session | null; loading: boolean }>({ session: null, loading: true });
