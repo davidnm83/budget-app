@@ -2,7 +2,7 @@
 // is loaded the first time the picker opens.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
 import { useWide } from '@/lib/layout';
@@ -29,6 +29,10 @@ export function EmojiPicker({ value, onPick, onClose, title = 'Choose an emoji' 
     for (let i = 0; i < list.length; i += COLS) rows.push(list.slice(i, i + COLS));
     return rows;
   }, [groups, g, q]);
+  // Rows are keyed by position, so switching group (or typing) reuses the rows already on screen
+  // and only swaps the emoji in them, then jumps back to the top.
+  const list = useRef<FlatList<[string, string][]>>(null);
+  useEffect(() => { list.current?.scrollToOffset({ offset: 0, animated: false }); }, [g, q]);
   const choose = (e: string) => { onPick(e); onClose(); };
   return (
     <Sheet title={title} onClose={onClose} scroll={false}>
@@ -49,8 +53,8 @@ export function EmojiPicker({ value, onPick, onClose, title = 'Choose an emoji' 
           </ScrollView>
         )}
         {!groups ? <Text style={{ color: t.muted, padding: 16 }}>Loading…</Text> : !shown.length ? <Text style={{ color: t.muted, padding: 16 }}>No emoji matches “{q}”.</Text> : (
-          <FlatList data={shown} keyExtractor={(r) => r[0][0]} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 28 }}
-            initialNumToRender={8} maxToRenderPerBatch={8} updateCellsBatchingPeriod={30} windowSize={5}
+          <FlatList ref={list} data={shown} keyExtractor={(_, i) => String(i)} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 28 }}
+            initialNumToRender={16} maxToRenderPerBatch={16} updateCellsBatchingPeriod={16} windowSize={5}
             getItemLayout={(_, index) => ({ length: CELL, offset: 26 + CELL * index, index })}
             ListHeaderComponent={<Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, height: 26, lineHeight: 26 }}>{q.trim() ? 'RESULTS' : groups[g].name.toUpperCase()}</Text>}
             renderItem={({ item }) => <Row item={item} value={value} hover={t.line} onPick={choose} />} />
@@ -69,8 +73,8 @@ const Row = memo(function Row({ item, value, hover, onPick }: { item: [string, s
   if (Platform.OS !== 'web') {
     return (
       <View style={styles.row}>
-        {item.map(([e, name]) => (
-          <Pressable key={e} onPress={() => onPick(e)} accessibilityLabel={name} style={[styles.cell, e === value && { backgroundColor: hover }]}><Text style={styles.glyph}>{e}</Text></Pressable>
+        {item.map(([e, name], i) => (
+          <Pressable key={i} onPress={() => onPick(e)} accessibilityLabel={name} style={[styles.cell, e === value && { backgroundColor: hover }]}><Text style={styles.glyph}>{e}</Text></Pressable>
         ))}
       </View>
     );
@@ -78,8 +82,8 @@ const Row = memo(function Row({ item, value, hover, onPick }: { item: [string, s
   const click = (ev: any) => { const e = ev.target?.closest?.('[data-emoji]')?.getAttribute('data-emoji'); if (e) onPick(e); };
   return (
     <View style={styles.row} {...({ onClick: click } as any)}>
-      {item.map(([e, name]) => (
-        <Text key={e} accessibilityLabel={name} {...({ dataSet: { emoji: e } } as any)} style={[styles.cell, styles.glyph, e === value && { backgroundColor: hover }]}>{e}</Text>
+      {item.map(([e, name], i) => (
+        <Text key={i} accessibilityLabel={name} {...({ dataSet: { emoji: e } } as any)} style={[styles.cell, styles.glyph, e === value && { backgroundColor: hover }]}>{e}</Text>
       ))}
     </View>
   );

@@ -66,8 +66,8 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
 }
 
 /** Pick one: suggestions first, then everything under its group heading. Tapping a row picks it and closes. */
-export function SinglePicker({ visible, title, items, selected, suggested = [], onPick, onClose }: {
-  visible: boolean; title: string; items: PickItem[]; selected: string | null; suggested?: string[]; onPick: (id: string) => void; onClose: () => void;
+export function SinglePicker({ visible, title, placeholder, items, selected, suggested = [], onPick, onClose }: {
+  visible: boolean; title: string; placeholder?: string; items: PickItem[]; selected: string | null; suggested?: string[]; onPick: (id: string) => void; onClose: () => void;
 }) {
   const t = useTheme();
   const wide = useWide();
@@ -94,7 +94,7 @@ export function SinglePicker({ visible, title, items, selected, suggested = [], 
         </View>
         <View style={[styles.search, { borderColor: t.line, backgroundColor: t.card }]}>
           <Ionicons name="search" size={16} color={t.muted} />
-          <TextInput value={q} onChangeText={setQ} placeholder={`Search ${title.toLowerCase()}`} placeholderTextColor={t.muted} autoFocus={wide}
+          <TextInput value={q} onChangeText={setQ} placeholder={placeholder ?? `Search ${title.toLowerCase()}`} placeholderTextColor={t.muted} autoFocus={wide}
             onSubmitEditing={() => { if (q.trim() && first) onPick(first.id); }}
             style={[{ flex: 1, color: t.text, paddingVertical: 9, fontSize: 15 }, { outlineStyle: 'none' } as any]} />
         </View>

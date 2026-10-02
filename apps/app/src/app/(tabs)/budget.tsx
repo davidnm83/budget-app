@@ -17,6 +17,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Field, Sheet } from '@/components/Forms';
+import { SinglePicker } from '@/components/Picker';
 import { TopBar } from '@/components/TopBar';
 import { Button, Card, Chip, Empty, Segmented, Stepper } from '@/components/ui';
 import {
@@ -279,8 +280,8 @@ function MonthView(d: Data) {
         </Card>
       )}
 
-      {monthBudgets.length > 0 && <Button title={adding ? 'Close' : 'Add a budget'} kind="plain" onPress={() => setAdding(!adding)} />}
-      {adding && <AddBudget d={d} monthBudgets={monthBudgets} onAdd={(r) => { add([r]); setAdding(false); }} suggestion={suggestion} />}
+      {monthBudgets.length > 0 && <Button title="Add a budget" kind="plain" onPress={() => setAdding(true)} />}
+      {adding && <AddBudget d={d} monthBudgets={monthBudgets} onClose={() => setAdding(false)} onAdd={(r) => { add([r]); setAdding(false); }} suggestion={suggestion} />}
 
       <WidgetBoard place="budget" entries={d.widgets} refresh={d.refresh} anchor={month} editing={editingWidgets} onEditing={setEditingWidgets}
         onChange={(next) => { d.setWidgets(next); savePrefs({ budget_widgets: next }).catch((e: unknown) => d.setError(e instanceof Error ? e.message : String(e))); }} />
@@ -461,25 +462,21 @@ function BudgetEditor({ d, line, onClose }: { d: Data; line: BudgetLine; onClose
   );
 }
 
-function AddBudget({ d, monthBudgets, onAdd, suggestion }: {
-  d: Data; monthBudgets: Budget[]; onAdd: (r: { category_id?: string; group_name?: string; amount: number }) => void; suggestion: (key: string) => number;
+function AddBudget({ d, monthBudgets, onAdd, onClose, suggestion }: {
+  d: Data; monthBudgets: Budget[]; onAdd: (r: { category_id?: string; group_name?: string; amount: number }) => void; onClose: () => void; suggestion: (key: string) => number;
 }) {
-  const { t } = d;
+  // The same searchable list as a transaction's category: whole groups first, then each category
+  // under its group. Lines already budgeted this month are left out.
   const taken = new Set(monthBudgets.map(budgetKey));
   const visible = d.cats.filter((c) => !c.hidden && c.kind !== 'transfer');
   const groups = [...new Set(visible.filter((c) => c.kind === 'expense').map((c) => c.group))].filter((g) => !taken.has(`g:${g}`));
+  const items = [
+    ...groups.map((g) => ({ id: `g:${g}`, label: `${groupIcon(g, d.groupIcons[g])}  ${g}`, group: 'Whole groups' })),
+    ...visible.filter((c) => !taken.has(`c:${c.id}`)).map((c) => ({ id: `c:${c.id}`, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group })),
+  ];
   return (
-    <Card style={{ gap: 8 }}>
-      <Text style={{ color: t.muted }}>A whole group…</Text>
-      <View style={styles.chips}>{groups.map((g) => <Chip key={g} label={g} onPress={() => onAdd({ group_name: g, amount: suggestion(`g:${g}`) })} />)}</View>
-      <Text style={{ color: t.muted }}>…or one category</Text>
-      <View style={styles.chips}>
-        {visible.filter((c) => !taken.has(`c:${c.id}`)).map((c) => (
-          <Chip key={c.id} label={c.name} onPress={() => onAdd({ category_id: c.id, amount: suggestion(`c:${c.id}`) })} />
-        ))}
-      </View>
-      <Text style={{ color: t.muted, fontSize: 13 }}>Starts at your 3-month average; tap the new line to change it.</Text>
-    </Card>
+    <SinglePicker visible title="Add a budget" placeholder="Search categories and groups" items={items} selected={null} onClose={onClose}
+      onPick={(key) => onAdd(key.startsWith('g:') ? { group_name: key.slice(2), amount: suggestion(key) } : { category_id: key.slice(2), amount: suggestion(key) })} />
   );
 }
 
