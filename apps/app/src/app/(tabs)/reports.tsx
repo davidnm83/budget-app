@@ -2,6 +2,8 @@
 // spending by merchant, for a chosen date range; tap anything for its transactions. Plus your own
 // tabs, each a set of widgets you pick (kept in user_prefs.report_tabs).
 import { PAGE_MAX } from '@/lib/layout';
+import { EmptyState } from '@/components/States';
+import { DateRangeButton, rangeByKey, type Range } from '@/components/DateRange';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import { addMonths, formatMoney, monthEnd, monthName, todayIn } from '@budget-app/core';
@@ -23,30 +25,12 @@ import { useTheme, type Theme } from '@/lib/theme';
 
 type Tab = string; // 'categories' | 'cashflow' | 'merchants' | a custom tab's id
 const BUILT_IN = [{ id: 'categories', name: 'Categories' }, { id: 'cashflow', name: 'Cash flow' }, { id: 'merchants', name: 'Merchants' }];
-type RangeKey = 'month' | 'last' | '3m' | 'year' | '12m' | 'all';
-const RANGES: { key: RangeKey; label: string }[] = [
-  { key: 'month', label: 'This month' }, { key: 'last', label: 'Last month' }, { key: '3m', label: '3 months' },
-  { key: 'year', label: 'This year' }, { key: '12m', label: '12 months' }, { key: 'all', label: 'All time' },
-];
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
-
-function rangeOf(k: RangeKey): { from: string; to: string; label: string } {
-  const now = thisMonth();
-  const today = todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
-  switch (k) {
-    case 'month': return { from: now, to: today, label: monthName(now) };
-    case 'last': { const m = addMonths(now, -1); return { from: m, to: monthEnd(m), label: monthName(m) }; }
-    case '3m': return { from: addMonths(now, -2), to: today, label: `${monthName(addMonths(now, -2), false)} – ${monthName(now)}` };
-    case 'year': return { from: now.slice(0, 4) + '-01-01', to: today, label: now.slice(0, 4) };
-    case '12m': return { from: addMonths(now, -11), to: today, label: 'Last 12 months' };
-    default: return { from: '1900-01-01', to: today, label: 'All time' };
-  }
-}
 
 export default function Reports() {
   const t = useTheme();
   const [tab, setTab] = useState<Tab>('categories');
-  const [rk, setRk] = useState<RangeKey>('month');
+  const [picked, setPicked] = useState<Range>(() => rangeByKey('month'));
   const [cats, setCats] = useState<Category[]>([]);
   const [rows, setRows] = useState<CategoryMonth[]>([]);
   const [months, setMonths] = useState<MonthSummary[]>([]);
@@ -54,7 +38,9 @@ export default function Reports() {
   const [sources, setSources] = useState<MerchantTotal[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const range = rangeOf(rk);
+  // Reports never look past today, and "all time" starts at the beginning.
+  const now = todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const range = { from: picked.from || '1900-01-01', to: !picked.to || picked.to > now ? now : picked.to, label: picked.label };
   const [showTxns, txnSheet] = useTxnSheet();
   const [tabs, setTabs] = useState<ReportTab[]>([]);
   const [editTab, setEditTab] = useState<ReportTab | null>(null);
@@ -67,7 +53,7 @@ export default function Reports() {
     setLoading(true); setError(''); setRefresh((r) => r + 1);
     loadPrefs().then((p) => setTabs(p.report_tabs ?? [])).catch(() => {});
     try {
-      const r = rangeOf(rk);
+      const r = range;
       const [c, s, m, inc] = await Promise.all([
         loadCategories(), loadMonthSummaries(r.from, r.to), loadMerchants(r.from, r.to), loadMerchants(r.from, r.to, 'income'),
       ]);
@@ -79,7 +65,7 @@ export default function Reports() {
     } finally {
       setLoading(false);
     }
-  }, [rk]);
+  }, [range.from, range.to]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
   usePullRefresh(load);
 
@@ -112,7 +98,7 @@ export default function Reports() {
       </Pressable>
     </ScrollView>
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-      {!custom && <View style={styles.chips}>{RANGES.map((r) => <Chip key={r.key} label={r.label} on={rk === r.key} onPress={() => setRk(r.key)} />)}</View>}
+      {!custom && <DateRangeButton value={picked} onChange={setPicked} />}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {custom && (
         <>
@@ -160,7 +146,7 @@ function ByCategory({ t, cats, rows, open }: { t: Theme; cats: Category[]; rows:
   }, [cats, rows]);
   const all = groups.reduce((s, g) => s + g.total, 0);
   const max = Math.max(1, ...groups.flatMap((g) => g.items.map((i) => i.total)));
-  if (!groups.length) return <Empty text="No spending in this period." />;
+  if (!groups.length) return <EmptyState icon="pie-chart-outline" title="No spending in this period" text="Pick a wider range of dates above." />;
   return (
     <>
       <Text style={{ color: t.text, fontSize: 22, fontWeight: '700' }}>{formatMoney(all)} <Text style={{ color: t.muted, fontSize: 15, fontWeight: '400' }}>spent</Text></Text>
@@ -187,7 +173,7 @@ function ByCategory({ t, cats, rows, open }: { t: Theme; cats: Category[]; rows:
 
 // RPT-2
 function CashFlow({ t, months, sources, open }: { t: Theme; months: MonthSummary[]; sources: MerchantTotal[]; open: (q: Record<string, string>) => void }) {
-  if (!months.length) return <Empty text="Nothing in this period." />;
+  if (!months.length) return <EmptyState icon="swap-vertical-outline" title="Nothing in this period" text="Pick a wider range of dates above." />;
   const max = Math.max(1, ...months.flatMap((m) => [m.income, -m.spending]));
   const inc = months.reduce((s, m) => s + m.income, 0), out = months.reduce((s, m) => s - m.spending, 0);
   const srcMax = Math.max(1, ...sources.map((s) => s.total));
@@ -237,7 +223,7 @@ function CashFlow({ t, months, sources, open }: { t: Theme; months: MonthSummary
 
 // RPT-3
 function ByMerchant({ t, list, open }: { t: Theme; list: MerchantTotal[]; open: (q: Record<string, string>) => void }) {
-  if (!list.length) return <Empty text="No spending in this period." />;
+  if (!list.length) return <EmptyState icon="pie-chart-outline" title="No spending in this period" text="Pick a wider range of dates above." />;
   const max = Math.max(1, ...list.map((m) => -m.total));
   return (
     <Card style={{ gap: 8 }}>

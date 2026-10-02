@@ -57,7 +57,7 @@ export function SearchBox({ pages, onGo, empty, autoFocus }: { pages: PageHit[];
   const row = ({ pressed, hovered }: any) => [styles.row, (pressed || hovered) && { backgroundColor: t.line }];
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flexShrink: 1 }}>
       <View style={[styles.search, { borderColor: t.line, backgroundColor: t.card }]}>
         <Ionicons name="search" size={17} color={t.muted} />
         <TextInput value={q} onChangeText={setQ} placeholder="Search pages, categories, merchants, transactions" placeholderTextColor={t.muted} autoFocus={autoFocus ?? wide}
@@ -65,7 +65,7 @@ export function SearchBox({ pages, onGo, empty, autoFocus }: { pages: PageHit[];
         {!!q && <Pressable onPress={() => setQ('')} hitSlop={8} accessibilityLabel="Clear search"><Ionicons name="close-circle" size={17} color={t.muted} /></Pressable>}
       </View>
       {!text ? empty : (
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 }}>
+        <ScrollView style={{ flexShrink: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 32 }}>
           {pageHits.length > 0 && <Head>PAGES</Head>}
           {pageHits.map((x) => (
             <Pressable key={x.href} onPress={() => onGo(x.href)} style={row}>

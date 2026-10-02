@@ -2,6 +2,7 @@
 // statement and the interest it would cost if unpaid, plus total card debt and utilisation over
 // the past year. Tap a card for its full page.
 import { PAGE_MAX } from '@/lib/layout';
+import { EmptyState } from '@/components/States';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { bankLogo, customPicture, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
@@ -115,7 +116,7 @@ export default function Credit() {
             </Text>
           </Pressable>
         ))}
-        {!cards.length && <Text style={{ color: t.muted, padding: 12 }}>No credit cards yet.</Text>}
+        {!cards.length && <EmptyState icon="card-outline" title="No credit cards yet" text="Cards you link or add show their balance, limit and statement here." />}
       </Card>
         ) },
         { key: 'credit:debt', title: 'Card debt, past year', about: 'Total owed on cards week by week', render: () => (

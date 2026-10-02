@@ -1,6 +1,8 @@
 // Budget tab (BUD-1, 2, 4, 5, 6): this month's budget, past months in a collapsed archive by year,
 // comparisons with other months or years, and a year view of budget vs actual by month.
 import { PAGE_MAX } from '@/lib/layout';
+import { PageSkeleton } from '@/components/States';
+import { ROW } from '@/lib/layout';
 import { deleteWithUndo } from '@/lib/toast';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
@@ -90,7 +92,8 @@ export default function BudgetTab() {
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-      {view === 'month' && <MonthView {...data} />}
+      {!cats.length && loading ? <PageSkeleton tiles={3} cards={2} /> : null}
+      {view === 'month' && (cats.length > 0 || !loading) && <MonthView {...data} />}
       {view === 'compare' && <CompareView {...data} />}
       {view === 'year' && <YearView {...data} />}
     </ScrollView>
@@ -313,10 +316,10 @@ function Line({ t, icon, label, actual, available, pace, bold, income, carry }: 
     <View style={{ flex: 1, gap: 4 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Text style={styles.icon}>{icon}</Text>
-        <Text style={{ flex: 1, color: t.text, fontWeight: bold ? '700' : '400', fontSize: bold ? 15 : 14 }} numberOfLines={1}>
+        <Text style={[ROW.title, { flex: 1, color: t.text, fontWeight: bold ? '700' : '500' }]} numberOfLines={1}>
           {label}{carry ? <Text style={{ color: t.muted, fontSize: 12 }}>{`  ${carry > 0 ? '+' : '−'}${money0(Math.abs(carry))} rolled over`}</Text> : null}
         </Text>
-        <Text style={{ color: over ? t.danger : t.text, fontWeight: bold || over ? '700' : '500', fontSize: 13, fontVariant: ['tabular-nums'] }}>
+        <Text style={{ color: over ? t.danger : t.text, fontWeight: bold || over ? '700' : '500', fontSize: 14, fontVariant: ['tabular-nums'] }}>
           {money0(actual)}<Text style={{ color: t.muted, fontWeight: '400' }}>{` / ${money0(available)}`}</Text>
         </Text>
       </View>

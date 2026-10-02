@@ -14,18 +14,19 @@ import { useBackToClose } from '@/lib/useBackToClose';
 import { useTheme, type Theme } from '@/lib/theme';
 import type { Account } from '@/lib/types';
 
-export function Sheet({ title, onClose, children, footer, scroll = true }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; scroll?: boolean }) {
+/** `scroll={false}` hands the body to the caller (a list of its own); add `fit` to size the sheet to that body, not the screen. */
+export function Sheet({ title, onClose, children, footer, scroll = true, fit }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; scroll?: boolean; fit?: boolean }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   useBackToClose(true, onClose);
   return (
-    <ModalFrame onClose={onClose} fit={scroll}>
+    <ModalFrame onClose={onClose} fit={scroll || fit}>
       <>
         <View style={[styles.head, { borderColor: t.line }]}>
           <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: 1 }}>{title}</Text>
           <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="Close"><Ionicons name="close" size={26} color={t.text} /></Pressable>
         </View>
-        {scroll ? <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">{children}</ScrollView> : <View style={{ flex: 1 }}>{children}</View>}
+        {scroll ? <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">{children}</ScrollView> : <View style={fit ? { flexShrink: 1 } : { flex: 1 }}>{children}</View>}
         {footer ? <View style={[styles.footer, { borderColor: t.line, paddingBottom: insets.bottom + 12 }]}>{footer}</View> : null}
       </>
     </ModalFrame>

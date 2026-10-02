@@ -3,6 +3,7 @@
 // the earnings, active time and orders; $/hour, $/active hour, % active, $/km, after gas.
 // Settings: gas (L/100 km × $/L), and when each app pays out, which feeds the planner.
 import { PAGE_MAX } from '@/lib/layout';
+import { EmptyState } from '@/components/States';
 import { toast } from '@/lib/toast';
 import { deleteWithUndo } from '@/lib/toast';
 import { usePullRefresh } from '@/lib/pullRefresh';
@@ -246,7 +247,7 @@ function Shifts({ t, shifts, cpk, onEdit, onSettings }: { t: Theme; shifts: Shif
         </Card>
       )}
 
-      {!shifts.length && <Card><Text style={{ color: t.muted }}>No shifts yet. Tap + after a shift to log its hours, earnings and km.</Text></Card>}
+      {!shifts.length && <EmptyState icon="bicycle-outline" title="No shifts yet" text="After a shift, tap + to log its hours, earnings and km. You’ll see what you make per hour and after gas." />}
 
       {months.length > 1 && (
         <Card style={{ padding: 0 }}>

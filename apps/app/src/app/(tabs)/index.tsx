@@ -5,6 +5,7 @@
 //   4. Net worth: today and the change since the 1st
 // Plus any widgets you add (Customize at the bottom); the order and choice are kept per user.
 import { PAGE_MAX } from '@/lib/layout';
+import { PageSkeleton } from '@/components/States';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -107,6 +108,7 @@ export default function Home() {
       </TopBar>
       <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+        {!data && <PageSkeleton tiles={2} cards={3} />}
         {data && widgets && (
           <WidgetBoard place="home" entries={widgets} refresh={refresh} editing={editing} onEditing={setEditing}
             onChange={(next) => { setWidgets(next); savePrefs({ home_widgets: next }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e))); }}

@@ -1,6 +1,8 @@
 // Planner tab (PLN): Monday-to-Sunday week of planned bills, income and one-offs against what
 // actually posted, with a running balance and a warning before an account dips below its buffer.
 import { PAGE_MAX } from '@/lib/layout';
+import { ROW } from '@/lib/layout';
+import { EmptyState, PageSkeleton } from '@/components/States';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import { seedTxn } from '@/lib/txnCache';
@@ -169,7 +171,8 @@ export default function Planner() {
             </Text>
           </>
         )}
-        {v && planAccounts.length > 0 && v.days.every((d) => !d.rows.length) && <Empty text="Nothing planned or posted this week." />}
+        {!data && loading && <PageSkeleton tiles={2} cards={2} />}
+        {v && planAccounts.length > 0 && v.days.every((d) => !d.rows.length) && <EmptyState icon="calendar-outline" title="Nothing this week" text="Nothing is planned or posted for these seven days." action="Plan a one-off" onAction={() => setForm({ date: week > now ? week : now, description: '', amount: null, account_id: planAccounts[0]?.id ?? null })} />}
       </ScrollView>
       )}
 
@@ -192,7 +195,7 @@ function Row({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string
     <Pressable onPress={onPress} style={({ pressed, hovered }: any) => [styles.row, (pressed || hovered) && { backgroundColor: t.line }]}>
       <Ionicons name={icon} size={17} color={color} />
       <View style={{ flex: 1 }}>
-        <Text style={{ color: t.text, fontSize: 15, fontWeight: r.kind === 'actual' ? '400' : '600' }} numberOfLines={1}>{r.description}</Text>
+        <Text style={[ROW.title, { color: t.text, fontWeight: r.kind === 'actual' ? '500' : '600' }]} numberOfLines={1}>{r.description}</Text>
         <Text style={{ color: r.overdue ? t.danger : t.muted, fontSize: 12 }} numberOfLines={1}>
           {r.kind === 'actual' ? 'unplanned' : matched ? `planned ${formatMoney(r.planned!)}` : r.overdue ? 'not posted yet' : 'planned'}{account ? ` · ${account}` : ''}
         </Text>

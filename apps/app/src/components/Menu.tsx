@@ -2,6 +2,7 @@
 // On a phone it lives in the More sheet (the last button on the floating bar) under the search
 // box; on a wide screen it is the sidebar, which tucks away to a strip of icons.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RISE } from '@/lib/motion';
 import { router, usePathname } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -43,7 +44,7 @@ const TAB_ITEMS: Item[] = [
 ];
 
 /** What's inside the menu, shared by the phone drawer and the wide-screen sidebar. */
-function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boolean; active: boolean }) {
+function MenuBody({ go, tabs, active, fit }: { go: (href: string) => void; tabs?: boolean; active: boolean; fit?: boolean }) {
   const t = useTheme();
   const path = usePathname();
   const [pages, setPages] = useState<Page[]>([]);
@@ -102,7 +103,7 @@ function MenuBody({ go, tabs, active }: { go: (href: string) => void; tabs?: boo
           <Text style={{ color: t.accent, fontSize: tabs ? 15 : 16 }}>New page</Text>
         </Pressable>
       </ScrollView>
-      <View style={{ flex: 1 }} />
+      {!fit && <View style={{ flex: 1 }} />}
       <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.line, marginVertical: 6 }} />
       {SETUP.map((i) => (
         <Pressable key={i.href} onPress={() => go(i.href)} style={({ pressed, hovered }: any) => [styles.itemSmall, hovered && { backgroundColor: t.bg }, (pressed || here(i.href)) && { backgroundColor: t.line }]}>
@@ -163,7 +164,7 @@ export function Sidebar() {
   const m = useMenuItems(wide);
   const overdue = usePlannerBadge();
   const tipExpand = useTitle('Show sidebar ( [ )');
-  const tipSearch = useTitle('Search (Ctrl K)');
+  const tipSearch = useTitle('Search');
   if (!wide) return null;
   const go = (href: string) => navigateTo(href, path);
   return (
@@ -179,12 +180,12 @@ export function Sidebar() {
           <Pressable onPress={() => setPanel('search')} accessibilityLabel="Search" style={({ hovered }: any) => [styles.searchBtn, { borderColor: t.line, backgroundColor: hovered ? t.line : t.bg }]}>
             <Ionicons name="search" size={16} color={t.muted} />
             <Text style={{ color: t.muted, fontSize: 14, flex: 1 }}>Search</Text>
-            <Text style={[styles.kbd, { color: t.muted, borderColor: t.line }]}>Ctrl K</Text>
           </Pressable>
           <MenuBody tabs active go={go} />
         </View>
       ) : (
-        <ScrollView style={{ width: 55 }} contentContainerStyle={styles.strip} showsVerticalScrollIndicator={false}>
+        // Tucked away: just the way back, search and the five tabs, with Settings at the bottom.
+        <View style={[styles.strip, { width: 55, flex: 1 }]}>
           <Pressable ref={tipExpand} onPress={() => setSidebar(true)} accessibilityLabel="Show sidebar" style={({ hovered }: any) => [styles.stripItem, hovered && { backgroundColor: t.bg }]}>
             <PanelIcon color={t.muted} />
           </Pressable>
@@ -193,11 +194,9 @@ export function Sidebar() {
           </Pressable>
           <View style={[styles.stripRule, { backgroundColor: t.line }]} />
           {TAB_ITEMS.map((i) => <StripIcon key={i.href} item={i} on={path === i.href} onPress={() => go(i.href)} badge={i.href === '/planner' ? overdue : i.href === '/transactions' ? m.toReview : 0} />)}
-          <View style={[styles.stripRule, { backgroundColor: t.line }]} />
-          {m.items.map((i) => <StripIcon key={i.href} item={i} on={path === i.href} onPress={() => go(i.href)} />)}
-          <View style={[styles.stripRule, { backgroundColor: t.line }]} />
-          {SETUP.map((i) => <StripIcon key={i.href} item={i} on={path === i.href} onPress={() => go(i.href)} />)}
-        </ScrollView>
+          <View style={{ flex: 1 }} />
+          <StripIcon item={SETUP[SETUP.length - 1]} on={path === '/settings'} onPress={() => go('/settings')} />
+        </View>
       )}
     </View>
   );
@@ -227,6 +226,7 @@ export function Panels() {
   const t = useTheme();
   const wide = useWide();
   const panel = usePanel();
+  const insets = useSafeAreaInsets();
   const m = useMenuItems(panel === 'more' || panel === 'search');
   useEffect(() => { if (wide && panel === 'more') setPanel('search'); }, [wide, panel]);
   const close = () => setPanel(null);
@@ -256,13 +256,13 @@ export function Panels() {
     <SheetFrame onClose={close} title={wide ? 'Search' : 'More'}>
       <SearchBox pages={pages} onGo={go} autoFocus={wide}
         empty={wide ? <Text style={{ color: t.muted, padding: 16 }}>Type to search pages, categories, merchants and transactions.</Text>
-          : <View style={{ flex: 1, paddingBottom: 12 }}><MenuBody active go={go} /></View>} />
+          : <View style={{ flexShrink: 1, paddingBottom: insets.bottom + 8 }}><MenuBody active go={go} fit /></View>} />
     </SheetFrame>
   );
 }
 
 function SheetFrame({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return <Sheet title={title} onClose={onClose} scroll={false}><View style={{ flex: 1, minHeight: 420, paddingTop: 10 }}>{children}</View></Sheet>;
+  return <Sheet title={title} onClose={onClose} scroll={false} fit><View style={{ flexShrink: 1, paddingTop: 10 }}>{children}</View></Sheet>;
 }
 
 const styles = StyleSheet.create({

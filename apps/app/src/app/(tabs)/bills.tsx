@@ -1,6 +1,7 @@
 // Bills & income (BIL): this month's due dates, paid or upcoming, matched to transactions
 // automatically; the list of schedules; and suggestions spotted in your history.
 import { PAGE_MAX } from '@/lib/layout';
+import { EmptyState } from '@/components/States';
 import { toast } from '@/lib/toast';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
@@ -156,7 +157,7 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
                 </Pressable>
               ))}
             </Card>
-          ) : <Empty text="No bills or income yet." />
+          ) : <EmptyState icon="repeat-outline" title="No bills or income yet" text="Add what repeats (rent, phone, paycheque) and the Planner will show it each week." action="Find them in my history" onAction={() => setSuggesting(true)} />
         )}
 
         {view === 'suggest' && (
@@ -178,7 +179,7 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
                 ))}
               </Card>
             </>
-          ) : <Empty text="Nothing new found. Everything that repeats is already a bill." />
+          ) : <EmptyState icon="checkmark-circle-outline" title="Nothing new found" text="Everything that repeats in your history is already a bill." />
         )}
       </ScrollView>
 

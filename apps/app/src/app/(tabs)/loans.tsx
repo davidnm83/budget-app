@@ -1,10 +1,11 @@
 // Loans (car loan, student loan): balance, payoff estimate, interest and payments to date, the
 // balance over the past year, and the payments and interest entries themselves.
 import { PAGE_MAX } from '@/lib/layout';
+import { EmptyState } from '@/components/States';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
 import { addDays, balanceHistory, formatMoney, isInterestRow, shortDate } from '@budget-app/core';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AccountSheet, BalanceChart, LoanBlock } from '@/components/AccountSheet';
@@ -51,7 +52,7 @@ export default function Loans() {
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {loans.length > 1 && <Segmented value={loan?.id ?? ''} onChange={setPick} options={loans.map((l) => ({ value: l.id, label: l.name }))} />}
-      {!loan && <Card><Text style={{ color: t.muted }}>No loan accounts yet.</Text></Card>}
+      {!loan && <EmptyState icon="car-outline" title="No loans yet" text="A loan account shows its payoff date, interest and payments here. Add one on the Accounts tab." action="Go to Accounts" onAction={() => router.navigate('/accounts')} />}
       {loan && (
         <>
           <PageBoard page="loans" refresh={refresh} defaults={LOANS_DEFAULT} blocks={[

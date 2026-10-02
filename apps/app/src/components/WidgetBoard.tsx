@@ -3,6 +3,7 @@
 // every widget gets a strip of controls: drag (or the arrows) to reorder, width, chart height,
 // settings and remove. Each change is saved to the account as it is made.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { EmptyState } from '@/components/States';
 import { toast } from '@/lib/toast';
 import { riseAfter } from '@/lib/motion';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -98,7 +99,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, editing
           );
         })}
       </View>
-      {!known.length && place !== 'budget' && <Text style={{ color: t.muted, textAlign: 'center', padding: 24 }}>No widgets here yet.</Text>}
+      {!known.length && place !== 'budget' && !editing && <EmptyState icon="grid-outline" title="No widgets here yet" text="Add charts and summaries and arrange them the way you like." action="Add widgets" onAction={() => onEditing(true)} />}
       {bar}
       {adding && (
         <Sheet title="Add a widget" onClose={() => setAdding(false)}>

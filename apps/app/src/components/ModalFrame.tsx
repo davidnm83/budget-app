@@ -3,7 +3,7 @@
 //   fit: the panel is only as tall as its content (forms); otherwise it takes most of the height (lists).
 import { useEffect, useRef, type ReactNode } from 'react';
 import { POP } from '@/lib/motion';
-import { Animated, Easing, Modal, PanResponder, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, Easing, Modal, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWide } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
@@ -36,17 +36,50 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const y = useRef(new Animated.Value(height)).current;
-  // Drag the strip at the top down to close; a short drag springs back.
-  const pan = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_e, g) => g.dy > 4,
-    onPanResponderMove: (_e, g) => { y.setValue(Math.max(0, g.dy)); },
-    onPanResponderRelease: (_e, g) => {
-      if (g.dy > 110 || g.vy > 0.9) closeRef.current();
-      else Animated.spring(y, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
-    },
-  })).current;
+  // Drag down to close, from anywhere on the sheet as long as whatever is under your finger is
+  // scrolled to its top (so a list still scrolls normally). A short drag springs back.
   const closeRef = useRef(onClose); closeRef.current = onClose;
+  const sheet = useRef<any>(null);
+  useEffect(() => {
+    const el = sheet.current as HTMLElement | null;
+    if (Platform.OS !== 'web' || !visible || !el?.addEventListener) return;
+    let y0 = 0, x0 = 0, t0 = 0, state: 'idle' | 'maybe' | 'drag' = 'idle', last = 0;
+    const atTop = (target: Element | null) => {
+      for (let n = target; n && n !== el; n = n.parentElement) {
+        const cs = getComputedStyle(n);
+        if (/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 1 && n.scrollTop > 0) return false;
+      }
+      return true;
+    };
+    const start = (e: TouchEvent) => {
+      const target = e.target as Element | null;
+      state = 'idle';
+      if (e.touches.length !== 1 || !target || target.closest('input, textarea, select, [role="slider"]')) return;
+      if (!atTop(target)) return;
+      y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; t0 = Date.now(); state = 'maybe';
+    };
+    const move = (e: TouchEvent) => {
+      if (state === 'idle') return;
+      const dy = e.touches[0].clientY - y0, dx = e.touches[0].clientX - x0;
+      if (state === 'maybe') {
+        if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) { state = 'idle'; return; } // a sideways swipe (chips, tabs)
+        if (dy < -4) { state = 'idle'; return; }                                        // scrolling up the list
+        if (dy > 8) state = 'drag'; else return;
+      }
+      if (e.cancelable) e.preventDefault();
+      last = Math.max(0, dy); y.setValue(last);
+    };
+    const end = () => {
+      if (state !== 'drag') { state = 'idle'; return; }
+      state = 'idle';
+      const fast = last / Math.max(1, Date.now() - t0) > 0.9;
+      if (last > 110 || (fast && last > 40)) closeRef.current();
+      else Animated.spring(y, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+    };
+    el.addEventListener('touchstart', start, { passive: true }); el.addEventListener('touchmove', move, { passive: false });
+    el.addEventListener('touchend', end); el.addEventListener('touchcancel', end);
+    return () => { el.removeEventListener('touchstart', start); el.removeEventListener('touchmove', move); el.removeEventListener('touchend', end); el.removeEventListener('touchcancel', end); };
+  }, [visible]);
   useEffect(() => {
     if (!visible) { y.setValue(height); return; }
     Animated.timing(y, { toValue: 0, duration: 280, easing: Easing.bezier(0.2, 0.9, 0.2, 1), useNativeDriver: true }).start();
@@ -54,9 +87,9 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.phoneScrim} onPress={onClose}>
-        <Animated.View style={[styles.sheet, { backgroundColor: t.bg, marginTop: insets.top + 24, transform: [{ translateY: y }] }, fit ? { maxHeight: '100%' } : { flex: 1 }]}>
+        <Animated.View ref={sheet} style={[styles.sheet, { backgroundColor: t.bg, marginTop: insets.top + 24, transform: [{ translateY: y }] }, fit ? { maxHeight: '100%' } : { flex: 1 }]}>
           <Pressable onPress={() => {}} style={[{ cursor: 'auto' as any }, fit ? { flexShrink: 1 } : { flex: 1 }]}>
-            <View {...pan.panHandlers} style={styles.grabZone} accessibilityLabel="Drag down to close"><View style={[styles.grabber, { backgroundColor: t.muted }]} /></View>
+            <View style={styles.grabZone} accessibilityLabel="Drag down to close"><View style={[styles.grabber, { backgroundColor: t.muted }]} /></View>
             {children}
           </Pressable>
         </Animated.View>
@@ -68,7 +101,7 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
 const styles = StyleSheet.create({
   phoneScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'flex-end', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' } as any,
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: '0 -8px 30px rgba(0,0,0,0.18)' as any, overflow: 'hidden', flexShrink: 1, cursor: 'auto' as any },
-  grabZone: { height: 26, alignItems: 'center', justifyContent: 'center', cursor: 'grab', touchAction: 'none' } as any,
+  grabZone: { height: 26, alignItems: 'center', justifyContent: 'center' },
   grabber: { width: 40, height: 5, borderRadius: 3, opacity: 0.45 },
   scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24, backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)' } as any,
   panel: { width: '100%', borderRadius: 20, boxShadow: '0 24px 60px rgba(0,0,0,0.28)' as any, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', cursor: 'auto' as any },

@@ -1,12 +1,14 @@
 // Accounts tab: every account grouped by type, with net worth at the top. Tap one for its
 // details (name, balance, history, planner settings, merge) in a pop-up.
 import { accountIcon, formatMoney } from '@budget-app/core';
+import { ROW } from '@/lib/layout';
+import { EmptyState, RowsSkeleton } from '@/components/States';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { bankLogo, customPicture, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { UNDER_BAR } from '@/lib/layout';
 import { PAGE_MAX } from '@/lib/layout';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import { AccountSheet } from '@/components/AccountSheet';
@@ -85,7 +87,7 @@ export default function Accounts() {
         keyExtractor={(a) => a.id}
         stickySectionHeadersEnabled={false}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
-        ListEmptyComponent={<Empty text="No accounts yet. Link a bank in Settings, or import a CSV (menu)." />}
+        ListEmptyComponent={loading ? <RowsSkeleton rows={6} card /> : <EmptyState icon="wallet-outline" title="No accounts yet" text="Link your bank to bring in accounts and transactions, or import a CSV file." action="Open Settings" onAction={() => router.navigate('/settings')} />}
         renderSectionHeader={({ section }) => (
           <View style={styles.header}>
             <Text style={{ color: t.muted, fontWeight: '700', fontSize: 12, letterSpacing: 0.5 }}>{section.title.toUpperCase()}</Text>
@@ -98,7 +100,7 @@ export default function Accounts() {
               index === 0 && styles.first, index === section.data.length - 1 && styles.last]}>
             <Logo size={30} name={item.name} uri={customPicture(`account:${item.id}`, lv) ?? (item.icon ? null : bankLogo(item.name, lv))} emoji={accountIcon(item.type, item.icon)} />
             <View style={{ flex: 1 }}>
-              <Text style={{ color: t.text, fontSize: 15 }} numberOfLines={1}>{item.name}{item.mask ? <Text style={{ color: t.muted }}>{`  ••${item.mask}`}</Text> : null}</Text>
+              <Text style={[ROW.title, { color: t.text }]} numberOfLines={1}>{item.name}{item.mask ? <Text style={{ color: t.muted }}>{`  ••${item.mask}`}</Text> : null}</Text>
             </View>
             <Text style={{ color: t.text, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] }}>
               {item.current_balance == null ? '—' : formatMoney(signedBalance(item))}

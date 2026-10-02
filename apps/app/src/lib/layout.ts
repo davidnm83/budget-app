@@ -1,5 +1,6 @@
 // One place for the sizes every screen shares, so pages line up on big screens.
 import { useWindowDimensions } from 'react-native';
+import type { TextStyle } from 'react-native';
 
 /** Widest a page's content gets; it's centred beyond that. */
 export const PAGE_MAX = 1080;
@@ -14,3 +15,11 @@ export const LABEL = { fontSize: TYPE.label, fontWeight: '700', letterSpacing: 0
 
 /** Room at the end of every page so its last content can scroll clear of the floating navigation bar and the gesture area. */
 export const UNDER_BAR = 116;
+
+/** One look for every list row: a 15px semibold name, a 12–13px muted second line, a tabular amount. */
+export const ROW: { title: TextStyle; sub: TextStyle; amount: TextStyle; minHeight: number } = {
+  title: { fontSize: 15, fontWeight: '600' },
+  sub: { fontSize: 12.5 },
+  amount: { fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  minHeight: 56,
+};

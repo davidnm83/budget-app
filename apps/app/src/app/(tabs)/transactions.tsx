@@ -3,6 +3,9 @@
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import { Sheet } from '@/components/Forms';
+import { ROW } from '@/lib/layout';
+import { EmptyState, RowsSkeleton } from '@/components/States';
+import { ALL_TIME, DateRangeBody, type Range } from '@/components/DateRange';
 import { toast } from '@/lib/toast';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { merchantLogo, useLogos, useLogoVersion } from '@/lib/logos';
@@ -38,18 +41,14 @@ interface Row {
   split_count: number; is_transfer: boolean; notes: string | null; tags: string[];
 }
 interface Filters {
-  preset: DatePreset; direction: Direction; min: string; max: string;
+  range: Range; direction: Direction; min: string; max: string;
   accounts: string[]; categories: string[]; // 'none' = uncategorised
   merchants: string[];
   sort: Sort;
 }
 
 const PAGE = 100;
-const DEFAULTS: Filters = { preset: 'all', direction: 'any', min: '', max: '', accounts: [], categories: [], merchants: [], sort: 'newest' };
-const PRESETS: { key: DatePreset; label: string }[] = [
-  { key: 'all', label: 'All time' }, { key: 'month', label: 'This month' }, { key: 'lastMonth', label: 'Last month' },
-  { key: '30d', label: '30 days' }, { key: '90d', label: '90 days' }, { key: 'year', label: 'This year' }, { key: 'lastYear', label: 'Last year' },
-];
+const DEFAULTS: Filters = { range: ALL_TIME, direction: 'any', min: '', max: '', accounts: [], categories: [], merchants: [], sort: 'newest' };
 const SORTS: { key: Sort; label: string }[] = [
   { key: 'newest', label: 'Newest' }, { key: 'oldest', label: 'Oldest' }, { key: 'largest', label: 'Largest' },
   { key: 'smallest', label: 'Smallest' }, { key: 'merchant', label: 'Merchant A–Z' },
@@ -58,7 +57,7 @@ const SOURCE_LABEL: Record<string, string> = { rule: 'rule', learned: 'learned',
 const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
 
 function activeCount(f: Filters) {
-  return (f.preset !== 'all' ? 1 : 0) + (f.direction !== 'any' ? 1 : 0) + (f.min || f.max ? 1 : 0)
+  return (f.range.key !== 'all' ? 1 : 0) + (f.direction !== 'any' ? 1 : 0) + (f.min || f.max ? 1 : 0)
     + (f.accounts.length ? 1 : 0) + (f.categories.length ? 1 : 0) + (f.merchants.length ? 1 : 0) + (f.sort !== 'newest' ? 1 : 0);
 }
 
@@ -159,9 +158,10 @@ export default function Transactions() {
       onOpen={() => { seedTxn(item); setSel(item.id); }} />
   );
   const footer = hasMore ? <Button title="Load more" kind="plain" onPress={() => fetchPage(Math.ceil(rows.length / PAGE))} busy={loading} style={{ margin: 16 }} /> : null;
-  const empty = loading ? null : (
-    <Empty text={mode === 'review' && !query && !nFilters ? 'All caught up. New transactions show up here after each sync.' : 'No transactions match.'} />
-  );
+  const empty = loading ? <RowsSkeleton rows={10} /> : mode === 'review' && !query && !nFilters
+    ? <EmptyState icon="checkmark-done-circle-outline" title="All caught up" text="New transactions show up here after each bank sync." action="Show all transactions" onAction={() => setMode('all')} />
+    : query || nFilters ? <EmptyState icon="search-outline" title="No transactions match" text="Try a shorter search or fewer filters." action={nFilters ? 'Clear filters' : undefined} onAction={() => setFilters(DEFAULTS)} />
+    : <EmptyState icon="receipt-outline" title="No transactions yet" text="Link a bank or import a CSV file to bring them in." action="Open Settings" onAction={() => router.navigate('/settings')} />;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -248,7 +248,7 @@ export default function Transactions() {
 /** Applies the review switch, search and filters to a transaction_list query, sorted (shared by the list and the CSV export). */
 function filtered(q: any, mode: Mode, filters: Filters, query: string) {
   if (mode === 'review') q = q.eq('reviewed', false);
-  const { from, to } = datePresetRange(filters.preset, today());
+  const { from, to } = filters.range;
   if (from) q = q.gte('date', from);
   if (to) q = q.lte('date', to);
   if (filters.accounts.length) q = q.in('account_id', filters.accounts);
@@ -316,8 +316,8 @@ function TxnRow({ t, item, showDate, onToggle, onOpen, selected }: { t: Theme; i
       </Pressable>
       {logos && <View style={{ marginRight: 10 }}><Logo size={34} name={item.display_name} uri={merchantLogo(item.display_name, lv)} /></View>}
       <View style={{ flex: 1, gap: 2 }}>
-        <Text numberOfLines={1} style={{ color: t.text, fontSize: 16, fontWeight: '600' }}>{item.display_name}</Text>
-        <Text numberOfLines={1} style={{ fontSize: 13, color: category ? t.text : t.danger }}>
+        <Text numberOfLines={1} style={[ROW.title, { color: t.text }]}>{item.display_name}</Text>
+        <Text numberOfLines={1} style={[ROW.sub, { color: category ? t.text : t.danger }]}>
           {showDate ? <Text style={{ color: t.muted }}>{`${shortDate(item.date)} ${item.date.slice(0, 4)}  ·  `}</Text> : null}
           {category ?? 'Uncategorised'}
           {!item.split_count && item.category_source && !item.reviewed ? <Text style={{ color: t.muted }}>{` (${SOURCE_LABEL[item.category_source]})`}</Text> : null}
@@ -370,7 +370,7 @@ function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total
           <Label t={t} text="Sort" />
           <View style={styles.chips}>{SORTS.map((s) => <Chip key={s.key} label={s.label} on={f.sort === s.key} onPress={() => set({ sort: s.key })} />)}</View>
           <Label t={t} text="Dates" />
-          <View style={styles.chips}>{PRESETS.map((p) => <Chip key={p.key} label={p.label} on={f.preset === p.key} onPress={() => set({ preset: p.key })} />)}</View>
+          <DateRangeBody t={t} value={f.range} onChange={(range) => set({ range })} />
           <Label t={t} text="Type" />
           <View style={styles.chips}>
             {([['any', 'Everything'], ['out', 'Money out'], ['in', 'Money in'], ['transfer', 'Transfers']] as [Direction, string][])
@@ -434,6 +434,6 @@ const styles = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   amountInput: { borderWidth: 1, borderRadius: 8, padding: 8, width: 110 },
   dayHead: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6, borderBottomWidth: StyleSheet.hairlineWidth },
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingRight: 16 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingRight: 16, minHeight: ROW.minHeight },
   check: { width: 52, alignItems: 'center' },
 });
