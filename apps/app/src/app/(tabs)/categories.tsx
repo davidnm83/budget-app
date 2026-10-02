@@ -1,6 +1,7 @@
 // Categories (TXN-7): your list, grouped. Add, rename, pick an emoji, move to another group,
 // change the type, hide, or merge one into another. Tap a group name to rename the group.
 import { PAGE_MAX } from '@/lib/layout';
+import { EmojiField } from '@/components/EmojiPicker';
 import { UNDER_BAR } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { categoryIcon, groupIcon } from '@budget-app/core';
@@ -122,7 +123,7 @@ function CategoryEditor({ initial, cats, count, onClose, onSaved }: { initial: P
     <Sheet title={initial.id ? 'Edit category' : 'New category'} onClose={onClose}
       footer={<Button title="Save" onPress={save} />}>
       <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
-        <Field t={t} label="Icon"><TextInput value={icon} onChangeText={(v) => setIcon(v.trim().slice(0, 8))} placeholder={categoryIcon(name || '-', null)} style={[input, { width: 64, fontSize: 22, textAlign: 'center' }]} /></Field>
+        <Field t={t} label="Icon"><EmojiField value={icon} onChange={setIcon} placeholder={categoryIcon(name || '-', null)} /></Field>
         <View style={{ flex: 1 }}><Field t={t} label="Name"><TextInput value={name} onChangeText={setName} style={input} /></Field></View>
       </View>
       <View style={styles.emojis}>
@@ -172,7 +173,7 @@ function GroupEditor({ name, icon: initialIcon, onClose, onSaved }: { name: stri
   return (
     <Sheet title="Edit group" onClose={onClose} footer={<Button title="Save" onPress={save} />}>
       <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
-        <Field t={t} label="Icon"><TextInput value={icon} onChangeText={(v) => setIcon(v.trim().slice(0, 8))} placeholder={groupIcon(name)} style={[input, { width: 64, fontSize: 22, textAlign: 'center' }]} /></Field>
+        <Field t={t} label="Icon"><EmojiField value={icon} onChange={setIcon} placeholder={groupIcon(name)} /></Field>
         <View style={{ flex: 1 }}><Field t={t} label="Group name"><TextInput value={value} onChangeText={setValue} style={input} /></Field></View>
       </View>
       <View style={styles.emojis}>

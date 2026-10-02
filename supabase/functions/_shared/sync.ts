@@ -250,6 +250,8 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
         user_id: item.user_id,
         account_id: accountId,
         plaid_transaction_id: t.transaction_id,
+        logo_url: t.logo_url ?? t.counterparties?.[0]?.logo_url ?? null,
+        website: t.website ?? t.counterparties?.[0]?.website ?? null,
         source: 'plaid',
         date: t.date,
         authorized_date: t.authorized_date,

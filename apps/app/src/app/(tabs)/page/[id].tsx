@@ -1,6 +1,7 @@
 // Your own pages (NAV-2, NAV-3): a page is a name, an emoji and widgets you choose and order.
 // /page/new offers ready-made starting points (Car, Debt, Monthly check-in) or a blank page.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { EmojiField } from '@/components/EmojiPicker';
 import { UNDER_BAR } from '@/lib/layout';
 import { router, Tabs, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -91,7 +92,7 @@ export default function CustomPage() {
             <Button title="Save" style={{ flex: 1 }} onPress={async () => { await save(pages!.map((p) => (p.id === page.id ? { ...p, name: name.trim() || 'My page', icon: icon || '📄' } : p))); setRenaming(false); }} />
           </View>}>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TextInput value={icon} onChangeText={(v) => setIcon(v.trim().slice(0, 8))} placeholder="📄" style={[input, { width: 56, textAlign: 'center', fontSize: 20 }]} />
+            <EmojiField value={icon} onChange={setIcon} placeholder="📄" />
             <TextInput value={name} onChangeText={setName} placeholder="Page name" placeholderTextColor={t.muted} style={[input, { flex: 1 }]} />
           </View>
         </Sheet>

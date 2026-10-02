@@ -55,7 +55,8 @@ export default function TabLayout() {
 function Enter({ children }: { children: React.ReactNode }) {
   const [n, setN] = useState(0);
   useFocusEffect(useCallback(() => { setN((x) => x + 1); }, []));
-  return <View style={[{ flex: 1 }, ENTER[n % 2]]}>{children}</View>;
+  const wide = useWide(); // phones switch pages plainly; the fade is for wide screens
+  return <View style={[{ flex: 1 }, wide && ENTER[n % 2]]}>{children}</View>;
 }
 
 /** A rounded bar of five icons that sits clear of the screen edges. The current tab's icon is filled inside a soft pill. */

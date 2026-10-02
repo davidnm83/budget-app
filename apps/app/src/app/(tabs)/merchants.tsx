@@ -2,6 +2,8 @@
 // (or merge it into another by giving it that name) and the change is remembered as a rule, so
 // future transactions from the bank get the same name.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { merchantLogo, merchantSite, saveMerchantSite, useLogos } from '@/lib/logos';
+import { Logo } from '@/components/Logo';
 import { UNDER_BAR } from '@/lib/layout';
 import { addMonths, formatMoney, monthEnd, monthOf, shortDate } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
@@ -27,6 +29,8 @@ export default function Merchants() {
   const [sort, setSort] = useState<'count' | 'name' | 'recent'>('count');
   const [edit, setEdit] = useState<M | null>(null);
   const [name, setName] = useState('');
+  const [site, setSite] = useState('');
+  useLogos();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showTxns, txnSheet] = useTxnSheet();
@@ -72,7 +76,9 @@ export default function Merchants() {
   }, [edit, rows]);
 
   const save = async () => {
-    if (!edit || !target || target === edit.merchant) { setEdit(null); return; }
+    if (!edit) return;
+    if (site.trim() !== merchantSite(edit.merchant)) { try { await saveMerchantSite(target || edit.merchant, site); } catch (e) { setError(e instanceof Error ? e.message : String(e)); return; } }
+    if (!target || target === edit.merchant) { setEdit(null); return; }
     setBusy(true); setError('');
     try {
       const to = merging ? merging.merchant : target;
@@ -106,8 +112,9 @@ export default function Merchants() {
       <FlatList data={shown} keyExtractor={(r) => r.merchant} contentContainerStyle={styles.list}
         ListEmptyComponent={<Text style={{ color: t.muted, padding: 12 }}>No merchants match.</Text>}
         renderItem={({ item }) => (
-          <Pressable onPress={() => { setEdit(item); setName(item.merchant); setError(''); }}
+          <Pressable onPress={() => { setEdit(item); setName(item.merchant); setSite(merchantSite(item.merchant)); setError(''); }}
             style={({ pressed, hovered }: any) => [styles.row, { borderColor: t.line, backgroundColor: pressed || hovered ? t.line : t.card }]}>
+            <Logo size={34} name={item.merchant} uri={merchantLogo(item.merchant)} />
             <View style={{ flex: 1 }}>
               <Text style={{ color: t.text, fontSize: TYPE.body, fontWeight: '600' }} numberOfLines={1}>{item.merchant}</Text>
               <Text style={{ color: t.muted, fontSize: TYPE.label }}>{item.txns} transaction{item.txns === 1 ? '' : 's'} · last {shortDate(item.last_date)} {item.last_date.slice(0, 4)}</Text>
@@ -116,9 +123,15 @@ export default function Merchants() {
           </Pressable>
         )} />
       {edit && (
-        <Sheet title="Merchant" onClose={() => setEdit(null)} footer={<Button title={merging ? `Merge into ${merging.merchant}` : 'Save name'} onPress={save} busy={busy} disabled={!target} />}>
+        <Sheet title="Merchant" onClose={() => setEdit(null)} footer={<Button title={merging ? `Merge into ${merging.merchant}` : 'Save'} onPress={save} busy={busy} disabled={!target} />}>
           <Field t={t} label="Name" hint={merging ? `“${merging.merchant}” already exists: these ${edit.txns} transactions will join its ${merging.txns}.` : 'Renames it on every transaction (not only the ones in the filter) and on new ones from the bank.'}>
             <TextInput value={name} onChangeText={setName} autoCapitalize="words" style={[styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.bg }]} />
+          </Field>
+          <Field t={t} label="Website (for its picture)" hint="Optional, e.g. metro.ca. Leave empty to use the bank’s logo or the built-in list.">
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Logo size={36} name={edit.merchant} uri={site.trim() ? `https://icons.duckduckgo.com/ip3/${site.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '')}.ico` : merchantLogo(edit.merchant)} />
+              <TextInput value={site} onChangeText={setSite} autoCapitalize="none" autoCorrect={false} placeholder="example.com" placeholderTextColor={t.muted} style={[styles.input, { flex: 1, color: t.text, borderColor: t.line, backgroundColor: t.bg }]} />
+            </View>
           </Field>
           {similar.length > 0 && (
             <Field t={t} label="Similar names" hint="Tap one to merge into it.">

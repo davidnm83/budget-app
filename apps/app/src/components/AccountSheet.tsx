@@ -6,6 +6,7 @@
 //   • Transactions — the latest 100.
 // The overview is built from small blocks so they can be reused on custom pages later.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { EmojiField } from '@/components/EmojiPicker';
 import { LineChart } from '@/components/Charts';
 import { seedTxn } from '@/lib/txnCache';
 export { Tile } from '@/components/Tile';
@@ -358,7 +359,7 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <Field t={t} label="Icon and display name">
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <TextInput value={icon} onChangeText={(v) => setIcon(v.trim().slice(0, 8))} placeholder={accountIcon(account.type, null)} style={[input, { width: 56, textAlign: 'center', fontSize: 20 }]} />
+          <EmojiField value={icon} onChange={setIcon} placeholder={accountIcon(account.type, null)} />
           <TextInput value={name} onChangeText={setName} style={[input, { flex: 1 }]} />
           <Button title={label('name', 'Save')} kind="plain" disabled={flash !== 'name' && (!name.trim() || (name === account.name && icon === (account.icon ?? '')))} onPress={() => save({ name: name.trim(), icon: icon || null }, 'Saved.', 'name')} />
         </View>

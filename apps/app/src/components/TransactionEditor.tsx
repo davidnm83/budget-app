@@ -3,6 +3,8 @@
 // transactions are categorised the same way, and can apply it to unreviewed ones too (TXN-5).
 // Bank transactions keep the bank's original date and amount beside your changes (TXN-12).
 import { categoryIcon, formatMoney, normalizeDescription, parseMoney, round2, searchPattern, shortDate, toIsoDate } from '@budget-app/core';
+import { merchantLogo } from '@/lib/logos';
+import { Logo } from '@/components/Logo';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { peekCategories, peekTxn, storeCategories } from '@/lib/txnCache';
@@ -182,7 +184,10 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   return (
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <Card style={{ gap: 4 }}>
-        <Text style={{ color: t.text, fontSize: 28, fontWeight: '700' }}>{formatMoney(Number(txn.amount), txn.currency)}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Logo size={40} name={txn.merchant || txn.name || '?'} uri={merchantLogo(merchant.trim() || txn.merchant || txn.name)} />
+          <Text style={{ color: t.text, fontSize: 28, fontWeight: '700' }}>{formatMoney(Number(txn.amount), txn.currency)}</Text>
+        </View>
         <Text style={{ color: t.muted }}>{shortDate(txn.date)} · {txn.accounts?.name}</Text>
         <Text style={{ color: t.muted, fontSize: 13 }} selectable>{txn.name}</Text>
       </Card>

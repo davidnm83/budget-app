@@ -1,4 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
+import { setLogosEnabled, useLogos } from '@/lib/logos';
 import { UNDER_BAR } from '@/lib/layout';
 import { useCallback, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -21,6 +22,7 @@ function confirm(message: string): Promise<boolean> {
 
 export default function Settings() {
   const t = useTheme();
+  const logos = useLogos();
   const themeMode = useThemeMode();
   const { session } = useSession();
   const [items, setItems] = useState<PlaidItem[]>([]);
@@ -46,6 +48,11 @@ export default function Settings() {
       <Card style={{ gap: 8 }}>
         <Segmented value={themeMode} onChange={setThemeMode} options={[{ value: 'auto', label: 'Match device' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
         <Text style={{ color: t.muted, fontSize: 12 }}>Kept on this device.</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+          <Text style={{ color: t.text, flex: 1 }}>Bank and merchant logos</Text>
+          <Switch value={logos} onValueChange={setLogosEnabled} />
+        </View>
+        <Text style={{ color: t.muted, fontSize: 12 }}>Pictures come from your bank feed, or from DuckDuckGo’s icon service using only the site name (like cibc.com). Off shows letters and emoji and makes no outside requests for them.</Text>
       </Card>
       <Text style={[styles.h, { color: t.text }]}>Bank connections</Text>
       <Card style={{ gap: 12 }}>
