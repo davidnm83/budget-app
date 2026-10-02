@@ -1,7 +1,7 @@
 // Accounts tab: every account grouped by type, with net worth at the top. Tap one for its
 // details (name, balance, history, planner settings, merge) in a pop-up.
 import { accountIcon, formatMoney } from '@budget-app/core';
-import { bankLogo, useLogos } from '@/lib/logos';
+import { bankLogo, customPicture, useLogos } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { UNDER_BAR } from '@/lib/layout';
 import { PAGE_MAX } from '@/lib/layout';
@@ -94,7 +94,7 @@ export default function Accounts() {
           <Pressable onPress={() => setOpenId(item.id)}
             style={({ pressed }) => [styles.row, { backgroundColor: pressed ? t.line : t.card, borderColor: t.line, opacity: item.is_hidden ? 0.5 : 1 },
               index === 0 && styles.first, index === section.data.length - 1 && styles.last]}>
-            <Logo size={30} name={item.name} uri={item.icon ? null : bankLogo(item.name)} emoji={accountIcon(item.type, item.icon)} />
+            <Logo size={30} name={item.name} uri={customPicture(`account:${item.id}`) ?? (item.icon ? null : bankLogo(item.name))} emoji={accountIcon(item.type, item.icon)} />
             <View style={{ flex: 1 }}>
               <Text style={{ color: t.text, fontSize: 15 }} numberOfLines={1}>{item.name}{item.mask ? <Text style={{ color: t.muted }}>{`  ••${item.mask}`}</Text> : null}</Text>
             </View>

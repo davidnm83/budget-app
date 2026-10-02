@@ -11,7 +11,7 @@ import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from
 import { Field, Sheet } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
 import { Button, Card, Chip, Segmented } from '@/components/ui';
-import { EMOJI, loadGroupIcons, mergeCategories, renameGroup, setGroupIcon } from '@/lib/categories';
+import { loadGroupIcons, mergeCategories, renameGroup, setGroupIcon } from '@/lib/categories';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
 
@@ -126,11 +126,6 @@ function CategoryEditor({ initial, cats, count, onClose, onSaved }: { initial: P
         <Field t={t} label="Icon"><EmojiField value={icon} onChange={setIcon} placeholder={categoryIcon(name || '-', null)} /></Field>
         <View style={{ flex: 1 }}><Field t={t} label="Name"><TextInput value={name} onChangeText={setName} style={input} /></Field></View>
       </View>
-      <View style={styles.emojis}>
-        {EMOJI.map((e) => (
-          <Pressable key={e} onPress={() => setIcon(e)} style={[styles.emoji, icon === e && { backgroundColor: t.accent }]}><Text style={{ fontSize: 20 }}>{e}</Text></Pressable>
-        ))}
-      </View>
       <Field t={t} label="Type"><Segmented value={kind} onChange={setKind} options={KINDS as any} /></Field>
       <Field t={t} label="Group">
         <View style={styles.chips}>{groups.map((g) => <Chip key={g} label={g} on={groupName === g} onPress={() => setGroupName(g)} />)}</View>
@@ -175,11 +170,6 @@ function GroupEditor({ name, icon: initialIcon, onClose, onSaved }: { name: stri
       <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
         <Field t={t} label="Icon"><EmojiField value={icon} onChange={setIcon} placeholder={groupIcon(name)} /></Field>
         <View style={{ flex: 1 }}><Field t={t} label="Group name"><TextInput value={value} onChangeText={setValue} style={input} /></Field></View>
-      </View>
-      <View style={styles.emojis}>
-        {EMOJI.map((e) => (
-          <Pressable key={e} onPress={() => setIcon(e)} style={[styles.emoji, icon === e && { backgroundColor: t.accent }]}><Text style={{ fontSize: 20 }}>{e}</Text></Pressable>
-        ))}
       </View>
       <Text style={{ color: t.muted, fontSize: 12 }}>Renaming to an existing group's name combines the two.</Text>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}

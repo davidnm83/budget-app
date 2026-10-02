@@ -1,8 +1,8 @@
 // Pictures for banks and merchants. A logo comes from, in order:
 //   1. the bank feed (Plaid sends a logo with many transactions),
-//   2. a website you set for the merchant on the Merchants page,
+//   2. a picture you uploaded for the merchant or account,
 //   3. a built-in list of well-known Canadian banks and stores,
-// and for 2 and 3 the picture is the site's icon, fetched from DuckDuckGo's icon service (only
+// and for 3 the picture is the site's icon, fetched from DuckDuckGo's icon service (only
 // the site name, e.g. "cibc.com", is sent). Anything else shows its first letter. Logos can be
 // turned off in Settings, which stops every outside request for them.
 import { useSyncExternalStore } from 'react';
@@ -11,7 +11,7 @@ import { supabase } from './supabase';
 const KEY = 'budget.logos';
 let enabled = (() => { try { return globalThis.localStorage?.getItem(KEY) !== 'off'; } catch { return true; } })();
 let fromFeed = new Map<string, string>();   // merchant (lowercase) → image url
-let sites = new Map<string, string>();      // merchant (lowercase) → domain
+let mine = new Map<string, string>();       // merchant (lowercase) or account:<id> → your uploaded picture
 let version = 0;
 const subs = new Set<() => void>();
 const bump = () => { version++; subs.forEach((f) => f()); };
@@ -31,9 +31,9 @@ let loading: Promise<void> | null = null;
 export function loadLogos(force = false): Promise<void> {
   if (loading && !force) return loading;
   loading = (async () => {
-    const [feed, mine] = await Promise.all([supabase.rpc('merchant_logos'), supabase.from('merchant_sites').select('merchant, domain')]);
+    const [feed, own] = await Promise.all([supabase.rpc('merchant_logos'), supabase.from('merchant_sites').select('merchant, image').not('image', 'is', null)]);
     fromFeed = new Map(((feed.data ?? []) as any[]).flatMap((r) => (r.logo_url ? [[String(r.merchant).toLowerCase(), r.logo_url]] : r.website ? [[String(r.merchant).toLowerCase(), icon(r.website)]] : [])) as [string, string][]);
-    sites = new Map(((mine.data ?? []) as any[]).map((r) => [String(r.merchant).toLowerCase(), r.domain]));
+    mine = new Map(((own.data ?? []) as any[]).map((r) => [String(r.merchant).toLowerCase(), r.image]));
     bump();
   })().catch(() => {});
   return loading;
@@ -71,10 +71,11 @@ const match = (list: [RegExp, string][], name: string) => list.find(([re]) => re
 
 /** Image for a merchant name, or null to show its letter. */
 export function merchantLogo(name: string | null | undefined): string | null {
-  if (!enabled || !name) return null;
+  if (!name) return null;
   const k = name.toLowerCase();
-  const site = sites.get(k);
-  if (site) return icon(site);
+  const own = mine.get(k);
+  if (own) return own; // your own picture shows even with logos switched off
+  if (!enabled) return null;
   const fed = fromFeed.get(k);
   if (fed) return fed;
   const d = match(STORES, name) ?? match(BANKS, name);
@@ -86,11 +87,18 @@ export function bankLogo(...names: (string | null | undefined)[]): string | null
   for (const n of names) { const d = n ? match(BANKS, n) : undefined; if (d) return icon(d); }
   return null;
 }
-export const merchantSite = (name: string) => sites.get(name.toLowerCase()) ?? '';
-export async function saveMerchantSite(merchant: string, domain: string) {
-  const d = cleanDomain(domain);
-  const res = d ? await supabase.from('merchant_sites').upsert({ merchant, domain: d }, { onConflict: 'user_id,merchant' })
-    : await supabase.from('merchant_sites').delete().eq('merchant', merchant);
+/** A picture you uploaded, by merchant name or "account:<id>". */
+export const customPicture = (key: string): string | null => mine.get(key.toLowerCase()) ?? null;
+/** Save (or with null, remove) your picture for a merchant name or "account:<id>". */
+export async function savePicture(key: string, image: string | null) {
+  const res = image ? await supabase.from('merchant_sites').upsert({ merchant: key, image, domain: null }, { onConflict: 'user_id,merchant' })
+    : await supabase.from('merchant_sites').delete().eq('merchant', key);
   if (res.error) throw new Error(res.error.message);
   await loadLogos(true);
+}
+/** A merchant was renamed: its picture follows it. */
+export async function movePicture(from: string, to: string) {
+  const pic = customPicture(from);
+  if (!pic || customPicture(to)) return;
+  await savePicture(to, pic); await savePicture(from, null);
 }

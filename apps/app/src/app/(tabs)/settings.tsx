@@ -52,7 +52,7 @@ export default function Settings() {
           <Text style={{ color: t.text, flex: 1 }}>Bank and merchant logos</Text>
           <Switch value={logos} onValueChange={setLogosEnabled} />
         </View>
-        <Text style={{ color: t.muted, fontSize: 12 }}>Pictures come from your bank feed, or from DuckDuckGo’s icon service using only the site name (like cibc.com). Off shows letters and emoji and makes no outside requests for them.</Text>
+        <Text style={{ color: t.muted, fontSize: 12 }}>Pictures come from your bank feed, or from DuckDuckGo’s icon service using only the site name (like cibc.com). Off shows letters and emoji and makes no outside requests for them. Pictures you upload always show.</Text>
       </Card>
       <Text style={[styles.h, { color: t.text }]}>Bank connections</Text>
       <Card style={{ gap: 12 }}>

@@ -1,6 +1,7 @@
 // Choose an emoji from the full set, by group or by searching its name. The list (about 1,900)
 // is loaded the first time the picker opens.
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
@@ -14,6 +15,7 @@ const COLS = 8;
 export function EmojiPicker({ value, onPick, onClose, title = 'Choose an emoji' }: { value?: string; onPick: (emoji: string) => void; onClose: () => void; title?: string }) {
   const t = useTheme();
   const wide = useWide();
+  const insets = useSafeAreaInsets();
   const [groups, setGroups] = useState<Group[] | null>(cache);
   const [g, setG] = useState(0);
   const [q, setQ] = useState('');
@@ -28,7 +30,7 @@ export function EmojiPicker({ value, onPick, onClose, title = 'Choose an emoji' 
   }, [groups, g, q]);
   return (
     <Sheet title={title} onClose={onClose} scroll={false}>
-      <View style={{ flex: 1, minHeight: 380 }}>
+      <View style={{ flex: 1, minHeight: 420 }}>
         <View style={[styles.search, { borderColor: t.line, backgroundColor: t.card }]}>
           <Ionicons name="search" size={16} color={t.muted} />
           <TextInput value={q} onChangeText={setQ} placeholder="Search, e.g. car, coffee, house" placeholderTextColor={t.muted} autoFocus={wide}
@@ -36,7 +38,7 @@ export function EmojiPicker({ value, onPick, onClose, title = 'Choose an emoji' 
           {!!value && <Pressable onPress={() => { onPick(''); onClose(); }} hitSlop={8}><Text style={{ color: t.accent, fontSize: 13 }}>Use default</Text></Pressable>}
         </View>
         {!q.trim() && groups && (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }} contentContainerStyle={{ gap: 6, paddingHorizontal: 12, paddingBottom: 8 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0, minHeight: 52 }} contentContainerStyle={{ gap: 6, paddingHorizontal: 12, paddingBottom: 10, alignItems: 'center' }}>
             {groups.map((x, i) => (
               <Pressable key={x.name} onPress={() => setG(i)} accessibilityLabel={x.name} style={[styles.group, { borderColor: g === i ? t.accent : t.line, backgroundColor: g === i ? t.accent + '22' : 'transparent' }]}>
                 <Text style={{ fontSize: 18 }}>{x.items[0][0]}</Text>
@@ -45,8 +47,8 @@ export function EmojiPicker({ value, onPick, onClose, title = 'Choose an emoji' 
           </ScrollView>
         )}
         {!groups ? <Text style={{ color: t.muted, padding: 16 }}>Loading…</Text> : !shown.length ? <Text style={{ color: t.muted, padding: 16 }}>No emoji matches “{q}”.</Text> : (
-          <FlatList data={shown} keyExtractor={(r) => r[0][0]} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 24 }}
-            ListHeaderComponent={<Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, padding: 6 }}>{q.trim() ? 'RESULTS' : groups[g].name.toUpperCase()}</Text>}
+          <FlatList data={shown} keyExtractor={(r) => r[0][0]} keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 12, paddingBottom: insets.bottom + 28 }}
+            ListHeaderComponent={<Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, paddingVertical: 6 }}>{q.trim() ? 'RESULTS' : groups[g].name.toUpperCase()}</Text>}
             renderItem={({ item }) => (
               <View style={{ flexDirection: 'row' }}>
                 {item.map(([e, name]) => (
@@ -78,7 +80,7 @@ export function EmojiField({ value, onChange, placeholder }: { value: string; on
 }
 
 const styles = StyleSheet.create({
-  search: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, margin: 12 },
+  search: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, marginHorizontal: 12, marginTop: 14, marginBottom: 12 },
   group: { width: 40, height: 36, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   cell: { flex: 1, maxWidth: `${100 / COLS}%`, aspectRatio: 1, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
   field: { width: 56, height: 44, borderWidth: 1, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
