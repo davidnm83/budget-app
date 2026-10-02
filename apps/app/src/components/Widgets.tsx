@@ -390,7 +390,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
   const chosen = (accs ?? (data ? pickAccounts(cfg, data.accounts).map((a) => a.id) : [])).filter((id) => pool.some((a) => a.id === id));
   const views = SOURCES[source].views;
   const shown = views.includes(view) ? view : views[0];
-  const splits = SPLITS[source];
+  const splits = (SPLITS[source] ?? []);
   const split = by && splits.includes(by) ? by : splits[0];
   const drawn = shown === 'bars' || shown === 'line';
   const oneLoan = source === 'balance' && chosen.length === 1 && pool.find((a) => a.id === chosen[0])?.type === 'loan';

@@ -22,7 +22,7 @@ export const SOURCES: Record<Source, { title: string; about: string; views: Char
 };
 
 /** Which ways each source can be split. The first is the default. */
-export const SPLITS: Record<Source, SplitBy[]> = { spending: ['category', 'group', 'account'], cashflow: [], networth: ['account', 'type'], carddebt: ['account'], balance: ['account'] };
+export const SPLITS: Partial<Record<Source, SplitBy[]>> = { spending: ['category', 'group', 'account'], cashflow: [], networth: ['account', 'type'], carddebt: ['account'], balance: ['account'] };
 /** Sources that aren't about accounts, so the account picker is hidden for them. */
 export const NO_ACCOUNTS: Source[] = [];
 export const SPLIT_LABEL: Record<SplitBy, string> = { category: 'Category', group: 'Group', account: 'Account', type: 'Account type' };
@@ -92,7 +92,7 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   const allAccounts = (await loadAccounts()).filter((a) => !a.is_hidden);
   const chosen = pickAccounts(cfg, allAccounts);
   const accIds = chosen.map((a) => a.id);
-  const by: SplitBy | undefined = cfg.by && SPLITS[source].includes(cfg.by) ? cfg.by : SPLITS[source][0];
+  const by: SplitBy | undefined = cfg.by && (SPLITS[source] ?? []).includes(cfg.by) ? cfg.by : (SPLITS[source] ?? [])[0];
   const mean = (values: number[]) => (cfg.avg && values.length > 1 ? avg(values) : undefined);
 
   if (source === 'spending') {
