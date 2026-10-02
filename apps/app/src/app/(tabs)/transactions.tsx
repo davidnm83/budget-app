@@ -3,7 +3,8 @@
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { PAGE_MAX } from '@/lib/layout';
+import { PAGE_MAX, useWide } from '@/lib/layout';
+import { TransactionEditor } from '@/components/TransactionEditor';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
   categoryIcon, datePresetRange, dayHeading, formatMoney, groupByDay, searchPattern, shortDate, todayIn, type DatePreset,
@@ -61,6 +62,9 @@ export default function Transactions() {
   // Home's "To review" card opens this tab straight on the transactions to review.
   useEffect(() => { if (params.mode === 'review' || params.mode === 'all') setMode(params.mode); }, [params.mode]);
   const [search, setSearch] = useState('');
+  const wide = useWide();
+  const [sel, setSel] = useState<string | null>(null);
+  const searchRef = useRef<TextInput>(null);
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<Filters>(DEFAULTS);
   const [showFilters, setShowFilters] = useState(false);
@@ -105,6 +109,22 @@ export default function Transactions() {
   }, []);
 
   const reload = useCallback(() => { fetchPage(0); countToReview(); }, [fetchPage, countToReview]);
+  // Keyboard on the web: "/" jumps to search; with a transaction open, ↑ ↓ move through the list and Esc closes it.
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onKey = (e: KeyboardEvent) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement)?.tagName ?? '');
+      if (e.key === '/' && !typing) { e.preventDefault(); searchRef.current?.focus(); return; }
+      if (typing || !sel) return;
+      if (e.key === 'Escape') setSel(null);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const i = rows.findIndex((r) => r.id === sel), j = i + (e.key === 'ArrowDown' ? 1 : -1);
+        if (i >= 0 && rows[j]) { e.preventDefault(); setSel(rows[j].id); }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sel, rows]);
   useFocusEffect(useCallback(() => { reload(); }, [reload]));
   useEffect(() => { navigation.setOptions({ tabBarBadge: toReview || undefined }); }, [navigation, toReview]);
 
@@ -124,7 +144,8 @@ export default function Transactions() {
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
 
   const renderRow = ({ item }: { item: Row }) => (
-    <TxnRow t={t} item={item} showDate={!byDate} onToggle={() => setReviewed([item.id], !item.reviewed)} />
+    <TxnRow t={t} item={item} showDate={!byDate} onToggle={() => setReviewed([item.id], !item.reviewed)} selected={sel === item.id}
+      onOpen={() => (wide ? setSel(item.id) : router.push({ pathname: '/transaction/[id]', params: { id: item.id } }))} />
   );
   const footer = hasMore ? <Button title="Load more" kind="plain" onPress={() => fetchPage(Math.ceil(rows.length / PAGE))} busy={loading} style={{ margin: 16 }} /> : null;
   const empty = loading ? null : (
@@ -136,7 +157,7 @@ export default function Transactions() {
       <TopBar>
         <View style={[styles.search, { borderColor: t.line, backgroundColor: t.card }]}>
           <Ionicons name="search" size={16} color={t.muted} />
-          <TextInput value={search} onChangeText={setSearch} placeholder="Search" placeholderTextColor={t.muted}
+          <TextInput ref={searchRef} value={search} onChangeText={setSearch} placeholder={wide ? 'Search (press /)' : 'Search'} placeholderTextColor={t.muted}
             style={[{ flex: 1, color: t.text, paddingVertical: 9, fontSize: 15 }, { outlineStyle: 'none' } as any]} autoCorrect={false} />
           {!!search && <Pressable onPress={() => setSearch('')} hitSlop={8}><Ionicons name="close-circle" size={16} color={t.muted} /></Pressable>}
         </View>
@@ -161,8 +182,10 @@ export default function Transactions() {
         onExport={() => exportCsv(mode, filters, query)} />
       {!!error && <Text style={{ color: t.danger, padding: 12 }}>{error}</Text>}
 
+      <View style={[COLUMN, { flex: 1, flexDirection: 'row' }]}>
+      <View style={{ flex: 1 }}>
       {byDate ? (
-        <SectionList style={COLUMN}
+        <SectionList
           sections={sections}
           keyExtractor={(r) => r.id}
           stickySectionHeadersEnabled
@@ -179,7 +202,7 @@ export default function Transactions() {
           ListFooterComponent={footer}
         />
       ) : (
-        <FlatList style={COLUMN}
+        <FlatList
           data={rows}
           keyExtractor={(r) => r.id}
           refreshControl={<RefreshControl refreshing={loading && !rows.length} onRefresh={reload} />}
@@ -189,6 +212,17 @@ export default function Transactions() {
           ListFooterComponent={footer}
         />
       )}
+      </View>
+      {wide && sel && (
+        <View style={[styles.side, { borderColor: t.line, backgroundColor: t.bg }]}>
+          <View style={[styles.sideHead, { borderColor: t.line }]}>
+            <Text style={{ color: t.text, fontWeight: '700', flex: 1 }}>Transaction</Text>
+            <Pressable onPress={() => setSel(null)} hitSlop={10} accessibilityLabel="Close details"><Ionicons name="close" size={22} color={t.text} /></Pressable>
+          </View>
+          <TransactionEditor key={sel} id={sel} onOpen={setSel} onDone={() => { setSel(null); reload(); }} />
+        </View>
+      )}
+      </View>
     </View>
   );
 }
@@ -252,11 +286,11 @@ async function exportCsv(mode: Mode, filters: Filters, query: string): Promise<n
   return rows.length;
 }
 
-function TxnRow({ t, item, showDate, onToggle }: { t: Theme; item: Row; showDate: boolean; onToggle: () => void }) {
+function TxnRow({ t, item, showDate, onToggle, onOpen, selected }: { t: Theme; item: Row; showDate: boolean; onToggle: () => void; onOpen: () => void; selected?: boolean }) {
   const category = item.split_count ? `✂️ Split · ${item.split_count} parts` : item.category_name ? `${categoryIcon(item.category_name, item.category_icon)} ${item.category_name}` : null;
   return (
-    <Pressable onPress={() => router.push({ pathname: '/transaction/[id]', params: { id: item.id } })}
-      style={({ pressed }) => [styles.row, { backgroundColor: pressed ? t.line : t.card }]}>
+    <Pressable onPress={onOpen}
+      style={({ pressed }) => [styles.row, { backgroundColor: pressed || selected ? t.line : t.card }]}>
       <Pressable accessibilityLabel={item.reviewed ? 'Mark not reviewed' : 'Mark reviewed'} hitSlop={10} onPress={onToggle} style={styles.check}>
         <Ionicons name={item.reviewed ? 'checkmark-circle' : 'ellipse-outline'} size={24} color={item.reviewed ? t.accent : t.muted} />
       </Pressable>
@@ -367,6 +401,8 @@ const Label = ({ t, text }: { t: Theme; text: string }) => (
 
 const COLUMN = { width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' } as const;
 const styles = StyleSheet.create({
+  side: { width: 420, borderLeftWidth: 1 },
+  sideHead: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   status: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   search: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, height: 40 },
   sheetHead: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },

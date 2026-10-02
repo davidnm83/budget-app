@@ -2,7 +2,7 @@
 // merchant filters.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ModalFrame } from '@/components/ModalFrame';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/lib/theme';
@@ -16,13 +16,15 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [q, setQ] = useState('');
+  const [first, setFirst] = useState<string[]>(selected);
+  useEffect(() => { if (visible) setFirst(selected); }, [visible]);
   useBackToClose(visible, onClose);
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
     const hits = s ? items.filter((i) => i.label.toLowerCase().includes(s) || (i.group ?? '').toLowerCase().includes(s)) : items;
-    // Chosen ones first so you can see and undo them.
-    return [...hits.filter((i) => selected.includes(i.id)), ...hits.filter((i) => !selected.includes(i.id))];
-  }, [items, q, selected]);
+    // What was already chosen when the list opened comes first; ticking a row never moves it.
+    return [...hits.filter((i) => first.includes(i.id)), ...hits.filter((i) => !first.includes(i.id))];
+  }, [items, q, first]);
   const toggle = (id: string) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
   return (
     <ModalFrame visible={visible} onClose={onClose}>

@@ -2,10 +2,10 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import PlaidLinkButton from '@/components/PlaidLinkButton';
-import { Button, Card } from '@/components/ui';
+import { Button, Card, Segmented } from '@/components/ui';
 import { callFunction, supabase } from '@/lib/supabase';
 import { useSession } from '@/lib/session';
-import { useTheme } from '@/lib/theme';
+import { setThemeMode, useTheme, useThemeMode } from '@/lib/theme';
 import type { PlaidItem } from '@/lib/types';
 
 const STATUS: Record<PlaidItem['status'], string> = { ok: 'Connected', login_required: 'Needs you to sign in again', error: 'Sync error' };
@@ -20,6 +20,7 @@ function confirm(message: string): Promise<boolean> {
 
 export default function Settings() {
   const t = useTheme();
+  const themeMode = useThemeMode();
   const { session } = useSession();
   const [items, setItems] = useState<PlaidItem[]>([]);
   const [msg, setMsg] = useState('');
@@ -40,6 +41,11 @@ export default function Settings() {
 
   return (
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}>
+      <Text style={[styles.h, { color: t.text }]}>Appearance</Text>
+      <Card style={{ gap: 8 }}>
+        <Segmented value={themeMode} onChange={setThemeMode} options={[{ value: 'auto', label: 'Match device' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
+        <Text style={{ color: t.muted, fontSize: 12 }}>Kept on this device.</Text>
+      </Card>
       <Text style={[styles.h, { color: t.text }]}>Bank connections</Text>
       <Card style={{ gap: 12 }}>
         {items.length === 0 && <Text style={{ color: t.muted }}>No banks linked yet.</Text>}

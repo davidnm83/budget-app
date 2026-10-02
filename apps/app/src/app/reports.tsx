@@ -8,6 +8,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Columns } from '@/components/Columns';
 import { useTxnSheet } from '@/components/TxnSheet';
 import { Widget, WidgetPicker } from '@/components/Widgets';
 import { loadPrefs, savePrefs, type ReportTab } from '@/lib/prefs';
@@ -107,7 +108,7 @@ export default function Reports() {
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {custom && (
         <>
-          {custom.widgets.map((k) => <Widget key={k} k={k} refresh={refresh} />)}
+          <Columns>{custom.widgets.map((k) => <Widget key={k} k={k} refresh={refresh} />)}</Columns>
           {!custom.widgets.length && <Empty text="No widgets on this tab yet." />}
           <Pressable onPress={() => { setTabName(custom.name); setEditTab(custom); }} style={styles.editTab}>
             <Ionicons name="options-outline" size={16} color={t.accent} /><Text style={{ color: t.accent }}>Edit this tab</Text>

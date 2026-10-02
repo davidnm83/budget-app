@@ -8,7 +8,8 @@ import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PlanEntryForm } from '@/components/Forms';
 import { IconButton, TopBar } from '@/components/TopBar';
-import { Card, Chip, Empty } from '@/components/ui';
+import { Card, Chip, Empty, Segmented } from '@/components/ui';
+import Bills from '@/app/bills';
 import { loadWeek, today, type PlannerData } from '@/lib/plan';
 import { useTheme, type Theme } from '@/lib/theme';
 
@@ -23,6 +24,7 @@ export default function Planner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState<any | null>(null);
+  const [view, setView] = useState<'week' | 'bills'>('week');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -54,6 +56,7 @@ export default function Planner() {
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <TopBar>
+        {view === 'bills' ? <Text style={{ color: t.text, fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center' }}>Bills & income</Text> : <>
         <Pressable onPress={() => setWeek(addDays(week, -7))} hitSlop={10} accessibilityLabel="Previous week"><Ionicons name="chevron-back" size={22} color={t.accent} /></Pressable>
         <Pressable onPress={() => setWeek(thisWeek)} style={{ flex: 1, alignItems: 'center' }}>
           <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{label}</Text>
@@ -61,7 +64,12 @@ export default function Planner() {
         </Pressable>
         <Pressable onPress={() => setWeek(addDays(week, 7))} hitSlop={10} accessibilityLabel="Next week"><Ionicons name="chevron-forward" size={22} color={t.accent} /></Pressable>
         <IconButton icon="add" label="Plan an entry" onPress={() => setForm({ date: week > now ? week : now, description: '', amount: null, account_id: planAccounts[0]?.id ?? null })} />
+        </>}
       </TopBar>
+      <View style={styles.viewSwitch}>
+        <Segmented value={view} onChange={setView} options={[{ value: 'week', label: 'Week' }, { value: 'bills', label: 'Bills & income' }]} />
+      </View>
+      {view === 'bills' ? <Bills /> : (
 
       <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         {planAccounts.length > 1 && (
@@ -123,12 +131,13 @@ export default function Planner() {
               ))}
             </Card>
             <Text style={{ color: t.muted, fontSize: 12 }}>
-              Planned entries come from Bills & income (menu), gig payouts (Gig work → settings) and the + button. A posted transaction replaces its planned amount; ones nobody planned show as “unplanned”.
+              Planned entries come from Bills & income (the switch above), gig payouts (Gig work → settings) and the + button. A posted transaction replaces its planned amount; ones nobody planned show as “unplanned”.
             </Text>
           </>
         )}
         {v && planAccounts.length > 0 && v.days.every((d) => !d.rows.length) && <Empty text="Nothing planned or posted this week." />}
       </ScrollView>
+      )}
 
       {form && data && <PlanEntryForm initial={form} accounts={data.accounts} onClose={() => setForm(null)} onSaved={load} />}
     </View>
@@ -167,6 +176,7 @@ function Tile({ t, label, value, strong, warn, sub }: { t: Theme; label: string;
 }
 
 const styles = StyleSheet.create({
+  viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   page: { padding: 12, gap: 10, paddingBottom: 40, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   ahead: { flexDirection: 'row', gap: 2, padding: 3, borderRadius: 10 },

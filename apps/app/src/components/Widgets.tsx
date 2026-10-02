@@ -9,6 +9,7 @@ import { router } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { BalanceChart } from '@/components/AccountSheet';
+import { Skeleton } from '@/components/Columns';
 import { Field, Sheet } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
 import { loadTxnsFor } from '@/lib/accountTxns';
@@ -130,7 +131,7 @@ function CategorySpend({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: Wi
     return { mine, months };
   }, [refresh, JSON.stringify(cfg)]);
   const title = cfg.title || cfg.group || (data?.mine.length === 1 ? data.mine[0].name : 'Category spending');
-  if (!data) return <CardShell t={t} title={title}><Text style={{ color: t.muted }}>Loading…</Text></CardShell>;
+  if (!data) return <CardShell t={t} title={title}><Skeleton color={t.track} /></CardShell>;
   const { mine, months } = data;
   const now = months[months.length - 1].total;
   const prior = months.slice(0, -1);
@@ -175,7 +176,7 @@ function AccountWidget({ t, refresh, cfg }: { t: Theme; refresh: number; cfg: Wi
     const txns = (await loadTxnsFor([a.id], a.type === 'loan' ? '1900-01-01' : addDays(now, -371))).map((x) => ({ date: x.date, amount: x.amount, name: x.name ?? '' }));
     return { a, txns };
   }, [refresh, cfg.accountId, cfg.accountMatch]);
-  if (!data) return <CardShell t={t} title={cfg.title || 'Account'}><Text style={{ color: t.muted }}>Loading…</Text></CardShell>;
+  if (!data) return <CardShell t={t} title={cfg.title || 'Account'}><Skeleton color={t.track} /></CardShell>;
   const { a, txns } = data;
   if (!a) return <CardShell t={t} title={cfg.title || 'Account'}><Text style={{ color: t.muted }}>Account not found. Edit the page to pick one.</Text></CardShell>;
   const debt = a.type === 'credit' || a.type === 'loan';
@@ -201,7 +202,7 @@ const owed = (a: Account) => Math.max(0, -signedBalance(a));
 
 function CashPosition({ t, refresh }: { t: Theme; refresh: number }) {
   const { data } = useLoad(loadAccounts, [refresh]);
-  if (!data) return <CardShell t={t} title="Cash position"><Text style={{ color: t.muted }}>Loading…</Text></CardShell>;
+  if (!data) return <CardShell t={t} title="Cash position"><Skeleton color={t.track} /></CardShell>;
   const cash = data.filter(isCash).reduce((s, a) => s + signedBalance(a), 0);
   const cards = data.filter((a) => a.type === 'credit' && !a.is_hidden).reduce((s, a) => s + owed(a), 0);
   const left = cash - cards;
@@ -223,7 +224,7 @@ function Runway({ t, refresh }: { t: Theme; refresh: number }) {
     const spend = months.reduce((s, m) => s + Math.abs(m.spending), 0);
     return { cash: accts.filter(isCash).reduce((s, a) => s + signedBalance(a), 0), daily: days ? spend / days : 0 };
   }, [refresh]);
-  if (!data) return <CardShell t={t} title="Cash runway"><Text style={{ color: t.muted }}>Loading…</Text></CardShell>;
+  if (!data) return <CardShell t={t} title="Cash runway"><Skeleton color={t.track} /></CardShell>;
   const runway = data.daily > 0 ? data.cash / data.daily : null;
   const color = runway == null ? t.muted : runway < 14 ? t.danger : runway < 30 ? t.series2 : t.accent;
   return (
@@ -241,7 +242,7 @@ function AvgSpending({ t, refresh }: { t: Theme; refresh: number }) {
   const [span, setSpan] = useState<'3' | '6' | '12'>('3');
   const { data } = useLoad(() => loadMonthSummaries(addMonths(thisMonth(), -12), monthEnd(thisMonth())), [refresh]);
   const [showTxns, txnSheet] = useTxnSheet();
-  if (!data) return <CardShell t={t} title="Average spending"><Text style={{ color: t.muted }}>Loading…</Text></CardShell>;
+  if (!data) return <CardShell t={t} title="Average spending"><Skeleton color={t.track} /></CardShell>;
   const cur = thisMonth();
   const full = data.filter((m) => m.month < cur).sort((a, b) => b.month.localeCompare(a.month)).slice(0, Number(span));
   const avg = full.length ? full.reduce((s, m) => s + Math.abs(m.spending), 0) / full.length : 0;
@@ -271,7 +272,7 @@ function WatchMini({ t, refresh }: { t: Theme; refresh: number }) {
   const list: Watched[] = data ? [...data.list].sort((a, b) => (b.projected - b.avg3) - (a.projected - a.avg3)).slice(0, 4) : [];
   return (
     <CardShell t={t} after={txnSheet} title="Spending watch" link="Watch list" onPress={() => router.push('/watch' as any)}>
-      {!data ? <Text style={{ color: t.muted }}>Loading…</Text> : !list.length ? <Text style={{ color: t.muted }}>Pick categories on the watch list.</Text> : list.map((w) => {
+      {!data ? <Skeleton color={t.track} /> : !list.length ? <Text style={{ color: t.muted }}>Pick categories on the watch list.</Text> : list.map((w) => {
         const up = w.projected > w.avg3;
         return (
           <Pressable key={w.category.id} style={styles.row} onPress={() => showTxns({ title: `${w.category.name} · this month`, from: m, to: monthEnd(m), categoryIds: [w.category.id], noTransfers: true })}>
@@ -288,7 +289,7 @@ function WatchMini({ t, refresh }: { t: Theme; refresh: number }) {
 
 function CreditMini({ t, refresh }: { t: Theme; refresh: number }) {
   const { data } = useLoad(loadAccounts, [refresh]);
-  if (!data) return <CardShell t={t} title="Credit cards"><Text style={{ color: t.muted }}>Loading…</Text></CardShell>;
+  if (!data) return <CardShell t={t} title="Credit cards"><Skeleton color={t.track} /></CardShell>;
   const cards = data.filter((a) => a.type === 'credit' && !a.is_hidden);
   const total = cards.reduce((s, a) => s + owed(a), 0);
   const lim = cards.filter((a) => a.credit_limit);
@@ -320,7 +321,7 @@ function GigWeek({ t, refresh }: { t: Theme; refresh: number }) {
     const [shifts, settings] = await Promise.all([loadShifts(w), loadGigSettings()]);
     return { tot: totalShifts(shifts, costPerKm(settings)), target: settings.weekly_target };
   }, [refresh]);
-  if (!data) return <CardShell t={t} title="Gig work this week"><Text style={{ color: t.muted }}>Loading…</Text></CardShell>;
+  if (!data) return <CardShell t={t} title="Gig work this week"><Skeleton color={t.track} /></CardShell>;
   const { tot, target } = data;
   return (
     <CardShell t={t} title="Gig work this week" link="Gig work" onPress={() => router.push('/gig' as any)}>
@@ -377,7 +378,7 @@ function BillsCalendar({ t, refresh }: { t: Theme; refresh: number }) {
 
 function NetWorthByType({ t, refresh }: { t: Theme; refresh: number }) {
   const { data } = useLoad(loadAccounts, [refresh]);
-  if (!data) return <CardShell t={t} title="Net worth by type"><Text style={{ color: t.muted }}>Loading…</Text></CardShell>;
+  if (!data) return <CardShell t={t} title="Net worth by type"><Skeleton color={t.track} /></CardShell>;
   const vis = data.filter((a) => !a.is_hidden);
   const groups = [
     { label: 'Cash', v: vis.filter((a) => a.type === 'depository').reduce((s, a) => s + signedBalance(a), 0) },
@@ -418,7 +419,7 @@ function SpendingByGroup({ t, refresh }: { t: Theme; refresh: number }) {
   const max = Math.max(1, ...(data ?? []).flatMap((g) => [g.now, g.prev]));
   return (
     <CardShell t={t} after={txnSheet} title="Spending by group" link="Reports" onPress={() => router.push('/reports')}>
-      {!data ? <Text style={{ color: t.muted }}>Loading…</Text> : data.slice(0, 10).map((g) => (
+      {!data ? <Skeleton color={t.track} /> : data.slice(0, 10).map((g) => (
         <Pressable key={g.group} style={{ gap: 3 }} onPress={() => showTxns({ title: `${g.group} · this month`, from: cur, to: monthEnd(cur), group: g.group, kind: 'expense' })}>
           <View style={styles.between}>
             <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{g.group}</Text>
@@ -445,11 +446,13 @@ export function WidgetPicker({ place, current, onClose, onSaved, save: saveFn, t
   const t = useTheme();
   const avail = place === 'report' ? WIDGETS.filter((w) => !HOME_ONLY.includes(w.key)) : WIDGETS.filter((w) => w[place]);
   const def = (e: string) => avail.find((w) => w.key === parseEntry(e)[0]);
-  const [on, setOn] = useState<string[]>(current.filter((e) => def(e)));
+  // One list in a fixed order; a switch only changes whether a row is on, never where it sits.
+  const [order, setOrder] = useState<string[]>(() => { const cur = current.filter((e) => def(e)); return [...cur, ...avail.filter((w) => !w.config).map((w) => w.key).filter((k) => !cur.includes(k))]; });
+  const [active, setActive] = useState<Set<string>>(() => new Set(current.filter((e) => def(e))));
+  const on = order.filter((k) => active.has(k));
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<{ index: number | null; key: string; cfg: WidgetCfg } | null>(null);
-  const order = [...on, ...avail.filter((w) => !w.config).map((w) => w.key).filter((k) => !on.includes(k))];
-  const move = (k: string, d: -1 | 1) => setOn((list) => {
+  const move = (k: string, d: -1 | 1) => setOrder((list) => {
     const i = list.indexOf(k), j = i + d;
     if (i < 0 || j < 0 || j >= list.length) return list;
     const next = [...list]; [next[i], next[j]] = [next[j], next[i]]; return next;
@@ -470,35 +473,40 @@ export function WidgetPicker({ place, current, onClose, onSaved, save: saveFn, t
         <Button title="Save" onPress={save} style={{ flex: 1 }} />
       </View>}>
       {header}
-      <Text style={{ color: t.muted, fontSize: 13 }}>Turn widgets on or off; arrows change the order.{place === 'budget' ? ' They show above your budget.' : ''}</Text>
+      <Text style={{ color: t.muted, fontSize: 13 }}>Turn widgets on or off; arrows change the order (rows that are off are skipped).{place === 'budget' ? ' They show above your budget.' : ''}</Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {avail.filter((w) => w.config).map((w) => (
           <Button key={w.key} kind="plain" title={`+ ${w.title}`} onPress={() => setEditing({ index: null, key: w.key, cfg: w.config === 'spend' ? { months: 6 } : {} })} />
         ))}
       </View>
       {order.map((k) => {
-        const w = def(k)!; const active = on.includes(k);
+        const w = def(k)!; const isOn = active.has(k);
         return (
           <View key={k} style={[styles.pick, { borderColor: t.line, backgroundColor: t.card }]}>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: active ? t.text : t.muted, fontWeight: '600' }}>{label(k)}</Text>
+              <Text style={{ color: isOn ? t.text : t.muted, fontWeight: '600' }}>{label(k)}</Text>
               <Text style={{ color: t.muted, fontSize: 12 }}>{w.about}</Text>
             </View>
-            {active && (
+            {isOn && (
               <>
-                {w.config && <Pressable onPress={() => setEditing({ index: on.indexOf(k), key: w.key, cfg: parseEntry(k)[1] })} hitSlop={6} accessibilityLabel={`Set up ${w.title}`}><Ionicons name="settings-outline" size={19} color={t.accent} /></Pressable>}
+                {w.config && <Pressable onPress={() => setEditing({ index: order.indexOf(k), key: w.key, cfg: parseEntry(k)[1] })} hitSlop={6} accessibilityLabel={`Set up ${w.title}`}><Ionicons name="settings-outline" size={19} color={t.accent} /></Pressable>}
                 <Pressable onPress={() => move(k, -1)} hitSlop={6} accessibilityLabel={`Move ${w.title} up`}><Ionicons name="chevron-up" size={20} color={t.accent} /></Pressable>
                 <Pressable onPress={() => move(k, 1)} hitSlop={6} accessibilityLabel={`Move ${w.title} down`}><Ionicons name="chevron-down" size={20} color={t.accent} /></Pressable>
               </>
             )}
-            <Switch value={active} onValueChange={(v) => setOn((list) => (v ? [...list, k] : list.filter((x) => x !== k)))} />
+            <Switch value={isOn} onValueChange={(v) => setActive((set) => { const n = new Set(set); if (v) n.add(k); else n.delete(k); return n; })} />
           </View>
         );
       })}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {editing && (
         <WidgetSettings kind={editing.key as 'spend' | 'account'} cfg={editing.cfg} onClose={() => setEditing(null)}
-          onDone={(cfg) => { const e = makeEntry(editing.key, cfg); setOn((list) => (editing.index == null ? [...list, e] : list.map((x, i) => (i === editing.index ? e : x)))); setEditing(null); }} />
+          onDone={(cfg) => {
+            const e = makeEntry(editing.key, cfg); const old = editing.index == null ? null : order[editing.index];
+            setOrder((list) => (old == null ? [e, ...list] : list.map((x) => (x === old ? e : x))));
+            setActive((set) => { const n = new Set(set); if (old) n.delete(old); n.add(e); return n; });
+            setEditing(null);
+          }} />
       )}
     </Sheet>
   );

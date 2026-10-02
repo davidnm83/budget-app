@@ -7,80 +7,21 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
-import { PAGE_MAX } from '@/lib/layout';
+import { MenuButton } from '@/components/Menu';
+import { PAGE_MAX, useWide } from '@/lib/layout';
 import { loadPrefs, type Page } from '@/lib/prefs';
 import { useTheme } from '@/lib/theme';
 import { afterClose, useBackToClose } from '@/lib/useBackToClose';
 
-type Item = { icon: keyof typeof Ionicons.glyphMap; label: string; href: string };
-// Pages first; setup and housekeeping at the bottom.
-const PAGES: Item[] = [
-  { icon: 'repeat', label: 'Bills & income', href: '/bills' },
-  { icon: 'bicycle-outline', label: 'Gig work', href: '/gig' },
-  { icon: 'card-outline', label: 'Credit cards', href: '/credit' },
-  { icon: 'trending-down-outline', label: 'Spending watch', href: '/watch' },
-  { icon: 'car-outline', label: 'Car & loans', href: '/loans' },
-  { icon: 'bar-chart-outline', label: 'Reports', href: '/reports' },
-];
-const SETUP: Item[] = [
-  { icon: 'pricetags-outline', label: 'Categories', href: '/categories' },
-  { icon: 'document-text-outline', label: 'Import CSV', href: '/import' },
-  { icon: 'cloud-download-outline', label: 'Import from Fina', href: '/fina-import' },
-  { icon: 'settings-outline', label: 'Settings', href: '/settings' },
-];
-
 export function TopBar({ children, title }: { children?: ReactNode; title?: string }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  const [open, setOpen] = useState(false);
-  const [pages, setPages] = useState<Page[]>([]);
-  useEffect(() => { if (open) loadPrefs().then((p) => setPages(p.pages ?? [])).catch(() => {}); }, [open]);
-  useBackToClose(open, () => setOpen(false));
-  // Close the menu (and its history entry) first, then open the page.
-  const go = (href: string) => { setOpen(false); afterClose(() => router.push(href as any)); };
+  const wide = useWide();
   return (
     <View style={[styles.bar, { paddingTop: insets.top + 8, backgroundColor: t.bg }]}>
-      <Pressable onPress={() => setOpen(true)} accessibilityLabel="Menu" hitSlop={8} style={[styles.iconBtn, { borderColor: t.line, backgroundColor: t.card }]}>
-        <Ionicons name="menu" size={20} color={t.text} />
-      </Pressable>
+      {!wide && <MenuButton />}
       {title ? <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: children ? 0 : 1 }}>{title}</Text> : null}
       {children ? <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>{children}</View> : null}
-
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.scrim} onPress={() => setOpen(false)}>
-          <Pressable style={[styles.drawer, { backgroundColor: t.card, paddingTop: insets.top + 16 }]} onPress={() => {}}>
-            <Text style={{ color: t.muted, fontSize: 12, fontWeight: '600', marginBottom: 8, paddingHorizontal: 16 }}>MENU</Text>
-            {PAGES.map((i) => (
-              <Pressable key={i.href} onPress={() => go(i.href)} style={({ pressed }) => [styles.item, pressed && { backgroundColor: t.line }]}>
-                <Ionicons name={i.icon} size={20} color={t.text} />
-                <Text style={{ color: t.text, fontSize: 16 }}>{i.label}</Text>
-              </Pressable>
-            ))}
-            {pages.map((p) => (
-              <Pressable key={p.id} onPress={() => go(`/page/${p.id}`)} style={({ pressed }) => [styles.item, pressed && { backgroundColor: t.line }]}>
-                <Text style={{ fontSize: 18, width: 20, textAlign: 'center' }}>{p.icon}</Text>
-                <Text style={{ color: t.text, fontSize: 16 }} numberOfLines={1}>{p.name}</Text>
-              </Pressable>
-            ))}
-            <Pressable onPress={() => go('/page/new')} style={({ pressed }) => [styles.item, pressed && { backgroundColor: t.line }]}>
-              <Ionicons name="add-circle-outline" size={20} color={t.accent} />
-              <Text style={{ color: t.accent, fontSize: 16 }}>New page</Text>
-            </Pressable>
-            <View style={{ flex: 1 }} />
-            <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.line, marginVertical: 6 }} />
-            {SETUP.map((i) => (
-              <Pressable key={i.href} onPress={() => go(i.href)} style={({ pressed }) => [styles.itemSmall, pressed && { backgroundColor: t.line }]}>
-                <Ionicons name={i.icon} size={17} color={t.muted} />
-                <Text style={{ color: t.muted, fontSize: 14 }}>{i.label}</Text>
-              </Pressable>
-            ))}
-            <Pressable onPress={() => { setOpen(false); supabase.auth.signOut(); }} style={styles.itemSmall}>
-              <Ionicons name="log-out-outline" size={17} color={t.muted} />
-              <Text style={{ color: t.muted, fontSize: 14 }}>Sign out</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </View>
   );
 }

@@ -4,6 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Columns } from '@/components/Columns';
 import { Card, Empty } from '@/components/ui';
 import { makeEntry, Widget, WidgetPicker } from '@/components/Widgets';
 import { PAGE_MAX } from '@/lib/layout';
@@ -72,7 +73,7 @@ export default function CustomPage() {
       {pages && !page && <Empty text="This page no longer exists." />}
       {page && (
         <>
-          {page.widgets.map((k, i) => <Widget key={`${i}:${k}`} k={k} refresh={refresh} />)}
+          <Columns>{page.widgets.map((k, i) => <Widget key={`${i}:${k}`} k={k} refresh={refresh} />)}</Columns>
           {!page.widgets.length && <Empty text="No widgets on this page yet." />}
           <Pressable onPress={() => { setName(page.name); setIcon(page.icon); setEditing(true); }} style={styles.edit}>
             <Ionicons name="options-outline" size={16} color={t.accent} /><Text style={{ color: t.accent }}>Edit this page</Text>

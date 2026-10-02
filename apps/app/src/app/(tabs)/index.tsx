@@ -13,6 +13,7 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Columns } from '@/components/Columns';
 import { TopBar } from '@/components/TopBar';
 import { CardShell, DEFAULT_HOME, Mini, Widget, WidgetPicker } from '@/components/Widgets';
 import { loadPrefs } from '@/lib/prefs';
@@ -102,7 +103,7 @@ export default function Home() {
       </TopBar>
       <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-        {data && widgets && widgets.map((k) => {
+        <Columns>{data && widgets ? widgets.map((k) => {
           switch (k) {
             case 'review': return <ReviewCard key={k} t={t} n={data.toReview} />;
             case 'week': return <WeekCard key={k} t={t} data={data.week} now={now} />;
@@ -110,7 +111,7 @@ export default function Home() {
             case 'networth': return <NetWorthCard key={k} t={t} n={data.net} />;
             default: return <Widget key={k} k={k} refresh={refresh} />;
           }
-        })}
+        }) : null}</Columns>
         {data && (
           <Pressable onPress={() => setPicking(true)} style={styles.customize}>
             <Ionicons name="options-outline" size={16} color={t.accent} />
