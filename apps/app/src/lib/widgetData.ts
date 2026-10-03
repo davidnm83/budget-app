@@ -73,8 +73,11 @@ export interface ChartData {
 }
 
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
-const monthShort = (m: string) => new Date(m + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' });
-const dayShort = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-CA', { weekday: 'short', timeZone: 'UTC' });
+// Plain lookups: a date formatter per call was slow on a phone.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const monthShort = (m: string) => MONTHS[Number(m.slice(5, 7)) - 1];
+const dayShort = (d: string) => DAYS[new Date(d + 'T00:00:00Z').getUTCDay()];
 const avg = (v: number[]) => (v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0);
 
 /** Which categories a spending widget covers: picked ones, a whole group, or by name (templates). None = all spending. */

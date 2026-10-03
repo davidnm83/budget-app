@@ -5,9 +5,9 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { refreshPlannerBadge, usePlannerBadge } from '@/lib/badges';
 import { useWide } from '@/lib/layout';
-import { EASE, ENTER, PRESS, SWIPE_IN } from '@/lib/motion';
+import { EASE, ENTER, PRESS } from '@/lib/motion';
 import { setPanel } from '@/lib/panels';
-import { setActiveScene, takeEnterFrom, useSwipeTabs } from '@/lib/swipeTabs';
+import { enterScene, setActiveScene, useSwipeTabs } from '@/lib/swipeTabs';
 import { useScheme, useTheme } from '@/lib/theme';
 
 // Every signed-in page lives here, so the navigation bar stays put wherever you are.
@@ -55,16 +55,15 @@ export default function TabLayout() {
 /** Replays a short rise-and-fade each time its page comes into view, without rebuilding the page. */
 function Enter({ children }: { children: React.ReactNode }) {
   const [n, setN] = useState(0);
-  const [from, setFrom] = useState<1 | -1 | 0>(0);
   const ref = useRef<View>(null);
   useFocusEffect(useCallback(() => {
     setN((x) => x + 1);
-    setFrom(takeEnterFrom()); // reached by a swipe: slide in from that side
+    enterScene(ref.current as unknown as HTMLElement | null); // reached by a swipe: slide in from that side
     setActiveScene(ref.current as unknown as HTMLElement | null);
     return () => setActiveScene(null);
   }, []));
   const wide = useWide(); // phones switch pages plainly (or slide, after a swipe); the fade is for wide screens
-  return <View ref={ref} style={[{ flex: 1 }, wide ? ENTER[n % 2] : from ? SWIPE_IN[from === 1 ? 0 : 1][n % 2] : null]}>{children}</View>;
+  return <View ref={ref} {...({ dataSet: { scene: '' } } as any)} style={[{ flex: 1 }, wide ? ENTER[n % 2] : null]}>{children}</View>;
 }
 
 /** A rounded bar of five icons that sits clear of the screen edges. The current tab's icon is filled inside a soft pill. */

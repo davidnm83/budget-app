@@ -1,5 +1,6 @@
 // Budget tab (BUD-1, 2, 4, 5, 6): this month's budget, past months in a collapsed archive by year,
 // comparisons with other months or years, and a year view of budget vs actual by month.
+import { today } from '@/lib/plan';
 import { PAGE_MAX } from '@/lib/layout';
 import { PageSkeleton } from '@/components/States';
 import { ROW } from '@/lib/layout';
@@ -10,7 +11,7 @@ import { seedTxn } from '@/lib/txnCache';
 import { Tile } from '@/components/Tile';
 import {
   actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
-  categoryIcon, groupIcon, instalmentsBetween, shortDate, suggestBudget, todayIn, type BudgetLine, type Month,
+  categoryIcon, groupIcon, instalmentsBetween, shortDate, suggestBudget, type BudgetLine, type Month,
 } from '@budget-app/core';
 import { loadPlans, setInstalment, type CardPlan } from '@/lib/paymentPlans';
 import { router, useFocusEffect } from 'expo-router';
@@ -204,7 +205,7 @@ function MonthView(d: Data) {
 
   // How far through the month we are (for the pace tick), only for the current month.
   const daysIn = Number(monthEnd(month).slice(8, 10));
-  const pace = month === current ? Number(todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone).slice(8, 10)) / daysIn : month < current ? 1 : 0;
+  const pace = month === current ? Number(today().slice(8, 10)) / daysIn : month < current ? 1 : 0;
   const pastMonths = d.summaries.filter((s) => s.month < current && s.month !== month);
   const future = month > current;
   const [copying, setCopying] = useState(false);

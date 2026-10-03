@@ -20,7 +20,7 @@ import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
   accountIcon, addDays, balanceHistory, cardCycle, cardStatus, plansDeferred, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
-  monthlyFlow, shortDate, todayIn, utilization,
+  monthlyFlow, shortDate, utilization,
 } from '@budget-app/core';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -28,7 +28,7 @@ import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextI
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bar, Button, Chip, Segmented } from '@/components/ui';
 import { mergeAccounts } from '@/lib/mergeAccounts';
-import { loadEntries, loadRecurring } from '@/lib/plan';
+import { loadEntries, loadRecurring, today } from '@/lib/plan';
 import { loadPlans, type CardPlan } from '@/lib/paymentPlans';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
@@ -36,7 +36,6 @@ import { signedBalance, type Account } from '@/lib/types';
 import { afterClose, useBackToClose } from '@/lib/useBackToClose';
 import { useTxnSheet } from '@/components/TxnSheet';
 
-const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
 type Txn = { date: string; amount: number; name: string };
 

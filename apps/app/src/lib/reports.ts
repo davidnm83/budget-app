@@ -1,6 +1,6 @@
 // Data for the Budget and Reports tabs. Totals come from the report_* database functions,
 // which add up transactions (and split parts) per category, month or merchant.
-import { addMonths, monthOf, type BudgetCategory, type BudgetRow, type CategoryKind, type Month, type MonthTotals } from '@budget-app/core';
+import { addMonths, type BudgetCategory, type BudgetRow, type CategoryKind, type Month, type MonthTotals } from '@budget-app/core';
 import { supabase } from './supabase';
 
 export interface Category extends BudgetCategory { hidden: boolean; sort: number; icon: string | null }
@@ -61,4 +61,4 @@ export async function loadMerchants(from: string, to: string, kind: 'expense' | 
   return ((data ?? []) as any[]).map((r) => ({ merchant: r.merchant, total: Number(r.total), txns: Number(r.txns) }));
 }
 
-export const thisMonth = (): Month => monthOf(new Date().toLocaleDateString('en-CA'));
+export const thisMonth = (): Month => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` as Month; };

@@ -21,7 +21,30 @@ export function setActiveScene(el: HTMLElement | null) { scene = el; }
 
 /** Which side the next page should slide in from, once (set by a swipe, read by the page's entrance). */
 let enterFrom: 1 | -1 | 0 = 0;
-export function takeEnterFrom(): 1 | -1 | 0 { const d = enterFrom; enterFrom = 0; return d; }
+
+// Between letting go and the next page's entrance starting, the next page is kept hidden. Its entrance
+// only starts once it has been drawn, so without this it showed for a frame in its final place first
+// (the flash at the top of the screen).
+const HIDE = 'html[data-swiping] [data-scene]:not([data-leaving]) { opacity: 0 !important; }';
+let hideTimer: ReturnType<typeof setTimeout> | null = null;
+function hideNext(on: boolean) {
+  const root = document.documentElement;
+  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  if (!on) { root.removeAttribute('data-swiping'); return; }
+  if (!document.getElementById('swipe-hide')) { const st = document.createElement('style'); st.id = 'swipe-hide'; st.textContent = HIDE; document.head.appendChild(st); }
+  root.setAttribute('data-swiping', '');
+  hideTimer = setTimeout(() => hideNext(false), 700); // in case the next page never says it's in
+}
+
+/** Called by a tab's page as it comes into view: after a swipe it slides in from that side. */
+export function enterScene(el: HTMLElement | null) {
+  const d = enterFrom; enterFrom = 0;
+  if (typeof document === 'undefined') return;
+  if (d && el?.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.animate([{ opacity: 0.4, transform: `translateX(${d * 60}px)` }, { opacity: 1, transform: 'translateX(0px)' }], { duration: 220, easing: 'cubic-bezier(0.2, 0.9, 0.2, 1)' });
+  }
+  hideNext(false); // same task as the animation's start, so nothing is drawn in between
+}
 
 function ownsSideways(start: Element | null): boolean {
   for (let n = start; n && n !== document.body; n = n.parentElement) {
@@ -83,8 +106,10 @@ export function useSwipeTabs(enabled: boolean, go: (dir: 1 | -1) => void, can: (
         // The page being left stays where the finger took it until it's hidden; snapping it back first
         // showed it again for a frame (the flash). It's put straight once the next tab has taken over.
         const old = scene;
+        old?.setAttribute('data-leaving', '');
+        hideNext(true);
         goRef.current(dir);
-        setTimeout(() => { if (old) { old.style.transition = 'none'; old.style.transform = ''; old.style.opacity = ''; } }, 400);
+        setTimeout(() => { if (old) { old.removeAttribute('data-leaving'); old.style.transition = 'none'; old.style.transform = ''; old.style.opacity = ''; } }, 400);
       } else reset(true);
     };
     const cancel = () => { if (state === 'drag') reset(true); state = 'idle'; };

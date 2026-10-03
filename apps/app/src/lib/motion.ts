@@ -26,10 +26,6 @@ const S: Record<string, any> = web ? StyleSheet.create({
   fade: kf({ opacity: 0 }, { opacity: 1 }, '280ms'),
   enterA: up(10), enterB: up(10.01),
   // After a swipe between tabs: the new page comes in from the side the finger was heading to (two copies each, so it replays).
-  inR: kf({ opacity: 0.4, transform: 'translateX(60px)' }, { opacity: 1, transform: 'translateX(0px)' }, '220ms'),
-  inR2: kf({ opacity: 0.4, transform: 'translateX(60.01px)' }, { opacity: 1, transform: 'translateX(0px)' }, '220ms'),
-  inL: kf({ opacity: 0.4, transform: 'translateX(-60px)' }, { opacity: 1, transform: 'translateX(0px)' }, '220ms'),
-  inL2: kf({ opacity: 0.4, transform: 'translateX(-60.01px)' }, { opacity: 1, transform: 'translateX(0px)' }, '220ms'),
   pulse: { animationKeyframes: { '0%': { opacity: 1 }, '50%': { opacity: 0.45 }, '100%': { opacity: 1 } }, animationDuration: '1400ms', animationIterationCount: 'infinite', animationTimingFunction: 'ease-in-out' } as any,
   backwards: { animationFillMode: 'backwards' } as any,
 }) : {};
@@ -52,8 +48,6 @@ export const PANEL: any = S.panel ?? {};
 export const SLIDE: any = S.slide ?? {};
 /** A page coming into view. Two near-identical versions, so switching between them replays it each time a page is shown. */
 export const ENTER: [any, any] = [S.enterA ?? {}, S.enterB ?? {}];
-/** A tab reached by swiping: [from the right (swiped left), from the left (swiped right)], two copies each. */
-export const SWIPE_IN: [[any, any], [any, any]] = [[S.inR ?? {}, S.inR2 ?? {}], [S.inL ?? {}, S.inL2 ?? {}]];
 /** A loading placeholder breathing. */
 export const PULSE: any = S.pulse ?? {};
 /** Cards on a board arrive one after another. */

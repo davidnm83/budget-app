@@ -2,6 +2,7 @@
 // The check button beside the search shows only unchecked ones (new arrivals, with a count);
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
+import { today } from '@/lib/plan';
 import { Sheet } from '@/components/Forms';
 import { Tile } from '@/components/Tile';
 import { ROW, LIST, SPLIT_LIST, splitFits, splitSide } from '@/lib/layout';
@@ -19,10 +20,10 @@ import { PAGE_MAX, useWide } from '@/lib/layout';
 import { TransactionEditor } from '@/components/TransactionEditor';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  categoryIcon, datePresetRange, dayHeading, formatMoney, groupByDay, searchPattern, shortDate, todayIn, type DatePreset,
+  categoryIcon, datePresetRange, dayHeading, formatMoney, groupByDay, searchPattern, shortDate, type DatePreset,
 } from '@budget-app/core';
 import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { FlatList, Modal, Platform, Pressable, RefreshControl, ScrollView, SectionList, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MultiPicker } from '@/components/Picker';
@@ -58,7 +59,6 @@ const SORTS: { key: Sort; label: string }[] = [
   { key: 'smallest', label: 'Smallest' }, { key: 'merchant', label: 'Merchant A–Z' },
 ];
 const SOURCE_LABEL: Record<string, string> = { rule: 'rule', learned: 'learned', plaid: 'bank', manual: 'you' };
-const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
 
 function activeCount(f: Filters) {
   return (f.range.key !== 'all' ? 1 : 0) + (f.direction !== 'any' ? 1 : 0) + (f.min || f.max ? 1 : 0)
@@ -112,7 +112,7 @@ export default function Transactions() {
     if (error) { setError(error.message); return; }
     setError('');
     const list = (data ?? []).map((r: any) => ({ ...r, amount: Number(r.amount) })) as Row[];
-    setRows((prev) => (page === 0 ? list : [...prev, ...list]));
+    setRows((prev) => (page === 0 ? keepSame(prev, list) : [...prev, ...list]));
     if (page === 0) setTotal(count ?? null);
     setHasMore(list.length === PAGE);
   }, [mode, filters, query]);
@@ -140,6 +140,7 @@ export default function Transactions() {
     return () => window.removeEventListener('keydown', onKey);
   }, [sel, rows]);
   useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  useLayoutEffect(() => { setOpenId(sel); }, [sel]);
   usePullRefresh(reload);
   useEffect(() => { navigation.setOptions({ tabBarBadge: toReview || undefined }); }, [navigation, toReview]);
 
@@ -163,10 +164,14 @@ export default function Transactions() {
   const nFilters = activeCount(filters);
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
 
-  const renderRow = ({ item }: { item: Row }) => (
-    <TxnRow t={t} item={item} showDate={!byDate} onToggle={() => setReviewed([item.id], !item.reviewed)} selected={sel === item.id}
-      onOpen={() => { seedTxn(item); setSel(item.id); }} />
-  );
+  // Rows only redraw when their own transaction changes: the handlers stay the same function across renders
+  // (through a ref), and a reload keeps the row objects that didn't change.
+  const toggleRef = useRef((_: Row) => {});
+  useLayoutEffect(() => { toggleRef.current = (item: Row) => setReviewed([item.id], !item.reviewed); });
+  const onToggle = useCallback((item: Row) => toggleRef.current(item), []);
+  const onOpen = useCallback((item: Row) => { seedTxn(item); setSel(item.id); }, []);
+  const renderRow = useCallback(({ item }: { item: Row }) => <TxnRow t={t} item={item} showDate={!byDate} onToggle={onToggle} onOpen={onOpen} />, [t, byDate, onToggle, onOpen]);
+  const separator = useCallback(() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.line, marginLeft: 52 }} />, [t]);
   const footer = hasMore ? <Button title="Load more" kind="plain" onPress={() => fetchPage(Math.ceil(rows.length / PAGE))} busy={loading} style={{ margin: 16 }} /> : null;
   const empty = loading ? <RowsSkeleton rows={10} /> : mode === 'review' && !query && !nFilters
     ? <EmptyState icon="checkmark-done-circle-outline" title="All caught up" text="New transactions show up here after each bank sync." action="Show all transactions" onAction={() => setMode('all')} />
@@ -219,7 +224,7 @@ export default function Transactions() {
             </View>
           )}
           renderItem={renderRow}
-          ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.line, marginLeft: 52 }} />}
+          ItemSeparatorComponent={separator}
           ListEmptyComponent={empty}
           ListFooterComponent={footer}
           contentContainerStyle={{ paddingBottom: UNDER_BAR }}
@@ -230,7 +235,7 @@ export default function Transactions() {
           keyExtractor={(r) => r.id}
           refreshControl={<RefreshControl refreshing={loading && !rows.length} onRefresh={reload} />}
           renderItem={renderRow}
-          ItemSeparatorComponent={() => <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: t.line, marginLeft: 52 }} />}
+          ItemSeparatorComponent={separator}
           ListEmptyComponent={empty}
           ListFooterComponent={footer}
           contentContainerStyle={{ paddingBottom: UNDER_BAR }}
@@ -316,14 +321,36 @@ async function exportCsv(mode: Mode, filters: Filters, query: string): Promise<n
   return rows.length;
 }
 
-function TxnRow({ t, item, showDate, onToggle, onOpen, selected }: { t: Theme; item: Row; showDate: boolean; onToggle: () => void; onOpen: () => void; selected?: boolean }) {
+// The open transaction, for the row highlight. Each row asks whether it is the one, so opening or closing a
+// transaction updates two rows instead of every row on screen (that made pop-ups stutter on a phone).
+let openId: string | null = null;
+const openSubs = new Set<() => void>();
+function setOpenId(id: string | null) { if (id !== openId) { openId = id; openSubs.forEach((f) => f()); } }
+const useIsOpen = (id: string) => useSyncExternalStore((f) => { openSubs.add(f); return () => { openSubs.delete(f); }; }, () => openId === id, () => false);
+
+/** The new list, reusing the old row object wherever a row is unchanged (so it isn't redrawn). */
+function keepSame(prev: Row[], next: Row[]): Row[] {
+  if (!prev.length) return next;
+  const old = new Map(prev.map((r) => [r.id, r]));
+  let same = prev.length === next.length;
+  const out = next.map((r, i) => {
+    const o = old.get(r.id);
+    const keep = o && JSON.stringify(o) === JSON.stringify(r) ? o : r;
+    if (keep !== prev[i]) same = false;
+    return keep;
+  });
+  return same ? prev : out;
+}
+
+const TxnRow = memo(function TxnRow({ t, item, showDate, onToggle, onOpen }: { t: Theme; item: Row; showDate: boolean; onToggle: (item: Row) => void; onOpen: (item: Row) => void }) {
+  const selected = useIsOpen(item.id);
   const logos = useLogos();
   const lv = useLogoVersion();
   const category = item.split_count ? `✂️ Split · ${item.split_count} parts` : item.category_name ? `${categoryIcon(item.category_name, item.category_icon)} ${item.category_name}` : null;
   return (
-    <Pressable onPress={onOpen}
+    <Pressable onPress={() => onOpen(item)}
       style={({ pressed, hovered }: any) => [styles.row, { backgroundColor: pressed || selected ? t.line : hovered ? t.bg : t.card }]}>
-      <Pressable accessibilityLabel={item.reviewed ? 'Mark not reviewed' : 'Mark reviewed'} hitSlop={10} onPress={onToggle} style={styles.check}>
+      <Pressable accessibilityLabel={item.reviewed ? 'Mark not reviewed' : 'Mark reviewed'} hitSlop={10} onPress={() => onToggle(item)} style={styles.check}>
         <Ionicons name={item.reviewed ? 'checkmark-circle' : 'ellipse-outline'} size={24} color={item.reviewed ? t.accent : t.muted} />
       </Pressable>
       {logos && <View style={{ marginRight: 10 }}><TxnLogo size={34} name={item.display_name} transfer={item.is_transfer} category={item.category_name} /></View>}
@@ -346,7 +373,7 @@ function TxnRow({ t, item, showDate, onToggle, onOpen, selected }: { t: Theme; i
       </Text>
     </Pressable>
   );
-}
+});
 
 function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total, onExport }: {
   visible: boolean; onClose: () => void; t: Theme; f: Filters; set: (p: Partial<Filters>) => void;

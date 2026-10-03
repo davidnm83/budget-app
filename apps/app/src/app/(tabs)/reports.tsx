@@ -1,6 +1,7 @@
 // Reports (RPT-1, 2, 3): spending by category, cash flow by month with income by source, and
 // spending by merchant, for a chosen date range; tap anything for its transactions. Plus your own
 // tabs, each a set of widgets you pick (kept in user_prefs.report_tabs).
+import { today } from '@/lib/plan';
 import { PAGE_MAX } from '@/lib/layout';
 import { makeEntry } from '@/components/Widgets';
 import { PageBoard } from '@/components/PageBoard';
@@ -8,7 +9,7 @@ import { EmptyState } from '@/components/States';
 import { DateRangeButton, rangeByKey, type Range } from '@/components/DateRange';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { UNDER_BAR } from '@/lib/layout';
-import { addMonths, formatMoney, monthEnd, monthName, todayIn } from '@budget-app/core';
+import { addMonths, formatMoney, monthEnd, monthName } from '@budget-app/core';
 // Month totals cover whole months; ranges here always start on the 1st and end today or at a month end.
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { WatchPage } from '@/components/WatchPage';
@@ -43,7 +44,7 @@ export default function Reports() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   // Reports never look past today, and "all time" starts at the beginning.
-  const now = todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const now = today();
   const range = { from: picked.from || '1900-01-01', to: !picked.to || picked.to > now ? now : picked.to, label: picked.label };
   const [showTxns, txnSheet] = useTxnSheet();
   const [tabs, setTabs] = useState<ReportTab[]>([]);

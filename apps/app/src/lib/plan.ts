@@ -7,7 +7,8 @@ import {
 import { supabase } from './supabase';
 import { signedBalance, type Account } from './types';
 
-export const today = () => todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone);
+/** Today's date on this device (its own time zone). Read from the clock directly: it's called for every row and heading. */
+export const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 async function fetchAll<T>(make: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>) {
   const out: T[] = [];

@@ -32,13 +32,20 @@ export function weekStart(iso: IsoDate): IsoDate {
 }
 
 /** Today's calendar date in a given IANA time zone, e.g. 'America/Toronto'. */
+// Making a date formatter is slow (most of the cost of a call), so one is kept per time zone.
+const dayFmt = new Map<string, Intl.DateTimeFormat>();
+const hourFmt = new Map<string, Intl.DateTimeFormat>();
 export function todayIn(timeZone: string, now: Date = new Date()): IsoDate {
-  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+  let f = dayFmt.get(timeZone);
+  if (!f) dayFmt.set(timeZone, (f = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' })));
+  return f.format(now);
 }
 
 /** Hour (0–23) right now in a given IANA time zone. */
 export function hourIn(timeZone: string, now: Date = new Date()): number {
-  return Number(new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(now));
+  let f = hourFmt.get(timeZone);
+  if (!f) hourFmt.set(timeZone, (f = new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hourCycle: 'h23' })));
+  return Number(f.format(now));
 }
 
 /** How often the scheduled bank sync runs: every N hours counted from 5 AM; 0 = only by hand. */
