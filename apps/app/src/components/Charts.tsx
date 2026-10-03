@@ -72,6 +72,9 @@ function Readout({ t, labels, series, sel, format, hint, col, stacked }: { t: Th
 }
 
 /** Shared frame: readout, y-axis labels, the plot, hit columns and x labels. */
+/** What a bar or line chart needs around its plot: the read-out line, the x labels, and the legend when it shows. */
+export const plotChrome = (seriesCount: number, legend = true) => 18 + 4 + 15 + (legend && seriesCount > 1 ? 22 : 0);
+
 function Frame({ t, labels, series, height = 140, format, onPick, free, colors, refLine, stacked, legend = true, also = [], children }: PlotProps & { free?: boolean; stacked?: boolean; also?: number[]; children: (w: number, h: number, min: number, max: number, sel: number | null) => React.ReactNode }) {
   const [w, setW] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
@@ -220,12 +223,14 @@ export function BarChart(props: PlotProps & { stacked?: boolean; barColor?: (i: 
 
 export interface Slice { label: string; value: number; onPress?: () => void }
 /** Shares of a whole: at most seven named slices plus "others", with the total in the middle and a legend that carries the numbers. */
-export function Donut({ t, slices, format, note, size = 132 }: { t: Theme; slices: Slice[]; format: (n: number) => string; note?: string; size?: number }) {
+/** `rows`: how many legend lines there is room for (the last one gathers the rest as "N others"). */
+export function Donut({ t, slices, format, note, size = 132, rows = 8 }: { t: Theme; slices: Slice[]; format: (n: number) => string; note?: string; size?: number; rows?: number }) {
   const [sel, setSel] = useState<number | null>(null);
-  const top = slices.slice(0, 7);
-  const rest = slices.slice(7).reduce((s, x) => s + x.value, 0);
-  const parts: (Slice & { color: string })[] = top.map((s, i) => ({ ...s, color: t.series[i] }));
-  if (rest > 0) parts.push({ label: `${slices.length - 7} others`, value: rest, color: t.muted });
+  const keep = slices.length <= rows ? slices.length : Math.max(1, rows - 1);
+  const top = slices.slice(0, keep);
+  const rest = slices.slice(keep).reduce((s, x) => s + x.value, 0);
+  const parts: (Slice & { color: string })[] = top.map((s, i) => ({ ...s, color: t.series[i % t.series.length] }));
+  if (rest > 0) parts.push({ label: `${slices.length - keep} others`, value: rest, color: t.muted });
   const total = parts.reduce((s, p) => s + p.value, 0);
   if (total <= 0) return <Text style={{ color: t.muted }}>Nothing to show{note ? ` ${note}` : ''}.</Text>;
   const R = size / 2, sw = size * 0.2, r = R - sw / 2, C = 2 * Math.PI * r;

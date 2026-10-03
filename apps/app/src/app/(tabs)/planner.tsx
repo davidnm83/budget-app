@@ -18,7 +18,7 @@ import { refreshPlannerBadge, setPlannerBadge } from '@/lib/badges';
 import { supabase } from '@/lib/supabase';
 import { loadPlans, type CardPlan } from '@/lib/paymentPlans';
 import { IconButton, TopBar } from '@/components/TopBar';
-import { Card, Chip, Empty, Segmented } from '@/components/ui';
+import { Card, Chip, Empty, Segmented, Fab } from '@/components/ui';
 import Bills from './bills';
 import { loadWeek, today, type PlannerData } from '@/lib/plan';
 import { useTheme, type Theme } from '@/lib/theme';
@@ -92,7 +92,6 @@ export default function Planner() {
             : view === 'month' ? (month === monthOf(now) ? 'This month' : 'Tap for this month') : 'Everything that repeats'}</Text>
         </Pressable>
         <Pressable onPress={() => (view === 'week' ? setWeek(addDays(week, 7)) : setMonth(addMonths(month, 1)))} disabled={view === 'all'} style={{ opacity: view === 'all' ? 0 : 1 }} hitSlop={10} accessibilityLabel={view === 'week' ? 'Next week' : 'Next month'}><Ionicons name="chevron-forward" size={22} color={t.accent} /></Pressable>
-        <IconButton icon="add" label={view === 'week' ? 'Plan a one-off' : 'Add a bill or income'} onPress={() => (view === 'week' ? setForm({ date: week > now ? week : now, description: '', amount: null, account_id: planAccounts[0]?.id ?? null }) : addBill())} />
       </TopBar>
       <View style={styles.viewSwitch}>
         <Segmented value={view} onChange={setView} options={[{ value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }, { value: 'all', label: 'All bills' }]} />
@@ -200,6 +199,8 @@ export default function Planner() {
       </ScrollView>
       )}
 
+      {/* The same round + as every other page: a one-off in Week, a bill or income in Month and All bills. */}
+      <Fab label={view === 'week' ? 'Plan a one-off' : 'Add a bill or income'} onPress={() => (view === 'week' ? setForm({ date: week > now ? week : now, description: '', amount: null, account_id: planAccounts[0]?.id ?? null }) : addBill())} />
       {newBill && data && <BillForm initial={{ kind: 'bill', frequency: 'monthly', start_date: now }} accounts={data.accounts} categories={cats} onClose={() => setNewBill(false)} onSaved={() => { load(); setBillsKey((k) => k + 1); }} />}
       {txnOpen && (
         <Sheet title="Transaction" scroll={false} onClose={() => setTxnOpen(null)}>

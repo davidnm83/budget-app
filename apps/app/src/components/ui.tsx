@@ -1,6 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { EASE, PRESS, RISE } from '@/lib/motion';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWide } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
 
 export function Button({ title, onPress, kind = 'primary', disabled, busy, style }: {
@@ -19,6 +21,24 @@ export function Button({ title, onPress, kind = 'primary', disabled, busy, style
     </Pressable>
   );
 }
+
+/**
+ * The round "+" for a page's main "add" action. One button, one place on every page that has
+ * one: bottom right, clear of the phone's navigation bar. (Adding inside a card, like a plan on
+ * the Credit cards page, stays a link in that card.)
+ */
+export function Fab({ label, onPress, icon = 'add' }: { label: string; onPress: () => void; icon?: keyof typeof Ionicons.glyphMap }) {
+  const t = useTheme();
+  const wide = useWide();
+  const insets = useSafeAreaInsets();
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}
+      style={({ pressed, hovered }: any) => [fab, PRESS, { backgroundColor: t.accent, bottom: wide ? 24 : Math.max(insets.bottom, 12) + 80 }, hovered && { transform: [{ translateY: -1 }] }, pressed && { transform: [{ scale: 0.95 }] }]}>
+      <Ionicons name={icon} size={28} color="#fff" />
+    </Pressable>
+  );
+}
+const fab = { position: 'absolute', right: 20, width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', elevation: 4, boxShadow: '0 4px 14px rgba(0,0,0,0.28)', zIndex: 5 } as any;
 
 /** A soft lift for cards, so they read as surfaces without heavy borders. */
 export const LIFT = { boxShadow: '0 1px 2px rgba(0,0,0,0.05), 0 1px 6px rgba(0,0,0,0.03)' } as any;

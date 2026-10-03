@@ -23,12 +23,13 @@ import { loadAccounts, loadEntries, loadRecurring, today } from '@/lib/plan';
 import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from '@/lib/reports';
 import { PRESS, RISE } from '@/lib/motion';
+import { useWide } from '@/lib/layout';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
 import { loadWatch, type Watched } from '@/lib/watch';
 import { dismissRadar, loadRadar, restoreRadar } from '@/lib/radar';
 import { toast } from '@/lib/toast';
-import { BarChart, Donut, LineChart } from '@/components/Charts';
+import { BarChart, Donut, LineChart, plotChrome } from '@/components/Charts';
 import { cfgCategories, loadChart, NO_ACCOUNTS, pickAccounts, SOURCES, SPLITS, SPLIT_LABEL, VIEW_LABEL, type ChartCfg, type ChartData, type ChartView, type Source, type SplitBy } from '@/lib/widgetData';
 
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
@@ -146,65 +147,102 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
   }
 }
 
-const HEIGHTS = { s: 96, m: 150, l: 230 } as const;
+/**
+ * Heights. A widget that can be Short, Medium or Tall has a body (everything under its title) of
+ * exactly this height, whatever it draws: bars, a line, a pie, a list, a table or numbers, with or
+ * without the figures on top. So two widgets set to the same size are the same height, and
+ * changing what a widget shows never changes how tall it is. What's inside fits itself to the
+ * space: a chart's plot takes what is left, a list shows the rows there is room for.
+ */
+export const BODY = { s: 150, m: 250, l: 370 } as const;
+const GAP = 10;
+
+/** The fixed-height body of a sizable widget. */
+function Sized({ h, children }: { h?: WidgetCfg['h']; children: ReactNode }) {
+  return <View style={{ height: BODY[h ?? 'm'], gap: GAP, overflow: 'hidden' }}>{children}</View>;
+}
+/** The part of a sized body that takes whatever height the fixed parts leave, and tells its content how much that is. */
+function Fill({ children }: { children: (height: number, width: number) => ReactNode }) {
+  const [box, setBox] = useState<{ h: number; w: number } | null>(null);
+  return (
+    <View style={{ flex: 1, minHeight: 0, overflow: 'hidden', gap: GAP }} onLayout={(e) => { const { height, width } = e.nativeEvent.layout; setBox((b) => (b && Math.abs(b.h - height) < 1 && Math.abs(b.w - width) < 1 ? b : { h: height, w: width })); }}>
+      {box ? children(box.h, box.w) : null}
+    </View>
+  );
+}
+/** How many rows of `rowHeight` (with the usual gap between) fit in `height`; never fewer than one. */
+const fit = (height: number, rowHeight: number, gap: number = GAP) => Math.max(1, Math.floor((height + gap) / (rowHeight + gap)));
 
 /** Any chart widget: a source of data drawn as bars, a line, a pie, a ranked list, a table or plain numbers. */
 function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: number; cfg: WidgetCfg; anchor?: Month; range?: { from: string; to: string } }) {
   const [showTxns, txnSheet] = useTxnSheet();
+  const wide = useWide(); // phones have room for two figures above a chart, wide screens for three
   const source: Source = cfg.source ?? 'spending';
   const allowed = SOURCES[source].views;
   const want: ChartView = cfg.view ?? cfg.chart ?? allowed[0];
   const view = allowed.includes(want) ? want : allowed[0];
   const { data, error } = useLoad(() => loadChart(cfg, anchor, range), [refresh, JSON.stringify(cfg), anchor, range?.from, range?.to]);
   const title = cfg.title || cfg.group || data?.title || SOURCES[source].title;
-  if (!data) return <CardShell t={t} title={title}>{error ? <Text style={{ color: t.danger }}>{error}</Text> : <Skeleton color={t.track} />}</CardShell>;
-  const h = HEIGHTS[cfg.h ?? 'm'];
+  if (!data) return <CardShell t={t} title={title}><Sized h={cfg.h}>{error ? <Text style={{ color: t.danger }}>{error}</Text> : <Skeleton color={t.track} />}</Sized></CardShell>;
   const open = (i: number) => { const q = data.drill?.(i); if (q) showTxns({ title: `${title} · ${data.labels[i]}`, ...q }); };
   const openPart = (b: ChartData['breakdown'][number]) => (b.query ? () => showTxns({ title: `${b.label} · ${data.period}`, from: data.from, to: data.to, ...b.query }) : undefined);
-  const rows = cfg.h === 's' ? 5 : cfg.h === 'l' ? 16 : 10;
   const fmt = data.percent ? (v: number) => `${Math.round(v)}%` : money0;
   const tone = data.outline ? (data.outline.good ? t.accent : t.series2) : undefined;
+  const legend = !data.stacked || data.series.length <= 4;
+  const period = <Text style={{ color: t.muted, fontSize: 12, lineHeight: 16 }} numberOfLines={1}>{data.period}</Text>;
   return (
     <CardShell t={t} after={txnSheet} title={title}>
-      {data.empty ? <Text style={{ color: t.muted }}>{data.empty}</Text>
-        : view === 'tiles' ? <View style={styles.tiles}>{data.tiles.map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>
-        : view === 'pie' ? <Donut t={t} slices={data.breakdown.map((b) => ({ label: b.label, value: b.value, onPress: openPart(b) }))} format={fmt} note={data.period} size={cfg.h === 's' ? 104 : cfg.h === 'l' ? 164 : 132} />
-        : view === 'list' ? (
-          data.breakdown.length ? data.breakdown.slice(0, rows).map((b) => (
-            <Pressable key={b.label} style={{ gap: 3 }} onPress={openPart(b)} disabled={!b.query}>
-              <View style={styles.between}>
-                <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{b.label}</Text>
-                <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{fmt(b.value)}</Text>
+      <Sized h={cfg.h}>
+        {data.empty ? <Text style={{ color: t.muted }}>{data.empty}</Text>
+          : view === 'tiles' ? <><Fill>{() => <View style={styles.tiles}>{data.tiles.map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}</Fill>{period}</>
+          : view === 'pie' ? (
+            // The ring is as big as the space allows (and leaves room for the legend beside it); the legend lists what fits.
+            <Fill>{(h, w) => <Donut t={t} slices={data.breakdown.map((b) => ({ label: b.label, value: b.value, onPress: openPart(b) }))} format={fmt} note={data.period}
+              size={Math.max(84, Math.min(h, 170, w - 214))} rows={fit(h, 19, 2)} />}</Fill>
+          ) : view === 'list' ? (
+            <>
+              <Fill>{(h) => (data.breakdown.length ? data.breakdown.slice(0, fit(h, 25)).map((b) => (
+                <Pressable key={b.label} style={{ gap: 3, height: 25 }} onPress={openPart(b)} disabled={!b.query}>
+                  <View style={styles.between}>
+                    <Text style={{ color: t.text, fontSize: 13, lineHeight: 17, flex: 1 }} numberOfLines={1}>{b.label}</Text>
+                    <Text style={{ color: t.text, fontSize: 13, lineHeight: 17, fontVariant: ['tabular-nums'] }}>{fmt(b.value)}</Text>
+                  </View>
+                  <Bar value={Math.abs(b.value)} max={Math.max(...data.breakdown.map((x) => Math.abs(x.value)))} color={b.value < 0 ? t.series2 : t.series[0]} height={5} />
+                </Pressable>
+              )) : <Text style={{ color: t.muted }}>Nothing to show {data.period}.</Text>)}</Fill>
+              {period}
+            </>
+          ) : view === 'table' ? (
+            <Fill>{(h) => (
+              <View>
+                <View style={[styles.trow, { borderColor: t.line }]}>
+                  <Text style={{ color: t.muted, fontSize: 12, flex: 1 }}> </Text>
+                  {data.series.map((x) => <Text key={x.name} style={[styles.tcell, { color: t.muted, fontSize: 12 }]} numberOfLines={1}>{x.name}</Text>)}
+                </View>
+                {data.labels.map((l, i) => ({ l, i })).slice(-Math.max(1, fit(h, 30, 0) - 1)).reverse().map(({ l, i }) => (
+                  <Pressable key={i} onPress={() => open(i)} style={[styles.trow, { borderColor: t.line, height: 30 }]}>
+                    <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{l}</Text>
+                    {data.series.map((x) => <Text key={x.name} style={[styles.tcell, { color: t.text, fontSize: 13 }]} numberOfLines={1}>{fmt(x.values[i] ?? 0)}</Text>)}
+                  </Pressable>
+                ))}
               </View>
-              <Bar value={Math.abs(b.value)} max={Math.max(...data.breakdown.map((x) => Math.abs(x.value)))} color={b.value < 0 ? t.series2 : t.series[0]} height={5} />
-            </Pressable>
-          )) : <Text style={{ color: t.muted }}>Nothing to show {data.period}.</Text>
-        ) : view === 'table' ? (
-          <View>
-            <View style={[styles.trow, { borderColor: t.line }]}>
-              <Text style={{ color: t.muted, fontSize: 12, flex: 1 }}> </Text>
-              {data.series.map((x) => <Text key={x.name} style={[styles.tcell, { color: t.muted, fontSize: 12 }]} numberOfLines={1}>{x.name}</Text>)}
-            </View>
-            {data.labels.map((l, i) => ({ l, i })).slice(-rows).reverse().map(({ l, i }) => (
-              <Pressable key={i} onPress={() => open(i)} style={[styles.trow, { borderColor: t.line }]}>
-                <Text style={{ color: t.text, fontSize: 13, flex: 1 }}>{l}</Text>
-                {data.series.map((x) => <Text key={x.name} style={[styles.tcell, { color: t.text, fontSize: 13 }]}>{fmt(x.values[i] ?? 0)}</Text>)}
-              </Pressable>
-            ))}
-          </View>
-        ) : (
-          <>
-            {!!data.note && <Text style={{ color: t.muted, fontSize: 12 }}>{data.note}</Text>}
-            {cfg.h !== 's' && cfg.numbers !== false && <View style={styles.tiles}>{data.tiles.slice(0, 3).map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}
-            {view === 'line'
-              ? <LineChart t={t} labels={data.labels} series={data.series} height={h} format={fmt} refLine={data.refLine} onPick={data.drill ? open : undefined} />
-              : <BarChart t={t} labels={data.labels} series={data.series} height={h} format={fmt} refLine={data.refLine} onPick={data.drill ? open : undefined}
-                  stacked={data.stacked} legend={!data.stacked || data.series.length <= 4}
-                  barColor={data.outline && !data.stacked ? (i) => (i === data.outline!.i ? tone : undefined) : undefined}
-                  outline={data.outline ? { i: data.outline.i, value: data.outline.value, color: tone! } : undefined} />}
-          </>
-        )}
-      {!data.empty && (view === 'list' || view === 'tiles') && <Text style={{ color: t.muted, fontSize: 12 }}>{data.period}</Text>}
+            )}</Fill>
+          ) : (
+            <>
+              {!!data.note && <Text style={{ color: t.muted, fontSize: 12, lineHeight: 16 }} numberOfLines={1}>{data.note}</Text>}
+              {cfg.h !== 's' && cfg.numbers !== false && <View style={[styles.tiles, { flexWrap: 'nowrap' }]}>{data.tiles.slice(0, wide ? 3 : 2).map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}
+              <Fill>{(h) => {
+                const plot = Math.max(48, Math.floor(h - plotChrome(data.series.length, legend)));
+                return view === 'line'
+                  ? <LineChart t={t} labels={data.labels} series={data.series} height={plot} format={fmt} refLine={data.refLine} onPick={data.drill ? open : undefined} />
+                  : <BarChart t={t} labels={data.labels} series={data.series} height={plot} format={fmt} refLine={data.refLine} onPick={data.drill ? open : undefined}
+                      stacked={data.stacked} legend={legend}
+                      barColor={data.outline && !data.stacked ? (i) => (i === data.outline!.i ? tone : undefined) : undefined}
+                      outline={data.outline ? { i: data.outline.i, value: data.outline.value, color: tone! } : undefined} />;
+              }}</Fill>
+            </>
+          )}
+      </Sized>
     </CardShell>
   );
 }
@@ -332,19 +370,21 @@ function TagTotals({ t, refresh, h }: { t: Theme; refresh: number; h?: WidgetCfg
     }
     return [...by.values()].sort((a, b) => b.last.localeCompare(a.last));
   }, [refresh]);
-  const list = data?.slice(0, h === 's' ? 3 : h === 'l' ? 20 : 8) ?? [];
+  const list = data ?? [];
   const span = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}${a.slice(0, 4) !== b.slice(0, 4) || b.slice(0, 4) !== today().slice(0, 4) ? ` ${b.slice(0, 4)}` : ''}`);
   return (
     <CardShell t={t} after={txnSheet} title="Tag totals">
-      {!data ? <Skeleton color={t.track} /> : !list.length ? <Text style={{ color: t.muted }}>Add a tag to a few transactions (a trip, a move, a repair) and its total shows up here.</Text> : list.map((x) => (
-        <Pressable key={x.tag} style={styles.row} onPress={() => showTxns({ title: `#${x.tag}`, from: x.first, to: x.last, ids: x.ids })}>
+      <Sized h={h}>
+      {!data ? <Skeleton color={t.track} /> : !list.length ? <Text style={{ color: t.muted }}>Add a tag to a few transactions (a trip, a move, a repair) and its total shows up here.</Text> : <Fill>{(room) => list.slice(0, fit(room, 32)).map((x) => (
+        <Pressable key={x.tag} style={[styles.row, { height: 32 }]} onPress={() => showTxns({ title: `#${x.tag}`, from: x.first, to: x.last, ids: x.ids })}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: t.text, fontSize: 13 }} numberOfLines={1}>#{x.tag}</Text>
             <Text style={{ color: t.muted, fontSize: 11 }} numberOfLines={1}>{x.n} {x.n === 1 ? 'transaction' : 'transactions'} · {span(x.first, x.last)}</Text>
           </View>
           <Text style={{ color: x.total > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'], fontWeight: '600' }}>{formatMoney(x.total)}</Text>
         </Pressable>
-      ))}
+      ))}</Fill>}
+      </Sized>
     </CardShell>
   );
 }
@@ -353,20 +393,22 @@ function WatchMini({ t, refresh, h }: { t: Theme; refresh: number; h?: WidgetCfg
   const { data } = useLoad(() => loadWatch(today()), [refresh]);
   const [showTxns, txnSheet] = useTxnSheet();
   const m = thisMonth();
-  const list: Watched[] = data ? [...data.list].sort((a, b) => (b.projected - b.avg3) - (a.projected - a.avg3)).slice(0, h === 's' ? 3 : h === 'l' ? 12 : 5) : [];
+  const list: Watched[] = data ? [...data.list].sort((a, b) => (b.projected - b.avg3) - (a.projected - a.avg3)) : [];
   return (
     <CardShell t={t} after={txnSheet} title="Spending watch" link="Watch list" onPress={() => router.push('/reports?tab=watch' as any)}>
-      {!data ? <Skeleton color={t.track} /> : !list.length ? <Text style={{ color: t.muted }}>Pick categories on the watch list.</Text> : list.map((w) => {
+      <Sized h={h}>
+      {!data ? <Skeleton color={t.track} /> : !list.length ? <Text style={{ color: t.muted }}>Pick categories on the watch list.</Text> : <Fill>{(room) => list.slice(0, fit(room, 18)).map((w) => {
         const up = w.projected > w.avg3;
         return (
-          <Pressable key={w.category.id} style={styles.row} onPress={() => showTxns({ title: `${w.category.name} · this month`, from: m, to: monthEnd(m), categoryIds: [w.category.id], noTransfers: true })}>
+          <Pressable key={w.category.id} style={[styles.row, { height: 18 }]} onPress={() => showTxns({ title: `${w.category.name} · this month`, from: m, to: monthEnd(m), categoryIds: [w.category.id], noTransfers: true })}>
             <Text style={{ color: t.text, flex: 1, fontSize: 13 }} numberOfLines={1}>{w.category.name}</Text>
             <Text style={{ color: t.muted, fontSize: 12, fontVariant: ['tabular-nums'] }}>{money0(w.thisMonth)} → {money0(w.projected)}</Text>
             <Text style={{ color: up ? t.series2 : t.accent, fontSize: 12, fontWeight: '700', width: 64, textAlign: 'right' }}>{up ? '▲' : '▼'} {money0(Math.abs(w.projected - w.avg3))}</Text>
           </Pressable>
         );
-      })}
-      <Text style={{ color: t.muted, fontSize: 12 }}>This month so far → where it’s heading, vs the 3-month average.</Text>
+      })}</Fill>}
+      <Text style={{ color: t.muted, fontSize: 12, lineHeight: 16 }} numberOfLines={2}>This month so far → where it’s heading, vs the 3-month average.</Text>
+      </Sized>
     </CardShell>
   );
 }

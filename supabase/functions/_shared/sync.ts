@@ -162,6 +162,9 @@ async function learnedCategories(admin: Admin, userId: string, merchants: string
   return out;
 }
 
+/** How many transaction ids go into one "do we have these?" lookup. */
+const LOOKUP_BATCH = 80;
+
 export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncResult> {
   const result: SyncResult = { itemId: item.item_id, institution: item.institution_name, added: 0, updated: 0, removed: 0, status: 'ok' };
   try {
@@ -172,8 +175,12 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
     // Which of these do we already have? (and did you edit their date or amount?)
     const ids = posted.map((t) => t.transaction_id);
     const existing = new Map<string, { original_date: string | null; original_amount: number | null }>();
-    for (let i = 0; i < ids.length; i += 500) {
-      const { data } = await admin.from('transactions').select('plaid_transaction_id, original_date, original_amount').in('plaid_transaction_id', ids.slice(i, i + 500));
+    // In small batches: the ids travel in the request's address, and a few hundred of them make it too
+    // long for the server to accept. That lookup used to fail without a word, every transaction then
+    // looked new, and saving them hit "duplicate key" and stopped the whole sync.
+    for (let i = 0; i < ids.length; i += LOOKUP_BATCH) {
+      const { data, error } = await admin.from('transactions').select('plaid_transaction_id, original_date, original_amount').in('plaid_transaction_id', ids.slice(i, i + LOOKUP_BATCH));
+      if (error) throw new Error('Checking which transactions are already here failed: ' + error.message);
       for (const r of data ?? []) existing.set(r.plaid_transaction_id, r);
     }
 
@@ -266,11 +273,15 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
         reviewed: false,
       };
     });
+    // A transaction that is somehow already here is skipped rather than stopping the sync: one stray
+    // duplicate must not keep every later transaction out.
+    let added = 0;
     for (let i = 0; i < inserts.length; i += 500) {
-      const { error } = await admin.from('transactions').insert(inserts.slice(i, i + 500));
+      const { data, error } = await admin.from('transactions').upsert(inserts.slice(i, i + 500), { onConflict: 'plaid_transaction_id', ignoreDuplicates: true }).select('id');
       if (error) throw new Error('Saving transactions failed: ' + error.message);
+      added += (data ?? []).length;
     }
-    result.added = inserts.length;
+    result.added = added;
 
     // Bank corrected something we already have: update its bank fields only. If you changed the
     // date or amount yourself, yours stays and the bank's value is kept beside it.
@@ -283,10 +294,11 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
       }).eq('plaid_transaction_id', t.transaction_id);
       result.updated++;
     }
-    if (removed.length) {
-      await admin.from('transactions').delete().in('plaid_transaction_id', removed);
-      result.removed = removed.length;
+    for (let i = 0; i < removed.length; i += LOOKUP_BATCH) {
+      const { error } = await admin.from('transactions').delete().in('plaid_transaction_id', removed.slice(i, i + LOOKUP_BATCH));
+      if (error) throw new Error('Removing transactions the bank withdrew failed: ' + error.message);
     }
+    result.removed = removed.length;
 
     await admin.from('plaid_items').update({
       cursor, status: 'ok', error_code: null, last_synced_at: new Date().toISOString(),

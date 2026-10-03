@@ -19,12 +19,17 @@ function fakeDb(tables: Record<string, Row[]>) {
     let payload: any = null;
     let order: { col: string; asc: boolean } | null = null;
     let limit = Infinity;
+    let tooMany = false;
     let single = false;
     let returning = false;
+    let conflict: string | null = null;
     const run = () => {
       const t = tables[name];
+      // Like the real server: a lookup with too many ids in it is refused.
+      if (op === 'select' && tooMany) return { data: null, error: { message: 'URI too long' } };
       if (op === 'insert') {
-        const rows = (Array.isArray(payload) ? payload : [payload]).map((r: Row) => ({ id: `${name}-${++idSeq}`, ...r }));
+        const fresh = (Array.isArray(payload) ? payload : [payload]).filter((r: Row) => !conflict || !t.some((x) => x[conflict!] === r[conflict!]));
+        const rows = fresh.map((r: Row) => ({ id: `${name}-${++idSeq}`, ...r }));
         t.push(...rows);
         return { data: returning ? (single ? rows[0] : rows) : null, error: null };
       }
@@ -38,6 +43,7 @@ function fakeDb(tables: Record<string, Row[]>) {
     const q: any = {
       select: () => { if (op !== 'select') returning = true; return q; },
       insert: (p: any) => { op = 'insert'; payload = p; return q; },
+      upsert: (p: any, o: { onConflict: string }) => { op = 'insert'; payload = p; conflict = o.onConflict; return q; },
       update: (p: any) => { op = 'update'; payload = p; return q; },
       delete: () => { op = 'delete'; return q; },
       eq: (c: string, v: any) => { filters.push((r) => r[c] === v); return q; },
@@ -45,7 +51,7 @@ function fakeDb(tables: Record<string, Row[]>) {
       gte: (c: string, v: any) => { filters.push((r) => r[c] >= v); return q; },
       lt: (c: string, v: any) => { filters.push((r) => r[c] < v); return q; },
       lte: (c: string, v: any) => { filters.push((r) => r[c] <= v); return q; },
-      in: (c: string, v: any[]) => { filters.push((r) => v.includes(r[c])); return q; },
+      in: (c: string, v: any[]) => { if (v.length > 100) tooMany = true; filters.push((r) => v.includes(r[c])); return q; },
       not: (c: string, _o: string, _v: any) => { filters.push((r) => r[c] != null); return q; },
       order: (col: string, o: { ascending: boolean }) => { order = { col, asc: o.ascending }; return q; },
       limit: (n: number) => { limit = n; return q; },
@@ -129,6 +135,31 @@ Deno.test('syncItem writes posted transactions with merchant + category, keeps e
   assertEquals([byId('t1').amount, byId('t1').category_id, byId('t1').merchant, byId('t1').reviewed], [-26.95, 'cat-gym', 'My Name', true]);
   assertEquals(tables.transactions.some((t) => t.plaid_transaction_id === 't3'), false);
   assertEquals([tables.accounts[0].name, tables.accounts[0].current_balance], ['Renamed by me', 474.05]);
+});
+
+Deno.test('a large batch the bank sends again is recognised, not saved twice', async () => {
+  // What happened to a real connection: after signing in again the bank re-sent months of history.
+  // Asking "which of these do we have?" for hundreds of ids at once was refused by the server, the
+  // refusal was ignored, every row looked new, and saving them failed on the duplicate key.
+  Deno.env.set('PLAID_ENV', 'sandbox');
+  const user = 'u1';
+  const ids = Array.from({ length: 250 }, (_, i) => `big-${i}`);
+  const tables: Record<string, Row[]> = {
+    accounts: [{ id: 'acct', user_id: user, plaid_account_id: 'pa1', plaid_item_id: 'item-row', kind: 'plaid', name: 'Chequing', type: 'depository' }],
+    transactions: ids.map((id) => ({ id: 'row-' + id, user_id: user, account_id: 'acct', plaid_transaction_id: id, date: '2026-09-10', amount: -5, name: 'CORNER SHOP', merchant: 'Corner Shop' })),
+    merchant_rules: [], category_rules: [], categories: [],
+    plaid_items: [{ id: 'item-row', user_id: user, item_id: 'item-1', institution_name: 'Test Bank', access_token_secret_id: 's', cursor: 'old' }],
+    sync_runs: [],
+  };
+  const db = fakeDb(tables);
+  fakePlaid([{ from: 'old', res: { added: [...ids.map((id) => tx(id, 'pa1', '2026-09-10', 5, 'CORNER SHOP')), tx('new-1', 'pa1', '2026-10-01', 7, 'CORNER SHOP')], modified: [], removed: [], next_cursor: 'c9', has_more: false } }],
+    [{ account_id: 'pa1', name: 'Chequing', mask: '1234', type: 'depository', subtype: 'checking', balances: { current: 500, available: 480, iso_currency_code: 'CAD' } }]);
+  const r = await syncItem(db, tables.plaid_items[0] as any);
+  assertEquals(r.status, 'ok', r.error);
+  assertEquals(r.added, 1, 'only the one new transaction');
+  assertEquals(tables.transactions.length, 251);
+  assertEquals(new Set(tables.transactions.map((t) => t.plaid_transaction_id)).size, 251, 'no id twice');
+  assertEquals(tables.plaid_items[0].cursor, 'c9');
 });
 
 Deno.test('syncItem links bank rows to imported ones and keeps your edited date/amount', async () => {

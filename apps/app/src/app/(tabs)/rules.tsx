@@ -13,7 +13,7 @@ import { useConfirm } from '@/components/Confirm';
 import { Field, Sheet } from '@/components/Forms';
 import { SinglePicker } from '@/components/Picker';
 import { EmptyState, RowsSkeleton } from '@/components/States';
-import { Button, Card, Segmented } from '@/components/ui';
+import { Button, Card, Segmented, Fab } from '@/components/ui';
 import { LABEL, PAGE_MAX, TYPE, UNDER_BAR } from '@/lib/layout';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { supabase } from '@/lib/supabase';
@@ -135,7 +135,6 @@ export default function Rules() {
             <Ionicons name="search" size={16} color={t.muted} />
             <TextInput value={q} onChangeText={setQ} placeholder={tab === 'category' ? 'Search rules or categories' : 'Search rules or merchants'} placeholderTextColor={t.muted} style={{ flex: 1, color: t.text, fontSize: TYPE.body, paddingVertical: 8 }} />
           </View>
-          <Button title="New rule" kind="plain" onPress={() => (tab === 'category' ? setEditCat({}) : setEditName({ source: 'manual' }))} />
         </View>
         <Text style={{ color: t.muted, fontSize: 12 }}>
           {tab === 'category' ? 'New transactions whose text contains a rule’s words get its category. ' : 'Bank text that contains a rule’s words is shown under the name you chose. '}
@@ -172,6 +171,7 @@ export default function Rules() {
           )
         )}
       </ScrollView>
+      <Fab label="New rule" onPress={() => (tab === 'category' ? setEditCat({}) : setEditName({ source: 'manual' }))} />
       {editCat && <CatRuleEditor t={t} initial={editCat} cats={cats} accounts={accounts} recent={recent} acctLabel={acctLabel} catLabel={catLabel} onClose={() => setEditCat(null)} onSaved={load} />}
       {editName && <NameRuleEditor t={t} initial={editName} recent={recent} onClose={() => setEditName(null)} onSaved={load} />}
     </View>

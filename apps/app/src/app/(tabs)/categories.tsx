@@ -14,7 +14,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Field, Sheet } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
-import { Button, Card, Chip, Segmented } from '@/components/ui';
+import { Button, Card, Chip, Segmented, Fab } from '@/components/ui';
 import { loadGroupIcons, mergeCategories, renameGroup, setGroupIcon } from '@/lib/categories';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
@@ -84,9 +84,7 @@ export default function Categories() {
           </Pressable>
         )}
       </ScrollView>
-      <Pressable onPress={() => setEditing({ kind: 'expense', group_name: groups[0]?.[0] ?? 'Other' })} style={[styles.fab, { backgroundColor: t.accent }]} accessibilityLabel="New category">
-        <Ionicons name="add" size={28} color="#fff" />
-      </Pressable>
+      <Fab label="New category" onPress={() => setEditing({ kind: 'expense', group_name: groups[0]?.[0] ?? 'Other' })} />
       {editing && <CategoryEditor initial={editing} cats={cats} count={editing.id ? counts.get(editing.id) ?? 0 : 0} onClose={() => setEditing(null)} onSaved={load} />}
       {group != null && <GroupEditor name={group} icon={groupIcons[group] ?? ''} cats={cats} onClose={() => setGroup(null)} onSaved={load} />}
     </View>

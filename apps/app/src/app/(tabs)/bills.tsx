@@ -15,7 +15,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BillForm } from '@/components/Forms';
-import { Button, Card, Empty, Stepper } from '@/components/ui';
+import { Button, Card, Empty, Stepper, Fab } from '@/components/ui';
 import { loadAccounts, loadPosted, loadRecurring, today } from '@/lib/plan';
 import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { supabase } from '@/lib/supabase';
@@ -201,9 +201,7 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
         )}
       </ScrollView>
 
-      {!embedded && <Pressable onPress={() => setEditing({ kind: 'bill', frequency: 'monthly', start_date: now })} style={[styles.fab, { backgroundColor: t.accent }]} accessibilityLabel="Add a bill or income">
-        <Ionicons name="add" size={28} color="#fff" />
-      </Pressable>}
+      {!embedded && <Fab label="Add a bill or income" onPress={() => setEditing({ kind: 'bill', frequency: 'monthly', start_date: now })} />}
       {editing && <BillForm initial={editing} accounts={accounts} categories={cats} onClose={() => setEditing(null)}
         onSaved={() => { load(); if (view === 'suggest') setSuggestions((s) => s?.filter((x) => x.name !== editing.name) ?? null); }} />}
     </View>
