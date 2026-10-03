@@ -2,7 +2,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { deleteWithUndo, toast } from '@/lib/toast';
 import { addDays, categoryIcon, formatMoney, parseMoney, round2, shortDate, toIsoDate, type Frequency, type Recurring } from '@budget-app/core';
-import { useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DateField } from './DateField';
@@ -14,23 +14,64 @@ import { useBackToClose } from '@/lib/useBackToClose';
 import { useTheme, type Theme } from '@/lib/theme';
 import type { Account } from '@/lib/types';
 
+/**
+ * Forms inside a Sheet say whether they hold changes not saved yet (`dirty` on the Sheet, or
+ * useUnsaved from a component drawn inside one). Every way of closing it by accident (Esc, a tap
+ * outside, dragging it down, the back gesture, the X) then asks first instead of dropping them.
+ */
+const UnsavedContext = createContext<((key: object, dirty: boolean) => void) | null>(null);
+export function useUnsaved(dirty: boolean) {
+  const report = useContext(UnsavedContext);
+  const key = useRef({}).current;
+  useEffect(() => { report?.(key, dirty); }, [report, dirty]);
+  useEffect(() => () => report?.(key, false), [report]);
+}
+
 /** `scroll={false}` hands the body to the caller (a list of its own); add `fit` to size the sheet to that body, not the screen. */
-export function Sheet({ title, onClose, children, footer, scroll = true, fit }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; scroll?: boolean; fit?: boolean }) {
+export function Sheet({ title, onClose, children, footer, scroll = true, fit, dirty }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; scroll?: boolean; fit?: boolean; dirty?: boolean }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  useBackToClose(true, onClose);
+  const [asking, setAsking] = useState(false);
+  const inner = useRef(new Map<object, boolean>());
+  const report = useCallback((key: object, d: boolean) => { if (d) inner.current.set(key, true); else inner.current.delete(key); }, []);
+  const unsaved = () => !!dirty || inner.current.size > 0;
+  // Closing by accident: with changes not saved, ask instead (a second try while asking keeps editing).
+  const tryClose = (): boolean => {
+    if (asking) { setAsking(false); return false; }
+    if (unsaved()) { setAsking(true); return false; }
+    onClose();
+    return true;
+  };
+  useBackToClose(true, tryClose);
   return (
-    <ModalFrame onClose={onClose} fit={scroll || fit}>
+    <UnsavedContext.Provider value={report}>
+    <ModalFrame onClose={tryClose} fit={scroll || fit}>
       <>
         <View style={[styles.head, { borderColor: t.line }]}>
           <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: 1 }}>{title}</Text>
-          <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="Close"><Ionicons name="close" size={26} color={t.text} /></Pressable>
+          <Pressable onPress={tryClose} hitSlop={10} accessibilityLabel="Close"><Ionicons name="close" size={26} color={t.text} /></Pressable>
         </View>
         {scroll ? <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">{children}</ScrollView> : <View style={fit ? { flexShrink: 1 } : { flex: 1 }}>{children}</View>}
-        {footer ? <View style={[styles.footer, { borderColor: t.line, paddingBottom: insets.bottom + 12 }]}>{footer}</View> : null}
+        {asking ? (
+          <View style={[styles.footer, styles.discard, { borderColor: t.line, backgroundColor: t.card, paddingBottom: insets.bottom + 12 }]} accessibilityRole="alert">
+            <Text style={{ color: t.text, fontWeight: '600' }}>Discard your changes?</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Button title="Keep editing" kind="plain" style={{ flex: 1 }} onPress={() => setAsking(false)} />
+              <Button title="Discard" kind="danger" style={{ flex: 1 }} onPress={() => { setAsking(false); onClose(); }} />
+            </View>
+          </View>
+        ) : footer ? <View style={[styles.footer, { borderColor: t.line, paddingBottom: insets.bottom + 12 }]}>{footer}</View> : null}
       </>
     </ModalFrame>
+    </UnsavedContext.Provider>
   );
+}
+
+/** True once any of `values` differs from what it was when the form opened. */
+export function useChanged(values: unknown[]): boolean {
+  const now = JSON.stringify(values);
+  const first = useRef(now);
+  return now !== first.current;
 }
 
 export const Field = ({ t, label, children, hint }: { t: Theme; label: string; children: React.ReactNode; hint?: string }) => (
@@ -65,6 +106,7 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
   const [cardId, setCardId] = useState<string | null>((initial as any).card_account_id ?? null);
   const [cardRule, setCardRule] = useState<'statement' | 'minimum' | 'custom'>((initial as any).card_rule ?? 'statement');
   const [pickCat, setPickCat] = useState(false);
+  const changed = useChanged([kind, name, amount, estimated, frequency, start, end, accountId, categoryId, matchText, cardId, cardRule]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
@@ -102,7 +144,7 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
   };
 
   return (
-    <Sheet title={initial.id ? 'Edit' : kind === 'bill' ? 'New bill' : 'New income'} onClose={onClose}
+    <Sheet title={initial.id ? 'Edit' : kind === 'bill' ? 'New bill' : 'New income'} dirty={changed} onClose={onClose}
       footer={<View style={{ flexDirection: 'row', gap: 8 }}>
         {initial.id ? <Button title="Delete" kind="danger" onPress={remove} /> : null}
         <Button title="Save" onPress={save} busy={busy} style={{ flex: 1 }} />
@@ -190,6 +232,7 @@ export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
   const recurring = !!initial.recurring_id;
   const existing = !!(initial.id || recurring);
   const [pickMatch, setPickMatch] = useState(false);
+  const changed = useChanged([dir, description, amount, date, accountId, toId]);
   const [candidates, setCandidates] = useState<{ id: string; date: string; amount: number; display_name: string }[]>([]);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
   useEffect(() => { if (dir !== 'transfer') setToId(null); }, [dir]);
@@ -231,7 +274,7 @@ export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
   const plan = accounts.filter((a) => a.plan_include);
 
   return (
-    <Sheet title={recurring ? 'Change this date only' : initial.id ? 'Edit planned entry' : 'Plan an entry'} onClose={onClose}
+    <Sheet title={recurring ? 'Change this date only' : initial.id ? 'Edit planned entry' : 'Plan an entry'} dirty={changed} onClose={onClose}
       footer={<View style={{ flexDirection: 'row', gap: 8 }}>
         {(initial.id || recurring) ? <Button title={recurring ? 'Skip this one' : 'Delete'} kind="danger" onPress={skip} /> : null}
         <Button title="Save" onPress={save} style={{ flex: 1 }} />
@@ -273,6 +316,7 @@ export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
 const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth },
   footer: { paddingHorizontal: 16, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  discard: { gap: 10 },
   input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, fontSize: 15 },
   pick: { flexDirection: 'row', alignItems: 'center' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },

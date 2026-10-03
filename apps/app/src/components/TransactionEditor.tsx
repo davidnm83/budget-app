@@ -5,6 +5,7 @@
 import { categoryIcon, formatMoney, normalizeDescription, parseMoney, round2, searchPattern, shortDate, toIsoDate } from '@budget-app/core';
 import { deleteWithUndo, toast } from '@/lib/toast';
 import { PlanForm, type PlanSeed } from '@/components/PaymentPlans';
+import { useUnsaved } from '@/components/Forms';
 import { loadAccounts } from '@/lib/plan';
 import type { Account } from '@/lib/types';
 import { merchantLogo, useLogoVersion } from '@/lib/logos';
@@ -110,6 +111,11 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       .or(`display_name.ilike.${p},name.ilike.${p}`).then(({ count }) => setMatching(count ?? 0));
   }, [makeRule, ruleText, txn?.id]);
 
+  // Changes not saved yet, against the transaction as loaded: closing the pop-up by accident asks first.
+  const savedParts = ((txn as any)?.transaction_splits ?? []).map((p: any) => [p.category_id, Number(p.amount).toFixed(2), p.notes ?? '']);
+  useUnsaved(ready && !!txn && !busy && (merchant !== (txn.merchant ?? '') || categoryId !== txn.category_id || notes !== (txn.notes ?? '') || tags !== (txn.tags ?? []).join(', ')
+    || date !== txn.date || amount !== Number(txn.amount).toFixed(2) || makeRule
+    || JSON.stringify(parts?.map((p) => [p.category_id, p.amount, p.notes]) ?? []) !== JSON.stringify(savedParts)));
   if (!txn) return <View style={{ flex: 1, backgroundColor: t.bg }} />;
   const split = !!parts && parts.length > 0;
   const shownSuggested = suggested.filter((x) => cats.some((c) => c.id === x)).slice(0, 5);

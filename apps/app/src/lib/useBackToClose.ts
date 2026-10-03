@@ -9,7 +9,7 @@
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 
-interface Entry { close: () => void; closedByBack: boolean }
+interface Entry { close: () => void | boolean; closedByBack: boolean }
 const stack: Entry[] = [];
 let ownBacks = 0; // history.back() calls we made ourselves, whose popstate must be ignored
 let listening = false;
@@ -22,10 +22,16 @@ function onPop() {
   const top = stack.pop();
   if (!top) return;
   top.closedByBack = true;
-  top.close();
+  // A pop-up with unsaved changes can decline (it asks first): it stays open, with its history entry back.
+  if (top.close() === false) {
+    top.closedByBack = false;
+    window.history.pushState({ ...(window.history.state ?? {}) }, '');
+    stack.push(top);
+  }
 }
 
-export function useBackToClose(visible: boolean, onClose: () => void) {
+/** `onClose` may return false to stay open (a form asking before it drops unsaved changes). */
+export function useBackToClose(visible: boolean, onClose: () => void | boolean) {
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {

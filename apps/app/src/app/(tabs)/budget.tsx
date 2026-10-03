@@ -16,7 +16,7 @@ import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { Field, Sheet } from '@/components/Forms';
+import { Field, Sheet, useChanged } from '@/components/Forms';
 import { SinglePicker } from '@/components/Picker';
 import { TopBar } from '@/components/TopBar';
 import { Button, Card, Chip, Empty, Segmented, Stepper } from '@/components/ui';
@@ -414,6 +414,7 @@ function BudgetEditor({ d, line, onClose }: { d: Data; line: BudgetLine; onClose
   const budget = d.budgets.find((b) => b.month === month && budgetKey(b) === line.key);
   const [amount, setAmount] = useState(String(line.budgeted));
   const [rollover, setRollover] = useState(line.rollover);
+  const changed = useChanged([amount, rollover]);
   const income = line.kind === 'income';
   const [txnId, setTxnId] = useState<string | null>(null);
   const [txnKey, setTxnKey] = useState(0);
@@ -430,7 +431,7 @@ function BudgetEditor({ d, line, onClose }: { d: Data; line: BudgetLine; onClose
     if (error) d.setError(error); else { onClose(); d.reload(); }
   };
   return (
-    <Sheet title={`${line.label} · ${monthName(month)}`} onClose={onClose}
+    <Sheet title={`${line.label} · ${monthName(month)}`} dirty={changed} onClose={onClose}
       footer={<View style={{ flexDirection: 'row', gap: 8 }}>
         <Button title="Remove" kind="danger" onPress={remove} />
         <Button title="Save" onPress={save} style={{ flex: 1 }} />

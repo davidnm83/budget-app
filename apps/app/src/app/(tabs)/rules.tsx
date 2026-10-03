@@ -10,7 +10,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useConfirm } from '@/components/Confirm';
-import { Field, Sheet } from '@/components/Forms';
+import { Field, Sheet, useChanged } from '@/components/Forms';
 import { SinglePicker } from '@/components/Picker';
 import { EmptyState, RowsSkeleton } from '@/components/States';
 import { Button, Card, Segmented, Fab } from '@/components/ui';
@@ -208,6 +208,7 @@ function CatRuleEditor({ t, initial, cats, accounts, recent, acctLabel, catLabel
   const [min, setMin] = useState(initial.min_amount != null ? String(initial.min_amount) : '');
   const [max, setMax] = useState(initial.max_amount != null ? String(initial.max_amount) : '');
   const [pick, setPick] = useState<'cat' | 'acct' | null>(null);
+  const changed = useChanged([text, categoryId, accountId, min, max]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirm, confirmSheet] = useConfirm();
@@ -235,7 +236,7 @@ function CatRuleEditor({ t, initial, cats, accounts, recent, acctLabel, catLabel
   } });
 
   return (
-    <Sheet title={initial.id ? 'Category rule' : 'New category rule'} onClose={onClose}>
+    <Sheet title={initial.id ? 'Category rule' : 'New category rule'} dirty={changed} onClose={onClose}>
       <Field t={t} label="When the text contains" hint="Checked against the merchant name and the bank’s description. Capitals and numbers don’t matter.">
         <TextInput value={text} onChangeText={setText} style={input} autoCapitalize="characters" placeholder="e.g. CRNR MKT" placeholderTextColor={t.muted} />
       </Field>
@@ -274,6 +275,7 @@ function CatRuleEditor({ t, initial, cats, accounts, recent, acctLabel, catLabel
 function NameRuleEditor({ t, initial, recent, onClose, onSaved }: { t: Theme; initial: Partial<NameRule>; recent: Recent[]; onClose: () => void; onSaved: () => void }) {
   const [match, setMatch] = useState(initial.match ?? '');
   const [merchant, setMerchant] = useState(initial.merchant ?? '');
+  const changed = useChanged([match, merchant]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirm, confirmSheet] = useConfirm();
@@ -298,7 +300,7 @@ function NameRuleEditor({ t, initial, recent, onClose, onSaved }: { t: Theme; in
   } });
 
   return (
-    <Sheet title={initial.id ? 'Merchant name rule' : 'New merchant name rule'} onClose={onClose}>
+    <Sheet title={initial.id ? 'Merchant name rule' : 'New merchant name rule'} dirty={changed} onClose={onClose}>
       <Field t={t} label="When the bank’s text contains" hint="Capitals, numbers and the city at the end don’t matter.">
         <TextInput value={match} onChangeText={setMatch} style={input} autoCapitalize="characters" placeholder="e.g. CRNR MKT" placeholderTextColor={t.muted} />
       </Field>
