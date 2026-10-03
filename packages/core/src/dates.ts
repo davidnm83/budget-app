@@ -40,6 +40,22 @@ export function hourIn(timeZone: string, now: Date = new Date()): number {
   return Number(new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(now));
 }
 
+/** How often the scheduled bank sync runs: every N hours counted from 5 AM; 0 = only by hand. */
+export const SYNC_CHOICES = [
+  { every: 24, label: 'Once a day', about: 'at 5 AM' },
+  { every: 12, label: 'Twice a day', about: '5 AM and 5 PM' },
+  { every: 6, label: 'Every 6 hours', about: '5 AM, 11 AM, 5 PM, 11 PM' },
+  { every: 3, label: 'Every 3 hours', about: '' },
+  { every: 1, label: 'Every hour', about: '' },
+  { every: 0, label: 'Only when I tap Sync now', about: '' },
+] as const;
+/** Whether the hourly scheduled run should do the work at this local hour. No setting means once a day. */
+export function syncDue(hour: number, every: number | null | undefined): boolean {
+  const n = every == null ? 24 : every;
+  if (!SYNC_CHOICES.some((c) => c.every === n) || n === 0) return n !== 0 && hour === 5;
+  return (((hour - 5) % n) + n) % n === 0;
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export function shortDate(iso: IsoDate): string {
   return `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8, 10))}`;

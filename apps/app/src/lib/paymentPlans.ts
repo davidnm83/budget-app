@@ -10,6 +10,10 @@
 //  • The one-time fee and each month's interest are added as charges on the card. Each has its
 //    own switch on the plan, for when the statement already lists it: many cards show the fee
 //    as its own line when the plan starts, but not the interest.
+//  • A plan against the card's balance (no single purchase): that amount was already counted as
+//    spending when it was charged. With "offsetStart" on, it is taken back out of the plan's
+//    category on the first instalment date (a $0.00 transaction, the mirror image of an
+//    instalment), and the instalments then put it back month by month.
 // Generated transactions carry import_id "plan:<plan id>:…", which is how they are found again.
 import * as core from '@budget-app/core';
 import { planSchedule, type PaymentPlan } from '@budget-app/core';
@@ -22,6 +26,8 @@ export interface CardPlan extends PaymentPlan {
   payingAccountId: string | null;
   /** Add the interest / the one-time fee as transactions (off when the statement already lists it). */
   postCharges: boolean; postFee: boolean;
+  /** Against the balance, not one purchase: take the amount out of the category when the plan starts. */
+  offsetStart: boolean;
 }
 export type PlanInput = Omit<CardPlan, 'id'>;
 const PLAN_CATEGORY = 'Payment plan';
@@ -29,12 +35,12 @@ const PLAN_CATEGORY = 'Payment plan';
 const fromRow = (r: any): CardPlan => ({
   id: r.id, description: r.description, principal: Number(r.principal), months: Number(r.months), startDate: r.start_date, setupFee: Number(r.setup_fee), apr: Number(r.apr),
   countFrom: r.count_from, closedOn: r.closed_on, accountId: r.account_id, transactionId: r.transaction_id, categoryId: r.category_id,
-  interestCategoryId: r.interest_category_id, payingAccountId: r.paying_account_id, postCharges: r.post_charges, postFee: r.post_fee ?? true,
+  interestCategoryId: r.interest_category_id, payingAccountId: r.paying_account_id, postCharges: r.post_charges, postFee: r.post_fee ?? true, monthlyFee: Number(r.monthly_fee ?? 0), offsetStart: !!r.offset_start,
 });
 const toRow = (p: PlanInput) => ({
   description: p.description, principal: p.principal, months: p.months, start_date: p.startDate, setup_fee: p.setupFee, apr: p.apr, count_from: p.countFrom ?? null,
   closed_on: p.closedOn ?? null, account_id: p.accountId, transaction_id: p.transactionId, category_id: p.categoryId, interest_category_id: p.interestCategoryId,
-  paying_account_id: p.payingAccountId, post_charges: p.postCharges, post_fee: p.postFee,
+  paying_account_id: p.payingAccountId, post_charges: p.postCharges, post_fee: p.postFee, monthly_fee: p.monthlyFee ?? 0, offset_start: p.offsetStart,
 });
 const fail = (e: { message: string } | null) => { if (e) throw new Error(e.message); };
 // An install that hasn't run the payment-plans migration yet simply has no plans.
@@ -76,6 +82,22 @@ export async function syncPlans(plans?: CardPlan[]): Promise<number> {
   let cat: string | null = null, added = 0;
   for (const p of list) {
     const schedule = planSchedule(p);
+    // Against the balance: the whole amount comes out of the category once, when the plan starts.
+    const okey = `plan:${p.id}:o`, first = schedule[0];
+    if (p.offsetStart && !p.transactionId && first && first.date <= now && !(p.countFrom && first.date < p.countFrom) && !done.has(okey)) {
+      cat ??= await planCategory();
+      const t = await supabase.from('transactions').insert({ account_id: p.accountId, date: first.date, ...money, merchant: p.description, category_source: 'manual', reviewed: true,
+        reviewed_at: new Date().toISOString(), source: 'manual', amount: 0, name: `${p.description} · moved to a payment plan`, import_id: okey }).select('id').single();
+      if (t.error && t.error.code !== '23505') throw new Error(t.error.message);
+      if (!t.error) {
+        const parts = await supabase.from('transaction_splits').insert([
+          { transaction_id: t.data.id, category_id: p.categoryId, amount: p.principal, notes: 'Already counted when it was charged to the card; the instalments count it from here' },
+          { transaction_id: t.data.id, category_id: cat, amount: -p.principal },
+        ]);
+        if (parts.error) { await supabase.from('transactions').delete().eq('id', t.data.id); throw new Error(parts.error.message); }
+        added++;
+      }
+    }
     for (const x of schedule) {
       if (x.date > now || (p.countFrom && x.date < p.countFrom)) continue;
       const base = { account_id: p.accountId, date: x.date, ...money, merchant: p.description, category_source: 'manual', reviewed: true, reviewed_at: new Date().toISOString(), source: 'manual' };
@@ -92,10 +114,11 @@ export async function syncPlans(plans?: CardPlan[]): Promise<number> {
         if (parts.error) { await supabase.from('transactions').delete().eq('id', t.data.id); throw new Error(parts.error.message); }
         added++;
       }
-      const interest = p.postCharges ? x.interest : 0, fee = p.postFee ? x.fee : 0;
+      const interest = p.postCharges ? x.interest + x.monthlyFee : 0, fee = p.postFee ? x.fee : 0; // the monthly fee goes with the interest switch
       const charge = Math.round((interest + fee) * 100) / 100, ckey = `plan:${p.id}:c:${x.n}`;
       if (charge > 0 && !done.has(ckey)) {
-        const what = fee && interest ? 'plan fee and interest' : fee ? 'plan fee' : 'plan interest';
+        const monthly = x.monthlyFee > 0 && x.interest > 0 ? 'interest and monthly fee' : x.monthlyFee > 0 ? 'monthly fee' : 'interest';
+        const what = fee && interest ? `plan fee and ${monthly}` : fee ? 'plan fee' : `plan ${monthly}`;
         const c = await supabase.from('transactions').insert({ ...base, amount: -charge, name: `${p.description} · ${what}`, category_id: p.interestCategoryId, import_id: ckey });
         if (c.error && c.error.code !== '23505') throw new Error(c.error.message);
         if (!c.error) added++;

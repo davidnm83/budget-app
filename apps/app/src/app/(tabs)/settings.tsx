@@ -2,13 +2,13 @@ import { router, useFocusEffect } from 'expo-router';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { setLogosEnabled, useLogos } from '@/lib/logos';
 import { UNDER_BAR } from '@/lib/layout';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import PlaidLinkButton from '@/components/PlaidLinkButton';
 import { Button, Card, Chip, Segmented } from '@/components/ui';
 import { callFunction, supabase } from '@/lib/supabase';
 import { useSession } from '@/lib/session';
-import { currency } from '@budget-app/core';
+import { SYNC_CHOICES, currency } from '@budget-app/core';
 import { COMMON_CURRENCIES, clearSampleData, loadSampleData, saveCurrency } from '@/lib/setup';
 import { useConfirm } from '@/components/Confirm';
 import { toast } from '@/lib/toast';
@@ -70,6 +70,16 @@ export default function Settings() {
       load(); refreshNow();
     } catch (e) { toast(`Restore stopped: ${e instanceof Error ? e.message : String(e)}. Run it again with the same file.`, { error: true }); }
     finally { setRestoring(''); }
+  };
+  // How often the scheduled sync runs for this account (read on its own, so Settings still works on a database that doesn't have the column yet).
+  const [syncEvery, setSyncEvery] = useState<number | null>(null);
+  useEffect(() => { supabase.from('user_prefs').select('sync_every').maybeSingle().then(({ data }) => setSyncEvery((data as any)?.sync_every ?? null)); }, []);
+  const changeSync = async (every: number) => {
+    const before = syncEvery;
+    setSyncEvery(every);
+    const { error } = await supabase.from('user_prefs').upsert({ sync_every: every, updated_at: new Date().toISOString() });
+    if (error) { setSyncEvery(before); toast(/sync_every/.test(error.message) ? 'This needs the newest database update (supabase db push).' : error.message, { error: true }); }
+    else toast('Saved');
   };
   const changeCurrency = async (c: string) => { try { await saveCurrency(c); setCode(c); } catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); } };
   const [ask, confirmUi] = useConfirm();
@@ -144,7 +154,13 @@ export default function Settings() {
         {session?.user.app_metadata?.demo === true
           ? <Text style={{ color: t.muted, fontSize: 13 }}>This is a demo account, so linking a bank is turned off.</Text>
           : <PlaidLinkButton onDone={done} onError={setMsg} />}
-        <Text style={{ color: t.muted, fontSize: 13 }}>New transactions sync every morning at about 5 AM, or use Sync now on the Accounts tab.</Text>
+        <Text style={{ color: t.text, fontWeight: '600', marginTop: 4 }}>Sync automatically</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {SYNC_CHOICES.map((c) => <Chip key={c.every} label={c.label} on={(syncEvery ?? 24) === c.every} onPress={() => changeSync(c.every)} />)}
+        </View>
+        <Text style={{ color: t.muted, fontSize: 13 }}>
+          {(() => { const c = SYNC_CHOICES.find((x) => x.every === (syncEvery ?? 24)); return c?.every === 0 ? 'Nothing syncs on its own.' : `Syncs ${c?.label.toLowerCase()}${c?.about ? ` (${c.about})` : ', counted from 5 AM'}.`; })()} Sync now on the Accounts tab works at any time. Banks usually post new transactions once or twice a day, so syncing more often mostly helps you see them sooner after they post.
+        </Text>
       </Card>
       {!!msg && <Text style={{ color: t.muted, marginTop: 12 }}>{msg}</Text>}
 

@@ -1,7 +1,8 @@
 // Syncs bank connections.
-//   • Daily cron (x-cron-secret header, body {scheduled:true}): every user's connections, but only
-//     in the run that lands at 5 AM in APP_TIMEZONE (cron fires every hour).
-//     Add {force:true} to run immediately.
+//   • Scheduled (x-cron-secret header, body {scheduled:true}): cron fires every hour; each user's
+//     connections are synced in the runs their setting asks for (user_prefs.sync_every: every N
+//     hours counted from 5 AM in APP_TIMEZONE; no setting = once a day at 5 AM; 0 = never).
+//     Add {force:true} to run everyone immediately.
 //   • Signed-in user ("Sync now", or after fixing a connection): their connections,
 //     or just one with {itemId}.
 // Afterwards, loan payments are copied and loan interest logged (see _shared/loans.ts), and
@@ -9,7 +10,7 @@
 import { json, preflight } from '../_shared/cors.ts';
 import { adminClient, isCronCall, userIdFrom } from '../_shared/supabase.ts';
 import { syncItem, type PlaidItemRow, type SyncResult } from '../_shared/sync.ts';
-import { hourIn, todayIn } from '../_shared/core/index.ts';
+import { hourIn, syncDue, todayIn } from '../_shared/core/index.ts';
 import { processLoans, type LoanResult } from '../_shared/loans.ts';
 import { pairRecentTransfers } from '../_shared/transfers.ts';
 
@@ -23,8 +24,16 @@ Deno.serve(async (req) => {
 
     if (isCronCall(req)) {
       const tz = Deno.env.get('APP_TIMEZONE') ?? 'UTC';
-      if (body.scheduled && !body.force && hourIn(tz) !== 5) {
-        return json({ skipped: `Not 5 AM in ${tz} (hour ${hourIn(tz)}).` });
+      if (body.scheduled && !body.force) {
+        // Who is due this hour. If the setting can't be read (the column isn't there yet), everyone is on once a day.
+        const hour = hourIn(tz);
+        const { data: prefs } = await admin.from('user_prefs').select('user_id, sync_every');
+        const every = new Map((prefs ?? []).map((p: any) => [p.user_id as string, p.sync_every as number | null]));
+        const { data: owners, error: ownersError } = await admin.from('plaid_items').select('user_id');
+        if (ownersError) throw new Error(ownersError.message);
+        const due = [...new Set((owners ?? []).map((o: any) => o.user_id as string))].filter((u) => syncDue(hour, every.get(u)));
+        if (!due.length) return json({ skipped: `Nobody is due at hour ${hour} in ${tz}.` });
+        query = query.in('user_id', due);
       }
     } else {
       const userId = await userIdFrom(req);

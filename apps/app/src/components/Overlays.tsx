@@ -8,7 +8,7 @@ import { RISE } from '@/lib/motion';
 import { useEffect } from 'react';
 import { backOnline, useOffline } from '@/lib/offline';
 import { refreshNow, usePullState } from '@/lib/pullRefresh';
-import { useTheme } from '@/lib/theme';
+import { useScheme, useTheme } from '@/lib/theme';
 import { dismissToast, runUndo, useToast } from '@/lib/toast';
 
 export function Toaster() {
@@ -17,18 +17,21 @@ export function Toaster() {
   const insets = useSafeAreaInsets();
   const m = useToast();
   const off = useOffline().offline;
+  const dark = useScheme() === 'dark';
   if (!m) return null;
+  // Light mode: a dark message on the light page. Dark mode: a raised dark surface with light text (not a white slab).
+  const bg = dark ? '#34342f' : t.text, fg = dark ? t.text : t.bg;
   return (
     <View pointerEvents="box-none" style={[styles.toastWrap, { bottom: (wide ? 24 : Math.max(insets.bottom, 12) + 72) + (off ? 38 : 0) }]}>
-      <View key={m.id} style={[styles.toast, RISE, { backgroundColor: t.text }]} accessibilityRole="alert">
-        {m.error && <Ionicons name="alert-circle" size={18} color={t.bg} />}
-        <Text style={{ color: t.bg, fontSize: 14, fontWeight: '600', flexShrink: 1 }} numberOfLines={2}>{m.text}</Text>
+      <View key={m.id} style={[styles.toast, RISE, { backgroundColor: bg }, dark && { borderWidth: 1, borderColor: '#4a4a44' }]} accessibilityRole="alert">
+        {m.error && <Ionicons name="alert-circle" size={18} color={fg} />}
+        <Text style={{ color: fg, fontSize: 14, fontWeight: '600', flexShrink: 1 }} numberOfLines={2}>{m.text}</Text>
         {m.undo && (
-          <Pressable onPress={() => runUndo(m)} hitSlop={10} accessibilityLabel="Undo" style={[styles.undo, { borderColor: t.bg + '55' }]}>
-            <Text style={{ color: t.bg, fontWeight: '800', fontSize: 13 }}>Undo</Text>
+          <Pressable onPress={() => runUndo(m)} hitSlop={10} accessibilityLabel="Undo" style={[styles.undo, { borderColor: fg + '55' }]}>
+            <Text style={{ color: fg, fontWeight: '800', fontSize: 13 }}>Undo</Text>
           </Pressable>
         )}
-        <Pressable onPress={dismissToast} hitSlop={10} accessibilityLabel="Dismiss message"><Ionicons name="close" size={16} color={t.bg} /></Pressable>
+        <Pressable onPress={dismissToast} hitSlop={10} accessibilityLabel="Dismiss message"><Ionicons name="close" size={16} color={fg} /></Pressable>
       </View>
     </View>
   );

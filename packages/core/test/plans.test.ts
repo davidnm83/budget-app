@@ -34,6 +34,15 @@ describe('payment plans', () => {
     expect(s[11].balanceAfter).toBe(0);
   });
 
+  it('adds a fixed monthly fee to every instalment, and stops it when the plan is paid off early', () => {
+    const s = planSchedule(plan({ monthlyFee: 4.5, setupFee: 10 }));
+    expect(s[0].total).toBe(114.5); expect(s[1].total).toBe(104.5);
+    expect(sum(s.map((x) => x.monthlyFee))).toBe(54);
+    const g = planProgress(plan({ monthlyFee: 4.5 }), '2026-04-20');
+    expect([g.monthly, g.costPaid, g.costLeft]).toEqual([104.5, 18, 36]);
+    expect(sum(planSchedule(plan({ monthlyFee: 4.5, closedOn: '2026-04-01' })).map((x) => x.monthlyFee))).toBe(13.5);
+  });
+
   it('reports progress: what is paid, what is left, and the next instalment', () => {
     const g = planProgress(plan({ setupFee: 24 }), '2026-04-20');
     expect([g.done, g.count, g.paid, g.left, g.costPaid, g.costLeft]).toEqual([4, 12, 400, 800, 24, 0]);

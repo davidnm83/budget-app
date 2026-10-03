@@ -71,11 +71,11 @@ function PlanDetail({ t, plan, accounts, onClose, onChanged, onEdit }: { t: Them
   return (
     <Sheet title={plan.description} onClose={onClose}>
       <Text style={{ color: t.muted }}>
-        {formatMoney(plan.principal)} on {name(plan.accountId)}, {plan.months} months{plan.apr ? ` at ${plan.apr}%` : ', no interest'}{plan.setupFee ? `, ${formatMoney(plan.setupFee)} fee` : ''}.
+        {formatMoney(plan.principal)} on {name(plan.accountId)}, {plan.months} months{plan.apr ? ` at ${plan.apr}%` : ', no interest'}{plan.monthlyFee ? `, ${formatMoney(plan.monthlyFee)} fee a month` : ''}{plan.setupFee ? `, ${formatMoney(plan.setupFee)} one-time fee` : ''}.{!plan.transactionId ? ' Against the card’s balance.' : ''}
         {plan.payingAccountId ? ` Paid from ${name(plan.payingAccountId)}.` : ''}
       </Text>
       <Text style={{ color: t.text }}>
-        {g.finished ? 'Finished.' : `${formatMoney(g.left)} of the purchase still to come${g.costLeft ? `, plus ${formatMoney(g.costLeft)} interest` : ''}.`} Fee and interest so far: {formatMoney(g.costPaid)}.
+        {g.finished ? 'Finished.' : `${formatMoney(g.left)} still to come${g.costLeft ? `, plus ${formatMoney(g.costLeft)} in ${plan.monthlyFee ? 'fees and interest' : 'interest'}` : ''}.`} Fees and interest so far: {formatMoney(g.costPaid)}.
       </Text>
       <View>
         {s.map((x) => {
@@ -84,7 +84,7 @@ function PlanDetail({ t, plan, accounts, onClose, onChanged, onEdit }: { t: Them
             <View key={x.n} style={[styles.between, { paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }]}>
               <Ionicons name={past ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={past ? t.accent : t.muted} />
               <Text style={{ color: past ? t.text : t.muted, flex: 1 }}>{shortDate(x.date)}{skipped ? ' · recorded by you' : ''}</Text>
-              <Text style={{ color: t.muted, fontSize: 12 }}>{x.interest + x.fee > 0 ? `${formatMoney(x.principal)} + ${formatMoney(x.interest + x.fee)}` : ''}</Text>
+              <Text style={{ color: t.muted, fontSize: 12 }}>{x.interest + x.fee + x.monthlyFee > 0 ? `${formatMoney(x.principal)} + ${formatMoney(x.interest + x.fee + x.monthlyFee)}` : ''}</Text>
               <Text style={{ color: past ? t.text : t.muted, fontVariant: ['tabular-nums'], minWidth: 76, textAlign: 'right' }}>{formatMoney(x.total)}</Text>
             </View>
           );
@@ -111,6 +111,10 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
   const [months, setMonths] = useState(String(from.months ?? 12));
   const [fee, setFee] = useState(from.setupFee ? String(from.setupFee) : '');
   const [apr, setApr] = useState(from.apr ? String(from.apr) : '');
+  const [monthlyFee, setMonthlyFee] = useState(from.monthlyFee ? String(from.monthlyFee) : '');
+  // What the plan is for: one purchase in the app, or an amount of the card's balance.
+  const [mode, setMode] = useState<'purchase' | 'balance'>(plan ? (plan.transactionId ? 'purchase' : 'balance') : seed?.transactionId ? 'purchase' : 'balance');
+  const [offset, setOffset] = useState(plan ? plan.offsetStart : true);
   const [categoryId, setCategoryId] = useState<string | null>(from.categoryId ?? null);
   const [costCat, setCostCat] = useState<string | null>(from.interestCategoryId ?? null);
   const [payFrom, setPayFrom] = useState<string | null>(from.payingAccountId ?? null);
@@ -133,28 +137,29 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
       setCostCat((c) => c ?? list.find((x) => x.kind === 'expense' && /interest/i.test(x.name))?.id ?? list.find((x) => x.kind === 'expense' && /fee/i.test(x.name))?.id ?? null);
     });
   }, []);
-  const p = parseMoney(amount), n = Math.round(Number(months)), f = fee.trim() ? parseMoney(fee) : 0, r = apr.trim() ? Number(apr) : 0, d = toIsoDate(start);
-  const good = !isNaN(p) && p > 0 && n >= 1 && n <= 120 && !isNaN(f) && f >= 0 && !isNaN(r) && r >= 0 && !!d;
-  const draft = useMemo(() => (good ? { id: 'draft', description, principal: Math.abs(p), months: n, startDate: d as string, setupFee: f, apr: r } : null), [good, description, p, n, d, f, r]);
+  const p = parseMoney(amount), n = Math.round(Number(months)), f = fee.trim() ? parseMoney(fee) : 0, r = apr.trim() ? Number(apr) : 0, mf = monthlyFee.trim() ? parseMoney(monthlyFee) : 0, d = toIsoDate(start);
+  const good = !isNaN(p) && p > 0 && n >= 1 && n <= 120 && !isNaN(f) && f >= 0 && !isNaN(r) && r >= 0 && !isNaN(mf) && mf >= 0 && !!d;
+  const draft = useMemo(() => (good ? { id: 'draft', description, principal: Math.abs(p), months: n, startDate: d as string, setupFee: f, apr: r, monthlyFee: mf } : null), [good, description, p, n, d, f, r, mf]);
   const schedule = draft ? planSchedule(draft) : [];
-  const interest = schedule.reduce((s, x) => s + x.interest, 0);
+  const interest = schedule.reduce((s, x) => s + x.interest, 0), monthlyFees = schedule.reduce((s, x) => s + x.monthlyFee, 0);
   const started = !!d && d <= now; // some instalments are already in the past
   const pastCount = schedule.filter((x) => x.date <= now).length;
 
   // Purchases on this card for this amount, to link the plan to (when it wasn't started from one).
   useEffect(() => {
-    if (!accountId || isNaN(p) || p <= 0) { setFound([]); return; }
+    if (mode !== 'purchase' || !accountId || isNaN(p) || p <= 0) { setFound([]); return; }
     supabase.from('transaction_list').select('id, date, amount, display_name').eq('account_id', accountId).gte('amount', -Math.abs(p) - 0.005).lte('amount', -Math.abs(p) + 0.005)
       .order('date', { ascending: false }).limit(20).then(({ data }) => setFound((data ?? []).map((x: any) => ({ ...x, amount: Number(x.amount) }))));
-  }, [accountId, amount]);
+  }, [accountId, amount, mode]);
   const linked = found.find((x) => x.id === txnId);
 
   const save = async () => {
     if (!description.trim()) { setError('Give it a name, e.g. what you bought.'); return; }
     if (!accountId) { setError('Choose the card.'); return; }
-    if (!draft) { setError('Check the amount, months, fee, interest and date.'); return; }
+    if (!draft) { setError('Check the amount, months, fees, interest and date.'); return; }
+    if (mode === 'balance' && !categoryId) { setError('Choose the budget category the instalments count under.'); return; }
     setBusy(true); setError('');
-    const input: PlanInput = { ...draft, description: description.trim(), accountId, transactionId: txnId, categoryId, interestCategoryId: costCat, payingAccountId: payFrom,
+    const input: PlanInput = { ...draft, description: description.trim(), accountId, transactionId: mode === 'purchase' ? txnId : null, offsetStart: mode === 'balance' && offset, categoryId, interestCategoryId: costCat, payingAccountId: payFrom,
       postCharges: post, postFee, countFrom: started && past === 'skip' ? (plan?.countFrom ?? addDays(now, 1)) : null, closedOn: plan?.closedOn ?? null };
     try { if (plan) await updatePlan(plan, input); else await createPlan(input); toast(plan ? 'Plan saved' : 'Plan added'); onSaved(); onClose(); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -184,14 +189,17 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
         <View style={{ flex: 1 }}><Field t={t} label="One-time fee"><TextInput value={fee} onChangeText={setFee} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={t.muted} style={input} accessibilityLabel="One-time fee" /></Field></View>
         <View style={{ flex: 1 }}><Field t={t} label="Interest (% a year)"><TextInput value={apr} onChangeText={setApr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={t.muted} style={input} accessibilityLabel="Interest percent a year" /></Field></View>
       </View>
+      <Field t={t} label="Fixed monthly fee" hint="For cards that charge the same fee every month, with or instead of interest. If yours is a percentage of the amount, enter what that comes to in dollars.">
+        <TextInput value={monthlyFee} onChangeText={setMonthlyFee} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={t.muted} style={input} accessibilityLabel="Fixed monthly fee" />
+      </Field>
       {draft && (
         <Text style={{ color: t.text }}>
           {n} payment{n === 1 ? '' : 's'} of {formatMoney(planProgress(draft, now).monthly)}, ending {shortDate(schedule[schedule.length - 1].date)}.
-          {interest + f > 0 ? ` Costs ${formatMoney(interest + f)} in all (${[f ? `${formatMoney(f)} fee` : '', interest ? `${formatMoney(interest)} interest` : ''].filter(Boolean).join(' + ')}).` : ' No fee or interest.'}
+          {interest + f + monthlyFees > 0 ? ` Costs ${formatMoney(interest + f + monthlyFees)} in all (${[f ? `${formatMoney(f)} one-time fee` : '', monthlyFees ? `${formatMoney(monthlyFees)} in monthly fees` : '', interest ? `${formatMoney(interest)} interest` : ''].filter(Boolean).join(' + ')}).` : ' No fees or interest.'}
         </Text>
       )}
       {row('Budget category', catLabel(categoryId), 'Choose (what the purchase was for)', () => setPick('cat'))}
-      {(f > 0 || r > 0) && (
+      {(f > 0 || r > 0 || mf > 0) && (
         <>
           {row('Category for the fee and interest', catLabel(costCat), 'Choose', () => setPick('cost'))}
           {f > 0 && (
@@ -203,13 +211,13 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
               <Switch value={postFee} onValueChange={setPostFee} accessibilityLabel="Add the one-time fee as a transaction" />
             </View>
           )}
-          {r > 0 && (
+          {(r > 0 || mf > 0) && (
             <View style={styles.between}>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: t.text }}>Add the interest as transactions</Text>
-                <Text style={{ color: t.muted, fontSize: 12 }}>Turn off if your statement lists the plan’s interest each month.</Text>
+                <Text style={{ color: t.text }}>Add the {r > 0 && mf > 0 ? 'interest and monthly fee' : mf > 0 ? 'monthly fee' : 'interest'} as transactions</Text>
+                <Text style={{ color: t.muted, fontSize: 12 }}>Turn off if your statement lists {r > 0 && mf > 0 ? 'them' : 'it'} each month.</Text>
               </View>
-              <Switch value={post} onValueChange={setPost} accessibilityLabel="Add the interest as transactions" />
+              <Switch value={post} onValueChange={setPost} accessibilityLabel="Add the monthly charges as transactions" />
             </View>
           )}
         </>
@@ -219,6 +227,11 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
           <View style={styles.chips}>{cash.map((a) => <Chip key={a.id} label={a.name} on={payFrom === a.id} onPress={() => setPayFrom(payFrom === a.id ? null : a.id)} />)}</View>
         </Field>
       )}
+      <Field t={t} label="What’s on the plan">
+        <Segmented value={mode} onChange={setMode} options={[{ value: 'purchase', label: 'A purchase' }, { value: 'balance', label: 'Part of the balance' }]} />
+      </Field>
+      {mode === 'purchase' ? (
+        <>
       <Field t={t} label="The purchase" hint={txnId ? 'It stops counting as spending in the month it was made; the instalments count instead.' : 'Not linked. If the purchase is in the app, link it; otherwise make sure it is categorized as a transfer so it isn’t counted twice.'}>
         <Pressable onPress={() => found.length && setPick('txn')} style={[styles.input, styles.pick, { borderColor: t.line, backgroundColor: t.card }]}>
           <Text style={{ color: txnId ? t.text : t.muted, flex: 1 }} numberOfLines={1}>
@@ -227,6 +240,16 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
           {found.length > 0 && <Ionicons name="chevron-down" size={16} color={t.muted} />}
         </Pressable>
       </Field>
+        </>
+      ) : (
+        <View style={styles.between}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text }}>Take this amount out of {catLabel(categoryId) || 'the category'} when the plan starts</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }}>It was already counted as spending when it was charged to the card. On: it comes out once on the first instalment date and the instalments put it back month by month, so nothing is counted twice. Off: the instalments are simply added.</Text>
+          </View>
+          <Switch value={offset} onValueChange={setOffset} accessibilityLabel="Take this amount out of the category when the plan starts" />
+        </View>
+      )}
       {started && pastCount > 0 && (
         <Field t={t} label={`The ${pastCount} instalment${pastCount === 1 ? '' : 's'} already past`} hint={past === 'add' ? 'Each one is added to the budget of its month.' : 'They show as paid in the plan, but nothing is added to past months. Use this if you already recorded them yourself.'}>
           <Segmented value={past} onChange={setPast} options={[{ value: 'add', label: 'Add to past months' }, { value: 'skip', label: 'Already recorded' }]} />

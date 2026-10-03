@@ -49,7 +49,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   const [backfill, setBackfill] = useState(true);
   const [matching, setMatching] = useState<number | null>(null);
   // Split editor (TXN-6): null = not split; otherwise the parts being edited.
-  const [parts, setParts] = useState<{ category_id: string | null; amount: string; notes: string }[] | null>(null);
+  // `touched`: you typed this part's amount yourself, so it is left alone when the rest is filled in.
+  const [parts, setParts] = useState<{ category_id: string | null; amount: string; notes: string; touched?: boolean }[] | null>(null);
   const [pickFor, setPickFor] = useState<number | null>(null);
   const [picking, setPicking] = useState(false);
   const [suggested, setSuggested] = useState<string[]>([]);
@@ -76,7 +77,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
           if (p) setPair({ id: p.id, date: p.date, amount: Number(p.amount), account: p.account_name });
         }
         const sp = (tx.transaction_splits ?? []) as any[];
-        setParts(sp.length ? sp.map((p) => ({ category_id: p.category_id, amount: Number(p.amount).toFixed(2), notes: p.notes ?? '' })) : null);
+        setParts(sp.length ? sp.map((p) => ({ category_id: p.category_id, amount: Number(p.amount).toFixed(2), notes: p.notes ?? '', touched: true })) : null);
       }
       setCats((c ?? []) as Category[]); storeCategories((c ?? []) as Category[]);
     })();
@@ -113,15 +114,26 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   const split = !!parts && parts.length > 0;
   const shownSuggested = suggested.filter((x) => cats.some((c) => c.id === x)).slice(0, 5);
   const total = round2(parseMoney(amount));
-  const partsSum = round2((parts ?? []).reduce((s2, p) => s2 + (parseMoney(p.amount) || 0), 0));
+  // A part's amount as it counts. On an expense, a number typed without a sign is money out (negative),
+  // like the transaction itself; start it with + for a part that came back (a refund inside the purchase).
+  const partValue = (v: string) => { const n = parseMoney(v); return isNaN(n) ? 0 : total < 0 && n > 0 && !v.trim().startsWith('+') ? -n : n; };
+  const partsSum = round2((parts ?? []).reduce((s2, p) => s2 + partValue(p.amount), 0));
   const remaining = round2(total - partsSum);
   const catName = (cid: string | null) => { const c = cats.find((x: any) => x.id === cid) as any; return c ? `${categoryIcon(c.name, c.icon)} ${c.name}` : 'Choose category'; };
   const startSplit = () => setParts([
-    { category_id: categoryId, amount: amount, notes: '' },
+    { category_id: categoryId, amount: total.toFixed(2), notes: '' },
     { category_id: null, amount: '0.00', notes: '' },
   ]);
   const setPart = (i: number, patch: Partial<{ category_id: string | null; amount: string; notes: string }>) =>
     setParts((ps) => ps!.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  // Typing an amount: the last part you haven't typed in yourself takes whatever is left of the total.
+  const setPartAmount = (i: number, v: string) => setParts((ps) => {
+    const next = ps!.map((p, j) => (j === i ? { ...p, amount: v, touched: true } : p));
+    let fill = -1;
+    for (let j = next.length - 1; j >= 0; j--) if (j !== i && !next[j].touched) { fill = j; break; }
+    if (fill >= 0) next[fill] = { ...next[fill], amount: round2(total - next.reduce((s2, p, j) => s2 + (j === fill ? 0 : partValue(p.amount)), 0)).toFixed(2) };
+    return next;
+  });
 
   const resetToBank = async () => {
     setBusy(true);
@@ -171,7 +183,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       if (del.error) { setBusy(false); setError(del.error.message); return; }
     }
     if (split) {
-      const ins = await supabase.from('transaction_splits').insert(parts!.map((p) => ({ transaction_id: txn.id, category_id: p.category_id, amount: round2(parseMoney(p.amount)), notes: p.notes.trim() || null })));
+      const ins = await supabase.from('transaction_splits').insert(parts!.map((p) => ({ transaction_id: txn.id, category_id: p.category_id, amount: round2(partValue(p.amount)), notes: p.notes.trim() || null })));
       if (ins.error) { setBusy(false); setError(ins.error.message); return; }
     }
     const { error } = await supabase.from('transactions').update({
@@ -266,7 +278,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
                 <Pressable onPress={() => setPickFor(i)} style={[styles.input, { flex: 1, borderColor: t.line, paddingVertical: 9 }]}>
                   <Text style={{ color: p.category_id ? t.text : t.muted }} numberOfLines={1}>{catName(p.category_id)}</Text>
                 </Pressable>
-                <TextInput value={p.amount} onChangeText={(v) => setPart(i, { amount: v })} keyboardType="numbers-and-punctuation"
+                <TextInput value={p.amount} onChangeText={(v) => setPartAmount(i, v)} keyboardType="numbers-and-punctuation" accessibilityLabel={`Amount of part ${i + 1}`}
+                  onBlur={() => { if (p.amount.trim() && !isNaN(parseMoney(p.amount))) setPart(i, { amount: partValue(p.amount).toFixed(2) }); }}
                   style={[styles.input, { width: 110, textAlign: 'right', color: t.text, borderColor: t.line, paddingVertical: 9 }]} />
                 {parts!.length > 2 && <Pressable onPress={() => setParts(parts!.filter((_, j) => j !== i))} hitSlop={8}><Text style={{ color: t.danger, fontSize: 18 }}>×</Text></Pressable>}
               </View>
@@ -282,6 +295,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
               {Math.abs(remaining) > 0.004 ? `${formatMoney(remaining)} left to assign` : 'Adds up ✓'}
             </Text>
           </View>
+          {total < 0 && <Text style={{ color: t.muted, fontSize: 12 }}>Type amounts without the minus sign; the last part fills in with what’s left. Start a part with + if it’s money back.</Text>}
         </Card>
       )}
       {!split && <Card style={{ padding: 0 }}>

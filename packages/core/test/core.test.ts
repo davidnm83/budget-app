@@ -197,3 +197,17 @@ describe('bills whose amount changed (BIL-7)', () => {
     expect([...matchChanged(dues, txns, matched)]).toEqual([['ins', 't1']]);
   });
 });
+
+import { syncDue } from '../src/index.ts';
+describe('scheduled sync', () => {
+  it('runs at 5 AM by default and on the chosen rhythm otherwise', () => {
+    expect([4, 5, 6].map((h) => syncDue(h, null))).toEqual([false, true, false]);
+    expect([5, 11, 17, 23, 12].map((h) => syncDue(h, 6))).toEqual([true, true, true, true, false]);
+    expect([5, 17, 16].map((h) => syncDue(h, 12))).toEqual([true, true, false]);
+    expect([2, 5, 8, 9].map((h) => syncDue(h, 3))).toEqual([true, true, true, false]);
+    expect([0, 13].map((h) => syncDue(h, 1))).toEqual([true, true]);
+    expect([5, 13].map((h) => syncDue(h, 0))).toEqual([false, false]);
+    expect(syncDue(5, 7)).toBe(true);   // a value the app doesn't offer falls back to once a day
+    expect(syncDue(12, 7)).toBe(false);
+  });
+});
