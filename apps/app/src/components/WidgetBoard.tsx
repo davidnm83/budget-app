@@ -9,7 +9,7 @@ import { riseAfter } from '@/lib/motion';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
-import { entryLabel, keyOf, makeEntry, parseEntry, TitleOverride, Widget, WidgetSettings, WIDGETS, type WidgetCfg, type WidgetDef } from '@/components/Widgets';
+import { entryLabel, FitHeight, keyOf, makeEntry, parseEntry, TitleOverride, Widget, WidgetSettings, WIDGETS, type WidgetCfg, type WidgetDef } from '@/components/Widgets';
 import { useWide } from '@/lib/layout';
 import { useTheme, type Theme } from '@/lib/theme';
 import { afterClose } from '@/lib/useBackToClose';
@@ -75,6 +75,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, 
   const cell = ({ e, i }: { e: string; i: number }, column: boolean) => {
     const [k, cfg] = parseEntry(e);
     const full = cfg.w === 'full';
+    const def = defs.find((w) => w.key === keyOf(e));
     return (
       <Cell key={`${i}:${e}`} editing={editing} index={i} t={t} isOver={over === i && drag !== i}
               onDragStart={() => setDrag(i)} onDragOver={() => setOver(i)} onDrop={() => { if (drag != null) move(drag, i); setDrag(null); setOver(null); }} onDragEnd={() => { setDrag(null); setOver(null); }}>
@@ -85,15 +86,21 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, 
                   <Tool t={t} icon={wide ? 'chevron-back' : 'chevron-up'} label="Move earlier" onPress={() => move(i, i - 1)} off={i === 0} />
                   <Tool t={t} icon={wide ? 'chevron-forward' : 'chevron-down'} label="Move later" onPress={() => move(i, i + 1)} off={i === entries.length - 1} />
                   {wide && <Tool t={t} icon={full ? 'contract-outline' : 'expand-outline'} label={full ? 'Make half width' : 'Make full width'} onPress={() => patch(i, { w: full ? 'half' : 'full' })} />}
-                  {defs.find((w) => w.key === keyOf(e))?.sizable && <Pressable onPress={() => patch(i, { h: cfg.h === 's' ? 'm' : cfg.h === 'l' ? 's' : 'l' })} accessibilityLabel="Change height" hitSlop={6} style={[styles.size, { borderColor: t.line }]}>
+                  {def?.sizable && <Pressable onPress={() => patch(i, { h: cfg.h === 's' ? 'm' : cfg.h === 'l' ? 's' : 'l' })} accessibilityLabel="Change height" hitSlop={6} style={[styles.size, { borderColor: t.line }]}>
                     <Text style={{ color: t.accent, fontSize: 12, fontWeight: '700' }}>{cfg.h === 's' ? 'Short' : cfg.h === 'l' ? 'Tall' : 'Medium'}</Text>
+                  </Pressable>}
+                  {/* Numbers and notes: as tall as they need (Auto), or a fixed size that scrolls. */}
+                  {def?.fits && <Pressable onPress={() => patch(i, { h: !cfg.h ? 's' : cfg.h === 's' ? 'm' : cfg.h === 'm' ? 'l' : undefined })} accessibilityLabel="Change height" hitSlop={6} style={[styles.size, { borderColor: t.line }]}>
+                    <Text style={{ color: t.accent, fontSize: 12, fontWeight: '700' }}>{cfg.h === 's' ? 'Short' : cfg.h === 'm' ? 'Medium' : cfg.h === 'l' ? 'Tall' : 'Auto'}</Text>
                   </Pressable>}
                   {WIDGETS.some((w) => w.key === keyOf(e)) && <Tool t={t} icon="settings-outline" label="Widget settings" onPress={() => setSettings({ index: i, key: keyOf(e), cfg: k === 'spend' ? { source: 'spending', ...cfg } : cfg })} />}
                   <Tool t={t} icon="close" label="Remove widget" onPress={() => { const before = entries; onChange(entries.filter((_, n) => n !== i)); toast('Widget removed', { undo: () => onChange(before) }); }} />
                 </View>
               )}
               <View style={[{ flexGrow: 1 }, editing && { opacity: drag === i ? 0.4 : 1 }]} pointerEvents={editing ? 'none' : 'auto'}>
-                {special?.(k) != null ? <TitleOverride.Provider value={cfg.title || undefined}>{special(k)}</TitleOverride.Provider> : <Widget k={e} refresh={refresh} anchor={anchor} range={range} />}
+                <FitHeight.Provider value={def?.fits ? cfg.h : undefined}>
+                  {special?.(k) != null ? <TitleOverride.Provider value={cfg.title || undefined}>{special(k)}</TitleOverride.Provider> : <Widget k={e} refresh={refresh} anchor={anchor} range={range} />}
+                </FitHeight.Provider>
               </View>
       </Cell>
     );

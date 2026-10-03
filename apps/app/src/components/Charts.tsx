@@ -1,9 +1,9 @@
 // The charts every widget draws with. One look everywhere: thin marks, a quiet grid, colours in a
 // fixed order, a legend whenever there is more than one series, and a readout line that shows
 // the values under the pointer (hover on a computer, tap on a phone).
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useWide } from '@/lib/layout';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { GROW, SPIN } from '@/lib/motion';
 import type { Theme } from '@/lib/theme';
@@ -222,22 +222,61 @@ export function BarChart(props: PlotProps & { stacked?: boolean; barColor?: (i: 
 }
 
 export interface Slice { label: string; value: number; onPress?: () => void }
-/** Shares of a whole: at most seven named slices plus "others", with the total in the middle and a legend that carries the numbers. */
-/** `rows`: how many legend lines there is room for (the last one gathers the rest as "N others"). */
-export function Donut({ t, slices, format, note, size = 132, rows = 8 }: { t: Theme; slices: Slice[]; format: (n: number) => string; note?: string; size?: number; rows?: number }) {
+const LEGEND_ROW = 26, LEGEND_COL = 200;
+/**
+ * Shares of a whole, as a ring with the total in the middle, drawn as big as the space allows.
+ * The legend carries the numbers; it goes beside the ring or under it, whichever leaves the ring
+ * bigger, in two columns when there's room, and scrolls when the parts don't all fit. With the
+ * legend off the ring takes the whole space, and a tap on a slice shows it in the middle (a second
+ * tap opens what's behind it, as on the other charts). At most as many named slices as there are
+ * chart colours; the rest are gathered as "N others".
+ */
+export function Donut({ t, slices, format, note, width, height, legend = true }: { t: Theme; slices: Slice[]; format: (n: number) => string; note?: string; width: number; height: number; legend?: boolean }) {
   const [sel, setSel] = useState<number | null>(null);
-  const keep = slices.length <= rows ? slices.length : Math.max(1, rows - 1);
+  const ring = useRef<View>(null);
+  const most = t.series.length;
+  const keep = slices.length <= most ? slices.length : most - 1;
   const top = slices.slice(0, keep);
   const rest = slices.slice(keep).reduce((s, x) => s + x.value, 0);
   const parts: (Slice & { color: string })[] = top.map((s, i) => ({ ...s, color: t.series[i % t.series.length] }));
   if (rest > 0) parts.push({ label: `${slices.length - keep} others`, value: rest, color: t.muted });
   const total = parts.reduce((s, p) => s + p.value, 0);
   if (total <= 0) return <Text style={{ color: t.muted }}>Nothing to show{note ? ` ${note}` : ''}.</Text>;
-  const R = size / 2, sw = size * 0.2, r = R - sw / 2, C = 2 * Math.PI * r;
+
+  // Beside or under: whichever gives the bigger ring (beside wins a tie: it reads better on a wide card).
+  const GAP = 14;
+  // Beside needs room for a readable legend; on a phone-width card it goes underneath instead.
+  const beside = Math.min(height, width - GAP - LEGEND_COL);
+  const under = Math.min(width, height - GAP - Math.min(parts.length, 3) * LEGEND_ROW);
+  const across = !legend || beside >= under;
+  const size = Math.max(60, Math.floor(!legend ? Math.min(width, height) : Math.max(beside, under)));
+  const room = across ? width - size - GAP : width;
+  // A wide card shares the parts out over columns, each no wider than reads well; the block sits by the ring.
+  const rowsFit = Math.max(1, Math.floor((across ? height : height - size - GAP) / LEGEND_ROW));
+  const cols = across ? Math.max(1, Math.min(3, Math.floor((room + 16) / (LEGEND_COL + 16)), Math.ceil(parts.length / rowsFit))) : 1;
+  const colW = across ? Math.min(300, (room - (cols - 1) * 16) / cols) : room;
+  const legendW = cols * colW + (cols - 1) * 16;
+
+  const R = size / 2, sw = Math.max(14, size * 0.2), r = R - sw / 2, C = 2 * Math.PI * r;
   let acc = 0;
+  const ends = parts.map((p) => (acc += p.value / total));
+  acc = 0;
+  // Which slice is under a tap on the ring: its angle from the top, clockwise.
+  const pickAt = (e: any) => {
+    const el = ring.current as unknown as HTMLElement | null;
+    const box = el?.getBoundingClientRect?.();
+    const x = box ? e.nativeEvent.pageX - box.left - window.scrollX : e.nativeEvent.locationX, y = box ? e.nativeEvent.pageY - box.top - window.scrollY : e.nativeEvent.locationY;
+    const dx = x - R, dy = y - R, d = Math.hypot(dx, dy);
+    if (d < r - sw / 2 - 6 || d > R + 6) { setSel(null); return; }
+    const f = ((Math.atan2(dx, -dy) / (2 * Math.PI)) + 1) % 1;
+    const i = ends.findIndex((v) => f <= v);
+    if (i < 0) return;
+    if (sel === i) parts[i].onPress?.(); else setSel(i);
+  };
+  const shown = sel == null ? null : parts[sel];
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14 }}>
-      <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ flex: 1, flexDirection: across ? 'row' : 'column', alignItems: 'center', justifyContent: across || !legend ? 'center' : 'flex-start', gap: GAP }}>
+      <Pressable ref={ring} onPress={pickAt} style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Chart. Tap a slice for its amount.">
         <Svg width={size} height={size} style={[StyleSheet.absoluteFill, SPIN] as any}>
           {parts.map((p, i) => {
             const len = (p.value / total) * C, off = acc; acc += len;
@@ -246,19 +285,26 @@ export function Donut({ t, slices, format, note, size = 132, rows = 8 }: { t: Th
               strokeDasharray={`${Math.max(0, len - 2)} ${C - Math.max(0, len - 2)}`} strokeDashoffset={-off} transform={`rotate(-90 ${R} ${R})`} />;
           })}
         </Svg>
-        <Text style={{ color: t.text, fontWeight: '700', fontSize: 15, fontVariant: ['tabular-nums'] }}>{format(sel == null ? total : parts[sel].value)}</Text>
-        <Text style={{ color: t.muted, fontSize: 10, maxWidth: size * 0.56, textAlign: 'center', lineHeight: 11 }} numberOfLines={2}>{sel == null ? note ?? 'total' : parts[sel].label}</Text>
-      </View>
-      <View style={{ flex: 1, minWidth: 170, gap: 2 }}>
-        {parts.map((p, i) => (
-          <Pressable key={p.label} onPress={p.onPress} disabled={!p.onPress} onHoverIn={() => setSel(i)} onHoverOut={() => setSel(null)} style={styles.sliceRow}>
-            <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: p.color }} />
-            <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{p.label}</Text>
-            <Text style={{ color: t.muted, fontSize: 12, fontVariant: ['tabular-nums'] }}>{Math.round((p.value / total) * 100)}%</Text>
-            <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'], minWidth: 56, textAlign: 'right' }}>{format(p.value)}</Text>
-          </Pressable>
-        ))}
-      </View>
+        <View style={{ maxWidth: size - sw * 2 - 8, alignItems: 'center' }} pointerEvents="none">
+          <Text style={{ color: t.text, fontWeight: '700', fontSize: size >= 180 ? 20 : 15, fontVariant: ['tabular-nums'] }} numberOfLines={1}>{format(shown ? shown.value : total)}</Text>
+          {shown && <Text style={{ color: t.muted, fontSize: 11, fontVariant: ['tabular-nums'] }}>{Math.round((shown.value / total) * 100)}%</Text>}
+          <Text style={{ color: shown ? t.text : t.muted, fontSize: size >= 180 ? 12 : 10, textAlign: 'center', lineHeight: size >= 180 ? 15 : 12 }} numberOfLines={2}>{shown ? shown.label : note ?? 'total'}</Text>
+          {shown?.onPress && !legend && <Text style={{ color: t.accent, fontSize: 10, marginTop: 2 }}>tap again to open</Text>}
+        </View>
+      </Pressable>
+      {legend && (
+        <ScrollView style={{ width: legendW, flex: across ? undefined : 1, maxHeight: across ? height : undefined, alignSelf: across ? 'center' : 'stretch' }} contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 16 }} showsVerticalScrollIndicator nestedScrollEnabled>
+          {parts.map((p, i) => (
+            <Pressable key={p.label} onPress={p.onPress} disabled={!p.onPress} onHoverIn={() => setSel(i)} onHoverOut={() => setSel(null)}
+              style={({ hovered }: any) => [styles.sliceRow, { width: colW }, hovered && p.onPress && { opacity: 0.7 }]}>
+              <View style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: p.color }} />
+              <Text style={{ color: t.text, fontSize: 13, flex: 1 }} numberOfLines={1}>{p.label}</Text>
+              <Text style={{ color: t.muted, fontSize: 12, fontVariant: ['tabular-nums'] }}>{Math.round((p.value / total) * 100)}%</Text>
+              <Text style={{ color: t.text, fontSize: 13, fontVariant: ['tabular-nums'], minWidth: 56, textAlign: 'right' }}>{format(p.value)}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -267,5 +313,5 @@ const styles = StyleSheet.create({
   legend: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, rowGap: 2, minHeight: 18 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   readout: { flexDirection: 'row', alignItems: 'center', columnGap: 10, height: 18, overflow: 'hidden' },
-  sliceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 24 },
+  sliceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, height: LEGEND_ROW },
 });
