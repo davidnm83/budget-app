@@ -7,6 +7,7 @@ import { refreshPlannerBadge, usePlannerBadge } from '@/lib/badges';
 import { useWide } from '@/lib/layout';
 import { EASE, ENTER, PRESS } from '@/lib/motion';
 import { setPanel } from '@/lib/panels';
+import { useSwipeTabs } from '@/lib/swipeTabs';
 import { useScheme, useTheme } from '@/lib/theme';
 
 // Every signed-in page lives here, so the navigation bar stays put wherever you are.
@@ -66,6 +67,11 @@ function FloatingBar({ state, descriptors, navigation }: any) {
   const current = state.routes[state.index]?.name;
   const onTab = TABS.some((x) => x.name === current);
   const dark = useScheme() === 'dark';
+  // Swipe sideways on one of the five tabs to reach the one beside it.
+  useSwipeTabs(onTab, (dir) => {
+    const i = TABS.findIndex((x) => x.name === current) + dir;
+    if (i >= 0 && i < TABS.length) navigation.navigate(TABS[i].name);
+  });
   return (
     <View pointerEvents="box-none" style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       {/* Content fades out as it passes under the bar, down to the edge of the screen. */}
