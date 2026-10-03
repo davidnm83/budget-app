@@ -54,6 +54,7 @@ export function Empty({ text }: { text: string }) {
 }
 
 const styles = StyleSheet.create({
+  today: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 1, borderRadius: 10 },
   btn: { borderRadius: 12, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', minHeight: 44 },
   btnText: { fontSize: 15, fontWeight: '600' },
   card: { borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, padding: 14 },
@@ -103,13 +104,20 @@ export function Chip({ label, on, onPress }: { label: string; on?: boolean; onPr
   );
 }
 
-/** ‹ September 2026 › */
-export function Stepper({ label, onPrev, onNext, nextDisabled }: { label: string; onPrev: () => void; onNext: () => void; nextDisabled?: boolean }) {
+/** ‹ September 2026 ›. With `onToday`, a line under the label says whether this is the present one and, when it isn't, jumps back to it. */
+export function Stepper({ label, onPrev, onNext, nextDisabled, onToday, here, hereText = 'This month' }: {
+  label: string; onPrev: () => void; onNext: () => void; nextDisabled?: boolean; onToday?: () => void; here?: boolean; hereText?: string;
+}) {
   const t = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
       <Pressable onPress={onPrev} hitSlop={8} accessibilityLabel="Previous" style={styles.step}><Ionicons name="chevron-back" size={22} color={t.accent} /></Pressable>
-      <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>{label}</Text>
+      <Pressable onPress={onToday} disabled={!onToday || here} style={{ alignItems: 'center' }} accessibilityLabel={onToday && !here ? `${label}. Go to ${hereText.toLowerCase()}` : undefined}>
+        <Text style={{ color: t.text, fontSize: 17, fontWeight: '700' }}>{label}</Text>
+        {onToday && (here
+          ? <Text style={{ color: t.muted, fontSize: 12 }}>{hereText}</Text>
+          : <View style={[styles.today, { backgroundColor: t.accent + '1f' }]}><Ionicons name="return-down-back" size={12} color={t.accent} /><Text style={{ color: t.accent, fontSize: 12, fontWeight: '600' }}>{hereText}</Text></View>)}
+      </Pressable>
       <Pressable onPress={onNext} disabled={nextDisabled} hitSlop={8} accessibilityLabel="Next" style={styles.step}>
         <Ionicons name="chevron-forward" size={22} color={nextDisabled ? t.line : t.accent} />
       </Pressable>

@@ -133,7 +133,7 @@ export default function Bills({ mode = 'month', month: monthProp, embedded }: { 
 
         {view === 'month' && (
           <>
-            {!monthProp && <Stepper label={monthName(month)} onPrev={() => setMonth(addMonths(month, -1))} onNext={() => setMonth(addMonths(month, 1))} />}
+            {!monthProp && <Stepper label={monthName(month)} onPrev={() => setMonth(addMonths(month, -1))} onNext={() => setMonth(addMonths(month, 1))} here={month === monthOf(today())} onToday={() => setMonth(monthOf(today()))} />}
             <View style={styles.tiles}>
               <Tile t={t} label="Still to pay" value={formatMoney(toPay)} strong />
               <Tile t={t} label="Bills this month" value={formatMoney(totalBills)} />
