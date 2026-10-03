@@ -59,8 +59,8 @@ function Enter({ name, children }: { name: string; children: React.ReactNode }) 
   useEffect(() => { registerScene(name, ref.current as unknown as HTMLElement | null); return () => registerScene(name, null); }, [name]);
   useFocusEffect(useCallback(() => {
     setN((x) => x + 1);
-    enterScene(ref.current as unknown as HTMLElement | null); // reached by a swipe: slide in from that side
     setActiveScene(ref.current as unknown as HTMLElement | null);
+    enterScene(ref.current as unknown as HTMLElement | null); // reached by a swipe: slide in from that side
     return () => setActiveScene(null);
   }, []));
   const wide = useWide(); // phones switch pages plainly (or slide, after a swipe); the fade is for wide screens
@@ -77,13 +77,14 @@ function FloatingBar({ state, descriptors, navigation }: any) {
   // Swipe sideways along the bar to reach the tab beside it.
   const beside = (dir: 1 | -1) => TABS[TABS.findIndex((x) => x.name === current) + dir] ?? null;
   useSwipeTabs(onTab, (dir) => beside(dir)?.name ?? null, (dir) => { const x = beside(dir); if (x) navigation.navigate(x.name); });
-  // Open the tabs either side ahead of time (once things are quiet), so a swipe can bring them along.
+  // Open the other tabs ahead of time, so a swipe can bring them along: the ones either side first, then
+  // the rest one at a time (quick swipes in a row reach them), once things are quiet after starting.
   useEffect(() => {
     if (!onTab) return;
-    const id = setTimeout(() => {
-      for (const dir of [1, -1] as const) { const x = beside(dir); if (x && !hasScene(x.name)) navigation.dispatch({ type: 'PRELOAD', payload: { name: x.name } }); }
-    }, 1500);
-    return () => clearTimeout(id);
+    const i = TABS.findIndex((x) => x.name === current);
+    const order = [...TABS.keys()].sort((a, b) => Math.abs(a - i) - Math.abs(b - i)).map((k) => TABS[k].name).filter((n) => n !== current);
+    const ids = order.map((name, k) => setTimeout(() => { if (!hasScene(name)) navigation.dispatch({ type: 'PRELOAD', payload: { name } }); }, 1200 + k * 500));
+    return () => ids.forEach(clearTimeout);
   }, [current, onTab]);
   return (
     <View pointerEvents="box-none" style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 12) }]}>

@@ -51,9 +51,21 @@ function hideNext(on: boolean) {
 let tidy: (() => void) | null = null;
 function runTidy() { const f = tidy; tidy = null; f?.(); }
 
+// From letting go until the new page has taken over (or a slide back has finished), a new swipe waits:
+// starting one mid-slide put the old page back on screen for a moment. A finger that's already moving
+// carries on from where it is once the slide is done.
+let busy = false;
+let busyTimer: ReturnType<typeof setTimeout> | null = null;
+function setBusy(on: boolean, ms = 0) {
+  if (busyTimer) { clearTimeout(busyTimer); busyTimer = null; }
+  busy = on;
+  if (on && ms) busyTimer = setTimeout(() => { runTidy(); busy = false; }, ms);
+}
+
 /** Called by a tab's page as it comes into view. */
 export function enterScene(el: HTMLElement | null) {
   runTidy();
+  setBusy(false);
   const d = enterFrom; enterFrom = 0;
   if (typeof document === 'undefined') return;
   if (d && el?.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -112,7 +124,8 @@ export function useSwipeTabs(enabled: boolean, beside: (dir: 1 | -1) => string |
       if (pair) {
         const { cur, next, w } = pair; pair = null;
         set(cur, 0, 200); set(next, way * w, 200);
-        setTimeout(() => clear(cur, next), 220);
+        tidy = () => clear(cur, next);
+        setBusy(true, 220);
         return;
       }
       if (!scene) return;
@@ -128,11 +141,15 @@ export function useSwipeTabs(enabled: boolean, beside: (dir: 1 | -1) => string |
       if (e.touches[0].clientY < window.innerHeight - ZONE) return; // only along the bottom bar
       if (document.querySelector('[aria-modal="true"]')) return; // a pop-up is open
       if (ownsSideways(e.target as Element)) return;
-      runTidy(); // a slide still settling from the last swipe
       x0 = x; y0 = e.touches[0].clientY; t0 = Date.now(); state = 'maybe'; dx = 0;
     };
     const move = (e: TouchEvent) => {
       if (state === 'idle') return;
+      if (busy) { // the last slide is still settling: this swipe starts from here once it's done
+        x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); state = 'maybe';
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
       dx = e.touches[0].clientX - x0;
       const dy = e.touches[0].clientY - y0;
       if (state === 'maybe') {
@@ -165,10 +182,8 @@ export function useSwipeTabs(enabled: boolean, beside: (dir: 1 | -1) => string |
         const ms = Math.max(120, Math.round(SETTLE_MS * (1 - Math.min(1, Math.abs(dx) / w) * 0.5)));
         set(cur, -dir * w, ms); set(next, 0, ms);
         tidy = () => clear(cur, next);
-        setTimeout(() => {
-          goRef.current(dir);
-          setTimeout(runTidy, 600); // in case the new page doesn't report in
-        }, ms);
+        setBusy(true, ms + 800); // in case the new page doesn't report in
+        setTimeout(() => goRef.current(dir), ms);
         return;
       }
       // The page beside wasn't open yet: it slides in once it is.
@@ -176,6 +191,7 @@ export function useSwipeTabs(enabled: boolean, beside: (dir: 1 | -1) => string |
       const old = scene;
       old?.setAttribute('data-leaving', '');
       hideNext(true);
+      setBusy(true, 800);
       goRef.current(dir);
       setTimeout(() => { if (old) { old.removeAttribute('data-leaving'); old.style.transition = 'none'; old.style.transform = ''; old.style.opacity = ''; } }, 400);
     };
