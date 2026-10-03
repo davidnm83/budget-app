@@ -21,6 +21,18 @@ export interface PaymentPlan {
   monthlyFee?: number;      // a fixed fee charged with every instalment (some cards charge this instead of interest)
   countFrom?: IsoDate | null; // instalments before this are tracked but not added to the budget
   closedOn?: IsoDate | null;  // paid off early on this date
+  /** Changes to single instalments, by number: a different date, what the bank actually billed, the payment that paid it. */
+  instalments?: Record<string, InstalmentChange>;
+}
+
+export interface InstalmentChange {
+  date?: IsoDate;
+  /** What the bank billed for it (purchase part + interest + fees), when that differs by a few cents. The last instalment takes up the difference. */
+  amount?: number;
+  /** The card payment that paid it (a transaction id). */
+  paidBy?: string;
+  /** Its month's budget: the instalment was added to the category's budget, or you said not to. */
+  budget?: 'added' | 'skipped';
 }
 
 export interface Instalment {
@@ -32,6 +44,8 @@ export interface Instalment {
   monthlyFee: number;       // the fixed fee charged every month
   total: number;            // what this instalment adds to the card's bill
   balanceAfter: number;     // of the purchase still on the plan
+  moved: boolean;           // its date or amount was changed by hand
+  paidBy: string | null;    // the card payment linked to it
 }
 
 /** The same day each month, falling back to the month's last day (the 31st → the 30th or 28th). */
@@ -50,17 +64,22 @@ export function planSchedule(p: PaymentPlan): Instalment[] {
   const monthlyFee = round2(Math.max(0, p.monthlyFee ?? 0));
   let balance = p.principal;
   for (let i = 0; i < n; i++) {
-    const date = monthsAfter(p.startDate, i);
+    const ch = p.instalments?.[String(i + 1)] ?? {};
+    const date = ch.date ?? monthsAfter(p.startDate, i);
     if (p.closedOn && date > p.closedOn) {
       // What was left when it was paid off, as one last instalment on that date.
-      if (balance > 0.005) out.push({ n: out.length + 1, date: p.closedOn, principal: round2(balance), interest: 0, fee: 0, monthlyFee: 0, total: round2(balance), balanceAfter: 0 });
+      if (balance > 0.005) out.push({ n: out.length + 1, date: p.closedOn, principal: round2(balance), interest: 0, fee: 0, monthlyFee: 0, total: round2(balance), balanceAfter: 0, moved: false, paidBy: null });
       return out;
     }
     const interest = round2(balance * r);
-    const principal = i === n - 1 ? round2(balance) : round2(payment - interest);
-    balance = round2(balance - principal);
     const fee = i === 0 ? round2(p.setupFee) : 0;
-    out.push({ n: i + 1, date, principal, interest, fee, monthlyFee, total: round2(principal + interest + fee + monthlyFee), balanceAfter: balance });
+    const last = i === n - 1;
+    // A billed amount set by hand: the purchase part is what's left after interest and fees; the last instalment evens it out.
+    const billed = !last && ch.amount != null && isFinite(ch.amount) ? Math.min(balance, Math.max(0, round2(ch.amount - interest - fee - monthlyFee))) : null;
+    const principal = last ? round2(balance) : billed ?? Math.min(balance, round2(payment - interest));
+    balance = round2(balance - principal);
+    out.push({ n: i + 1, date, principal, interest, fee, monthlyFee, total: round2(principal + interest + fee + monthlyFee), balanceAfter: balance,
+      moved: !!ch.date || billed != null, paidBy: ch.paidBy ?? null });
   }
   return out;
 }
@@ -77,7 +96,8 @@ export interface PlanProgress {
 
 export function planProgress(p: PaymentPlan, today: IsoDate): PlanProgress {
   const s = planSchedule(p);
-  const past = s.filter((x) => x.date <= today), future = s.filter((x) => x.date > today);
+  // Paid: dated today or earlier, or linked to the payment that paid it (early).
+  const past = s.filter((x) => x.date <= today || x.paidBy), future = s.filter((x) => !(x.date <= today || x.paidBy));
   const sum = (xs: Instalment[], f: (x: Instalment) => number) => round2(xs.reduce((a, x) => a + f(x), 0));
   const usual = s.find((x) => x.n === Math.min(2, s.length)) ?? s[0];
   return {
