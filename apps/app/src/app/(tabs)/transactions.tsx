@@ -2,6 +2,7 @@
 // The check button beside the search shows only unchecked ones (new arrivals, with a count);
 // tick the circle to mark one reviewed, or tap the row to change it. With it off you see
 // everything, and the circle toggles reviewed. Filters open in a pop-up.
+import { useFocusLoad } from '@/lib/focusLoad';
 import { today } from '@/lib/plan';
 import { Sheet } from '@/components/Forms';
 import { Tile } from '@/components/Tile';
@@ -139,7 +140,7 @@ export default function Transactions() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [sel, rows]);
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  useFocusLoad(reload);
   useLayoutEffect(() => { setOpenId(sel); }, [sel]);
   usePullRefresh(reload);
   useEffect(() => { navigation.setOptions({ tabBarBadge: toReview || undefined }); }, [navigation, toReview]);

@@ -1,5 +1,6 @@
 // Budget tab (BUD-1, 2, 4, 5, 6): this month's budget, past months in a collapsed archive by year,
 // comparisons with other months or years, and a year view of budget vs actual by month.
+import { useFocusLoad } from '@/lib/focusLoad';
 import { today } from '@/lib/plan';
 import { PAGE_MAX } from '@/lib/layout';
 import { PageSkeleton } from '@/components/States';
@@ -70,7 +71,7 @@ export default function BudgetTab() {
       setLoading(false);
     }
   }, [month]);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusLoad(load);
   usePullRefresh(load);
 
   const [showTxns, txnSheet] = useTxnSheet();

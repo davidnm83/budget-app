@@ -4,6 +4,7 @@
 //   3. Budget pace: spent vs where you'd expect to be by today, and the categories running ahead
 //   4. Net worth: today and the change since the 1st
 // Plus any widgets you add (Customize at the bottom); the order and choice are kept per user.
+import { useFocusLoad } from '@/lib/focusLoad';
 import { PAGE_MAX } from '@/lib/layout';
 import { PageSkeleton } from '@/components/States';
 import { usePullRefresh } from '@/lib/pullRefresh';
@@ -93,7 +94,7 @@ export default function Home() {
       setLoading(false);
     }
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusLoad(load);
   usePullRefresh(load);
 
   const now = today();

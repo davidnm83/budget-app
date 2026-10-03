@@ -7,7 +7,7 @@ import { refreshPlannerBadge, usePlannerBadge } from '@/lib/badges';
 import { useWide } from '@/lib/layout';
 import { EASE, ENTER, PRESS } from '@/lib/motion';
 import { setPanel } from '@/lib/panels';
-import { enterScene, setActiveScene, useSwipeTabs } from '@/lib/swipeTabs';
+import { enterScene, hasScene, registerScene, setActiveScene, useSwipeTabs } from '@/lib/swipeTabs';
 import { useScheme, useTheme } from '@/lib/theme';
 
 // Every signed-in page lives here, so the navigation bar stays put wherever you are.
@@ -35,7 +35,7 @@ export default function TabLayout() {
   useEffect(() => { refreshPlannerBadge(); }, []);
   const header = { headerShown: true, headerStyle: { backgroundColor: t.bg, borderBottomWidth: 0 }, headerTintColor: t.text, headerShadowVisible: false, headerTitleAlign: 'left' as const, headerTitleStyle: { fontSize: 20, fontWeight: '700' as const } };
   return (
-    <Tabs backBehavior="history" screenLayout={({ children }: any) => <Enter>{children}</Enter>} tabBar={(p: any) => (wide ? null : <FloatingBar {...p} />)}
+    <Tabs backBehavior="history" screenLayout={({ children, route }: any) => <Enter name={route.name}>{children}</Enter>} tabBar={(p: any) => (wide ? null : <FloatingBar {...p} />)}
       screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: t.bg } }}>
       {TABS.map((x) => <Tabs.Screen key={x.name} name={x.name} options={{ title: x.title, tabBarBadge: x.name === 'planner' ? overdue || undefined : undefined }} />)}
       {PAGES.map(([name, title]) => (
@@ -53,9 +53,10 @@ export default function TabLayout() {
 }
 
 /** Replays a short rise-and-fade each time its page comes into view, without rebuilding the page. */
-function Enter({ children }: { children: React.ReactNode }) {
+function Enter({ name, children }: { name: string; children: React.ReactNode }) {
   const [n, setN] = useState(0);
   const ref = useRef<View>(null);
+  useEffect(() => { registerScene(name, ref.current as unknown as HTMLElement | null); return () => registerScene(name, null); }, [name]);
   useFocusEffect(useCallback(() => {
     setN((x) => x + 1);
     enterScene(ref.current as unknown as HTMLElement | null); // reached by a swipe: slide in from that side
@@ -75,7 +76,15 @@ function FloatingBar({ state, descriptors, navigation }: any) {
   const dark = useScheme() === 'dark';
   // Swipe sideways along the bar to reach the tab beside it.
   const beside = (dir: 1 | -1) => TABS[TABS.findIndex((x) => x.name === current) + dir] ?? null;
-  useSwipeTabs(onTab, (dir) => { const x = beside(dir); if (x) navigation.navigate(x.name); }, (dir) => !!beside(dir));
+  useSwipeTabs(onTab, (dir) => beside(dir)?.name ?? null, (dir) => { const x = beside(dir); if (x) navigation.navigate(x.name); });
+  // Open the tabs either side ahead of time (once things are quiet), so a swipe can bring them along.
+  useEffect(() => {
+    if (!onTab) return;
+    const id = setTimeout(() => {
+      for (const dir of [1, -1] as const) { const x = beside(dir); if (x && !hasScene(x.name)) navigation.dispatch({ type: 'PRELOAD', payload: { name: x.name } }); }
+    }, 1500);
+    return () => clearTimeout(id);
+  }, [current, onTab]);
   return (
     <View pointerEvents="box-none" style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       {/* Content fades out as it passes under the bar, down to the edge of the screen. */}

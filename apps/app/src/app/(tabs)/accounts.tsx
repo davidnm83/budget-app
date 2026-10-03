@@ -1,5 +1,6 @@
 // Accounts tab: every account grouped by type, with net worth at the top. Tap one for its
 // details (name, balance, history, planner settings, merge) in a pop-up.
+import { useFocusLoad } from '@/lib/focusLoad';
 import { accountIcon, formatMoney } from '@budget-app/core';
 import { ROW, LIST } from '@/lib/layout';
 import { EmptyState, RowsSkeleton } from '@/components/States';
@@ -39,7 +40,7 @@ export default function Accounts() {
     if (error) setMsg(error.message);
     else setAccounts((data ?? []).map((a: any) => ({ ...a, current_balance: a.balance, balance_updated_at: a.balance_as_of, plan_buffer: Number(a.plan_buffer ?? 0) })) as Account[]);
   }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusLoad(load);
   usePullRefresh(load);
 
   const syncNow = async () => {

@@ -1,5 +1,6 @@
 // Planner tab (PLN): Monday-to-Sunday week of planned bills, income and one-offs against what
 // actually posted, with a running balance and a warning before an account dips below its buffer.
+import { useFocusLoad } from '@/lib/focusLoad';
 import { PAGE_MAX } from '@/lib/layout';
 import { ROW } from '@/lib/layout';
 import { EmptyState, PageSkeleton } from '@/components/States';
@@ -73,7 +74,7 @@ export default function Planner() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, [week, only]);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusLoad(load);
   usePullRefresh(load);
 
   const now = today();
