@@ -1,13 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, Tabs, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { refreshPlannerBadge, usePlannerBadge } from '@/lib/badges';
 import { useWide } from '@/lib/layout';
-import { EASE, ENTER, PRESS } from '@/lib/motion';
+import { EASE, ENTER, PRESS, SWIPE_IN } from '@/lib/motion';
 import { setPanel } from '@/lib/panels';
-import { useSwipeTabs } from '@/lib/swipeTabs';
+import { setActiveScene, takeEnterFrom, useSwipeTabs } from '@/lib/swipeTabs';
 import { useScheme, useTheme } from '@/lib/theme';
 
 // Every signed-in page lives here, so the navigation bar stays put wherever you are.
@@ -55,9 +55,16 @@ export default function TabLayout() {
 /** Replays a short rise-and-fade each time its page comes into view, without rebuilding the page. */
 function Enter({ children }: { children: React.ReactNode }) {
   const [n, setN] = useState(0);
-  useFocusEffect(useCallback(() => { setN((x) => x + 1); }, []));
-  const wide = useWide(); // phones switch pages plainly; the fade is for wide screens
-  return <View style={[{ flex: 1 }, wide && ENTER[n % 2]]}>{children}</View>;
+  const [from, setFrom] = useState<1 | -1 | 0>(0);
+  const ref = useRef<View>(null);
+  useFocusEffect(useCallback(() => {
+    setN((x) => x + 1);
+    setFrom(takeEnterFrom()); // reached by a swipe: slide in from that side
+    setActiveScene(ref.current as unknown as HTMLElement | null);
+    return () => setActiveScene(null);
+  }, []));
+  const wide = useWide(); // phones switch pages plainly (or slide, after a swipe); the fade is for wide screens
+  return <View ref={ref} style={[{ flex: 1 }, wide ? ENTER[n % 2] : from ? SWIPE_IN[from === 1 ? 0 : 1][n % 2] : null]}>{children}</View>;
 }
 
 /** A rounded bar of five icons that sits clear of the screen edges. The current tab's icon is filled inside a soft pill. */
@@ -68,10 +75,9 @@ function FloatingBar({ state, descriptors, navigation }: any) {
   const onTab = TABS.some((x) => x.name === current);
   const dark = useScheme() === 'dark';
   // Swipe sideways on one of the five tabs to reach the one beside it.
-  useSwipeTabs(onTab, (dir) => {
-    const i = TABS.findIndex((x) => x.name === current) + dir;
-    if (i >= 0 && i < TABS.length) navigation.navigate(TABS[i].name);
-  });
+  const beside = (dir: 1 | -1) => TABS[TABS.findIndex((x) => x.name === current) + dir] ?? null;
+  useSwipeTabs(onTab, (dir) => { const x = beside(dir); if (x) navigation.navigate(x.name); }, (dir) => beside(dir)?.title ?? null,
+    { text: t.text, card: t.card, accent: t.accent, line: t.line });
   return (
     <View pointerEvents="box-none" style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       {/* Content fades out as it passes under the bar, down to the edge of the screen. */}
