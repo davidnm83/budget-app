@@ -1,6 +1,5 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { installPullRefresh } from '@/lib/pullRefresh';
-import { installKeyboard } from '@/lib/keyboard';
 import { installShortcuts } from '@/lib/shortcuts';
 import { OfflinePill, PullIndicator, Toaster } from '@/components/Overlays';
 import { registerServiceWorker } from '@/lib/sw';
@@ -11,7 +10,7 @@ import { useEffect } from 'react';
 import { Platform, View } from 'react-native';
 import { Panels, Sidebar } from '@/components/Menu';
 import { CsvReminder } from '@/components/CsvReminder';
-import { useScheme, useTheme } from '@/lib/theme';
+import { useScheme } from '@/lib/theme';
 import { SessionProvider, useSession } from '@/lib/session';
 import Setup from '@/components/Setup';
 import { useSetup } from '@/lib/setup';
@@ -93,23 +92,15 @@ function useNoAutofill() {
     mark(document);
     const obs = new MutationObserver((list) => list.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) { fix(n as Element); mark(n as Element); } })));
     obs.observe(document.body, { childList: true, subtree: true });
-    const stopPull = installPullRefresh(), stopKeys = installShortcuts(), stopLock = installAutoLock(), stopKb = installKeyboard();
+    const stopPull = installPullRefresh(), stopKeys = installShortcuts(), stopLock = installAutoLock();
     registerServiceWorker();
-    return () => { obs.disconnect(); css.remove(); stopPull(); stopKeys(); stopLock(); stopKb(); };
+    return () => { obs.disconnect(); css.remove(); stopPull(); stopKeys(); stopLock(); };
   }, []);
 }
 
 export default function RootLayout() {
   const scheme = useScheme();
-  const t = useTheme();
   useNoAutofill();
-  // The page's own background and the browser bar follow the app's theme (also when it isn't the phone's), so
-  // nothing black or off-colour shows if the page is ever nudged, e.g. while the keyboard comes up.
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
-    document.documentElement.style.backgroundColor = t.bg; document.body.style.backgroundColor = t.bg;
-    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', t.bg));
-  }, [t.bg]);
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       <SessionProvider>

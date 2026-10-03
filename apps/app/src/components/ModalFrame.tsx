@@ -177,14 +177,10 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
 
 const styles = StyleSheet.create({
   // The dimming is its own layer so it can fade in under a sheet that stays solid (see FADE).
-  phoneScrim: { flex: 1, justifyContent: 'flex-end' },
+  phoneScrim: { flex: 1, justifyContent: 'flex-end' } as any,
   phoneDim: { backgroundColor: 'rgba(0,0,0,0.38)' },
   dim: { backgroundColor: 'rgba(0,0,0,0.4)' },
-  // --kb: the keyboard's height while it's up (lib/keyboard). The sheet grows by that much at the bottom, in its own
-  // colour, so its contents and Save button sit above the keyboard. Padding the space under the sheet instead left a
-  // dark band showing for a moment while the keyboard slid up into it.
-  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: '0 -8px 30px rgba(0,0,0,0.18)' as any, overflow: 'hidden', flexShrink: 1, cursor: 'auto' as any,
-    paddingBottom: 'var(--kb, 0px)' as any, transitionProperty: 'padding-bottom', transitionDuration: '240ms', transitionTimingFunction: 'cubic-bezier(0.2, 0.9, 0.2, 1)' } as any,
+  sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: '0 -8px 30px rgba(0,0,0,0.18)' as any, overflow: 'hidden', flexShrink: 1, cursor: 'auto' as any },
   grabZone: { height: 26, alignItems: 'center', justifyContent: 'center' },
   grabber: { width: 40, height: 5, borderRadius: 3, opacity: 0.45 },
   scrim: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 } as any,
