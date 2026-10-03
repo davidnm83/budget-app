@@ -11,6 +11,7 @@ import { SinglePicker } from '@/components/Picker';
 import { Bar, Button, Card, Chip, Segmented } from '@/components/ui';
 import { closePlan, createPlan, deletePlan, updatePlan, type CardPlan, type PlanInput } from '@/lib/paymentPlans';
 import { today } from '@/lib/plan';
+import { afterClose } from '@/lib/useBackToClose';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 import { toast } from '@/lib/toast';
@@ -53,7 +54,7 @@ export function PlansCard({ t, plans, accounts, onChanged }: { t: Theme; plans: 
       ))}
       {finished.length > 0 && <Pressable onPress={() => setShowDone(!showDone)} hitSlop={6}><Text style={{ color: t.accent, fontSize: 12 }}>{showDone ? 'Hide' : 'Show'} {finished.length} finished</Text></Pressable>}
       {form && <PlanForm plan={form.plan} seed={form.seed} accounts={accounts} onClose={() => setForm(null)} onSaved={onChanged} />}
-      {open && <PlanDetail t={t} plan={open} accounts={accounts} onClose={() => setOpen(null)} onChanged={onChanged} onEdit={() => { const p = open; setOpen(null); setForm({ plan: p }); }} />}
+      {open && <PlanDetail t={t} plan={open} accounts={accounts} onClose={() => setOpen(null)} onChanged={onChanged} onEdit={() => { const p = open; setOpen(null); afterClose(() => setForm({ plan: p })); }} />}
     </Card>
   );
 }

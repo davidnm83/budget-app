@@ -2,7 +2,7 @@
 // it is a centred panel over a dimmed page (click outside to close).
 //   fit: the panel is only as tall as its content (forms); otherwise it takes most of the height (lists).
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { POP, SHEET } from '@/lib/motion';
+import { FADE, POP, SHEET } from '@/lib/motion';
 import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWide } from '@/lib/layout';
@@ -20,8 +20,9 @@ export function ModalFrame({ visible = true, onClose, children, fit, width = 560
     return <PhoneSheet visible={visible} onClose={onClose} fit={fit}>{children}</PhoneSheet>;
   }
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose}>
+        <View style={[StyleSheet.absoluteFill, styles.dim, FADE]} pointerEvents="none" />
         <Pressable onPress={() => {}} style={[styles.panel, POP, { backgroundColor: t.bg, borderColor: t.line, maxWidth: width }, fit ? { maxHeight: '90%' } : { height: '90%' }]}>
           {children}
         </Pressable>
@@ -93,8 +94,9 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
     return () => { el.removeEventListener('touchstart', start); el.removeEventListener('touchmove', move); el.removeEventListener('touchend', end); el.removeEventListener('touchcancel', end); };
   }, [visible]);
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
       <Pressable style={styles.phoneScrim} onPress={onClose}>
+        <View style={[StyleSheet.absoluteFill, styles.phoneDim, FADE]} pointerEvents="none" />
         <View ref={sheet} style={[styles.sheet, SHEET, { backgroundColor: t.bg, marginTop: insets.top + 24 }, fit ? { maxHeight: '100%' } : { flex: 1 }]}>
           <Pressable onPress={() => {}} style={[{ cursor: 'auto' as any }, fit ? { flexShrink: 1 } : { flex: 1 }]}>
             <View style={styles.grabZone} accessibilityLabel="Drag down to close"><View style={[styles.grabber, { backgroundColor: t.muted }]} /></View>
@@ -107,10 +109,13 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
 }
 
 const styles = StyleSheet.create({
-  phoneScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'flex-end' } as any,
+  // The dimming is its own layer so it can fade in under a sheet that stays solid (see FADE).
+  phoneScrim: { flex: 1, justifyContent: 'flex-end' } as any,
+  phoneDim: { backgroundColor: 'rgba(0,0,0,0.38)' },
+  dim: { backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: '0 -8px 30px rgba(0,0,0,0.18)' as any, overflow: 'hidden', flexShrink: 1, cursor: 'auto' as any },
   grabZone: { height: 26, alignItems: 'center', justifyContent: 'center' },
   grabber: { width: 40, height: 5, borderRadius: 3, opacity: 0.45 },
-  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 } as any,
+  scrim: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 } as any,
   panel: { width: '100%', borderRadius: 20, boxShadow: '0 24px 60px rgba(0,0,0,0.28)' as any, borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden', cursor: 'auto' as any },
 });

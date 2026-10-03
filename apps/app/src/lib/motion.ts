@@ -19,7 +19,10 @@ const S: Record<string, any> = web ? StyleSheet.create({
   pop: kf({ opacity: 0, transform: 'translateY(10px) scale(0.97)' }, { opacity: 1, transform: 'translateY(0px) scale(1)' }, '220ms'),
   panel: kf({ opacity: 0, transform: 'translateX(36px)' }, { opacity: 1, transform: 'translateX(0px)' }, '240ms'),
   slide: kf({ opacity: 0, transform: 'translateX(28px)' }, { opacity: 1, transform: 'translateX(0px)' }, '200ms'),
-  sheet: kf({ transform: 'translateY(100%)' }, { transform: 'translateY(0%)' }, '280ms', undefined, { willChange: 'transform' }),
+  // No lasting will-change: a sheet kept on its own GPU layer after it arrives is what Android Chrome fills with
+  // black tiles on a long form (worse with one sheet over another). The animation is promoted while it runs anyway.
+  sheet: kf({ transform: 'translateY(100%)' }, { transform: 'translateY(0%)' }, '280ms'),
+  fade: kf({ opacity: 0 }, { opacity: 1 }, '200ms', 'ease-out'),
   enterA: up(10), enterB: up(10.01),
   pulse: { animationKeyframes: { '0%': { opacity: 1 }, '50%': { opacity: 0.45 }, '100%': { opacity: 1 } }, animationDuration: '1400ms', animationIterationCount: 'infinite', animationTimingFunction: 'ease-in-out' } as any,
   backwards: { animationFillMode: 'backwards' } as any,
@@ -35,6 +38,8 @@ export const SPIN: any = S.spin ?? {};
 export const POP: any = S.pop ?? {};
 /** A phone sheet rising from the bottom edge. Runs off the main thread, so it stays smooth while the sheet's content is still being drawn. */
 export const SHEET: any = S.sheet ?? {};
+/** A pop-up's dimming arriving. Only the dimming fades: fading the whole pop-up let the page behind show through the sheet as it rose. */
+export const FADE: any = S.fade ?? {};
 /** A panel sliding in from the right edge (transaction details beside the list). */
 export const PANEL: any = S.panel ?? {};
 /** A page arriving from the right. */
