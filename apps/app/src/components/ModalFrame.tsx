@@ -112,7 +112,8 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
 
 const styles = StyleSheet.create({
   // The dimming is its own layer so it can fade in under a sheet that stays solid (see FADE).
-  phoneScrim: { flex: 1, justifyContent: 'flex-end' } as any,
+  // --kb: the keyboard's height while it's up (lib/keyboard), so the sheet sits above it and its Save button stays in reach.
+  phoneScrim: { flex: 1, justifyContent: 'flex-end', paddingBottom: 'var(--kb, 0px)', transitionProperty: 'padding-bottom', transitionDuration: '180ms', transitionTimingFunction: 'ease-out' } as any,
   phoneDim: { backgroundColor: 'rgba(0,0,0,0.38)' },
   dim: { backgroundColor: 'rgba(0,0,0,0.4)' },
   sheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, boxShadow: '0 -8px 30px rgba(0,0,0,0.18)' as any, overflow: 'hidden', flexShrink: 1, cursor: 'auto' as any },

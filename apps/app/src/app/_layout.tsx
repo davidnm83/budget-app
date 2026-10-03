@@ -1,5 +1,6 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { installPullRefresh } from '@/lib/pullRefresh';
+import { installKeyboard } from '@/lib/keyboard';
 import { installShortcuts } from '@/lib/shortcuts';
 import { OfflinePill, PullIndicator, Toaster } from '@/components/Overlays';
 import { registerServiceWorker } from '@/lib/sw';
@@ -67,7 +68,13 @@ function useNoAutofill() {
       el.setAttribute('autocomplete', 'off');
       el.setAttribute('data-form-type', 'other'); el.setAttribute('data-lpignore', 'true'); el.setAttribute('data-1p-ignore', 'true');
       // Chrome often ignores autocomplete="off" on plain text fields but doesn't offer autofill on search fields.
-      if (el.tagName === 'INPUT' && (el.getAttribute('type') ?? 'text') === 'text') el.setAttribute('type', 'search');
+      // React removes a type it didn't set every time the field re-renders (each keystroke), which is why the
+      // autofill row came back on some fields: this field keeps its type.
+      if (el.tagName === 'INPUT' && (el.getAttribute('type') ?? 'text') === 'text') {
+        el.setAttribute('type', 'search');
+        const remove = el.removeAttribute.bind(el);
+        el.removeAttribute = (name: string) => { if (name !== 'type') remove(name); };
+      }
     };
     const css = document.createElement('style');
     css.textContent = 'html,body{overscroll-behavior-y:contain}'
@@ -84,9 +91,9 @@ function useNoAutofill() {
     mark(document);
     const obs = new MutationObserver((list) => list.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType === 1) { fix(n as Element); mark(n as Element); } })));
     obs.observe(document.body, { childList: true, subtree: true });
-    const stopPull = installPullRefresh(), stopKeys = installShortcuts(), stopLock = installAutoLock();
+    const stopPull = installPullRefresh(), stopKeys = installShortcuts(), stopLock = installAutoLock(), stopKb = installKeyboard();
     registerServiceWorker();
-    return () => { obs.disconnect(); css.remove(); stopPull(); stopKeys(); stopLock(); };
+    return () => { obs.disconnect(); css.remove(); stopPull(); stopKeys(); stopLock(); stopKb(); };
   }, []);
 }
 
