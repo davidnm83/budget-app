@@ -69,4 +69,32 @@ describe('payment plans', () => {
     const got = instalmentsBetween([plan(), plan({ id: 'q', startDate: '2026-02-10', months: 2 })], '2026-03-09', '2026-03-15');
     expect(got.map((x) => [x.plan.id, x.inst.n, x.count])).toEqual([['q', 2, 2], ['p', 3, 12]]);
   });
+
+  it('moves one instalment to another date without touching the rest', () => {
+    const s = planSchedule(plan({ principal: 300, months: 3, instalments: { '2': { date: '2026-02-20' } } }));
+    expect(s.map((x) => x.date)).toEqual(['2026-01-15', '2026-02-20', '2026-03-15']);
+    expect(s[1].moved).toBe(true); expect(s[0].moved).toBe(false);
+  });
+
+  it('takes the amount the bank billed and evens it out on the last instalment', () => {
+    const s = planSchedule(plan({ principal: 1000, months: 3, instalments: { '1': { amount: 333.35 } } }));
+    expect(s.map((x) => x.principal)).toEqual([333.35, 333.33, 333.32]);
+    expect(sum(s.map((x) => x.principal))).toBe(1000);
+    // With interest the billed amount covers the interest first.
+    const t = planSchedule(plan({ apr: 12, instalments: { '1': { amount: 106.6 } } }));
+    expect(t[0].interest).toBe(12); expect(t[0].principal).toBe(94.6); expect(t[0].total).toBe(106.6);
+    expect(sum(t.map((x) => x.principal))).toBe(1200);
+  });
+
+  it('ignores a billed amount on the last instalment (it always clears the balance)', () => {
+    const s = planSchedule(plan({ principal: 300, months: 3, instalments: { '3': { amount: 50 } } }));
+    expect(s[2].principal).toBe(100);
+  });
+
+  it('counts an instalment linked to a payment as paid, even before its date', () => {
+    const p = plan({ principal: 300, months: 3, instalments: { '2': { paidBy: 'txn1' } } });
+    const g = planProgress(p, '2026-01-20');
+    expect(g.done).toBe(2); expect(g.paid).toBe(200); expect(g.next!.n).toBe(3);
+    expect(planSchedule(p)[1].paidBy).toBe('txn1');
+  });
 });

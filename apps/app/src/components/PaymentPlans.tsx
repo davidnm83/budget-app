@@ -1,7 +1,7 @@
 // Card payment plans on the Credit cards page: the list with progress, a plan's details and
 // schedule, and the form to add one (from a purchase, or one that already started).
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { addDays, categoryIcon, formatMoney, monthsAfter, parseMoney, planProgress, planSchedule, shortDate, toIsoDate } from '@budget-app/core';
+import { addDays, categoryIcon, type Instalment, formatMoney, monthsAfter, parseMoney, planProgress, planSchedule, shortDate, toIsoDate } from '@budget-app/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useConfirm } from '@/components/Confirm';
@@ -9,7 +9,7 @@ import { DateField } from '@/components/DateField';
 import { Field, Sheet, useChanged } from '@/components/Forms';
 import { SinglePicker } from '@/components/Picker';
 import { Bar, Button, Card, Chip, Segmented } from '@/components/ui';
-import { closePlan, createPlan, deletePlan, updatePlan, type CardPlan, type PlanInput } from '@/lib/paymentPlans';
+import { closePlan, createPlan, deletePlan, setInstalment, updatePlan, type CardPlan, type PlanInput } from '@/lib/paymentPlans';
 import { today } from '@/lib/plan';
 import { afterClose } from '@/lib/useBackToClose';
 import { supabase } from '@/lib/supabase';
@@ -59,9 +59,12 @@ export function PlansCard({ t, plans, accounts, onChanged }: { t: Theme; plans: 
   );
 }
 
-function PlanDetail({ t, plan, accounts, onClose, onChanged, onEdit }: { t: Theme; plan: CardPlan; accounts: Account[]; onClose: () => void; onChanged: () => void; onEdit: () => void }) {
+function PlanDetail({ t, plan: given, accounts, onClose, onChanged, onEdit }: { t: Theme; plan: CardPlan; accounts: Account[]; onClose: () => void; onChanged: () => void; onEdit: () => void }) {
   const [confirm, confirmSheet] = useConfirm();
   const [busy, setBusy] = useState(false);
+  // Changing one instalment updates the plan shown here straight away.
+  const [plan, setPlan] = useState(given);
+  const [inst, setInst] = useState<Instalment | null>(null);
   const now = today();
   const s = planSchedule(plan), g = planProgress(plan, now);
   const name = (id: string | null) => accounts.find((a) => a.id === id)?.name ?? '';
@@ -79,22 +82,82 @@ function PlanDetail({ t, plan, accounts, onClose, onChanged, onEdit }: { t: Them
         {g.finished ? 'Finished.' : `${formatMoney(g.left)} still to come${g.costLeft ? `, plus ${formatMoney(g.costLeft)} in ${plan.monthlyFee ? 'fees and interest' : 'interest'}` : ''}.`} Fees and interest so far: {formatMoney(g.costPaid)}.
       </Text>
       <View>
+        <Text style={{ color: t.muted, fontSize: 12 }}>Tap an instalment to change its date, enter what the bank billed, or link the payment that paid it.</Text>
         {s.map((x) => {
-          const past = x.date <= now, skipped = !!plan.countFrom && x.date < plan.countFrom;
+          const past = x.date <= now || !!x.paidBy, skipped = !!plan.countFrom && x.date < plan.countFrom;
+          const notes = [skipped && 'recorded by you', x.moved && 'changed', x.paidBy && 'payment linked'].filter(Boolean).join(' · ');
           return (
-            <View key={x.n} style={[styles.between, { paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }]}>
-              <Ionicons name={past ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={past ? t.accent : t.muted} />
-              <Text style={{ color: past ? t.text : t.muted, flex: 1 }}>{shortDate(x.date)}{skipped ? ' · recorded by you' : ''}</Text>
+            <Pressable key={x.n} onPress={() => setInst(x)} accessibilityLabel={`Instalment ${x.n}, ${shortDate(x.date)}`}
+              style={({ pressed, hovered }: any) => [styles.between, { paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }, (pressed || hovered) && { backgroundColor: t.line }]}>
+              <Ionicons name={x.paidBy ? 'link' : past ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={past ? t.accent : t.muted} />
+              <Text style={{ color: past ? t.text : t.muted, flex: 1 }} numberOfLines={1}>{shortDate(x.date)}{notes ? <Text style={{ color: t.muted, fontSize: 12 }}> · {notes}</Text> : null}</Text>
               <Text style={{ color: t.muted, fontSize: 12 }}>{x.interest + x.fee + x.monthlyFee > 0 ? `${formatMoney(x.principal)} + ${formatMoney(x.interest + x.fee + x.monthlyFee)}` : ''}</Text>
               <Text style={{ color: past ? t.text : t.muted, fontVariant: ['tabular-nums'], minWidth: 76, textAlign: 'right' }}>{formatMoney(x.total)}</Text>
-            </View>
+            </Pressable>
           );
         })}
       </View>
       <Button title="Edit" kind="plain" onPress={onEdit} disabled={busy} />
       {!g.finished && <Button title="Paid off early (today)" kind="plain" disabled={busy} onPress={() => confirm({ title: 'Mark as paid off?', message: `The ${formatMoney(g.left)} left counts as one last instalment today, and the plan ends.`, action: 'Paid off', run: () => run(() => closePlan(plan), 'Plan paid off') })} />}
+      {inst && <InstalmentSheet t={t} plan={plan} inst={inst} count={s.length} onClose={() => setInst(null)} onSaved={(next) => { setPlan(next); onChanged(); }} />}
       <Button title="Delete plan" kind="danger" disabled={busy} onPress={() => confirm({ title: 'Delete this plan?', message: `The instalments it added are removed${plan.transactionId ? ', and the purchase goes back to counting as spending in the month it was made' : ''}.`, action: 'Delete', run: () => run(() => deletePlan(plan), 'Plan deleted') })} />
       {confirmSheet}
+    </Sheet>
+  );
+}
+
+/** One instalment: move it, set what the bank billed, or link the card payment that paid it. */
+function InstalmentSheet({ t, plan, inst, count, onClose, onSaved }: { t: Theme; plan: CardPlan; inst: Instalment; count: number; onClose: () => void; onSaved: (p: CardPlan) => void }) {
+  const was = plan.instalments?.[String(inst.n)] ?? {};
+  const last = inst.n === count;
+  const [date, setDate] = useState(inst.date);
+  const [amount, setAmount] = useState(was.amount != null ? String(was.amount) : '');
+  const [paidBy, setPaidBy] = useState<string | null>(was.paidBy ?? null);
+  const [found, setFound] = useState<{ id: string; date: string; amount: number; display_name: string; account_name: string }[]>([]);
+  const [pick, setPick] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const changed = useChanged([date, amount, paidBy]);
+  const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
+  // Payments that reached this card around the instalment's date (and the one already linked).
+  useEffect(() => {
+    supabase.from('transaction_list').select('id, date, amount, display_name, account_name').eq('account_id', plan.accountId).gt('amount', 0)
+      .gte('date', addDays(inst.date, -25)).lte('date', addDays(inst.date, 35)).order('date').then(({ data }) => setFound((data ?? []).map((x: any) => ({ ...x, amount: Number(x.amount) }))));
+  }, []);
+  const linked = found.find((x) => x.id === paidBy);
+  const save = async (reset?: boolean) => {
+    const a = amount.trim() ? parseMoney(amount) : null, d = toIsoDate(date);
+    if (!reset && (!d || (a != null && (isNaN(a) || a < 0)))) { setError('Check the date and the amount.'); return; }
+    setBusy(true); setError('');
+    try {
+      const calc = monthsAfter(plan.startDate, inst.n - 1);
+      const next = await setInstalment(plan, inst.n, reset ? { budget: was.budget } : { date: d && d !== calc ? d : undefined, amount: a ?? undefined, paidBy: paidBy ?? undefined, budget: was.budget });
+      toast(reset ? 'Back to the plan’s schedule' : 'Instalment saved'); onSaved(next); onClose();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Sheet title={`Instalment ${inst.n} of ${count}`} dirty={changed && !busy} onClose={onClose} footer={<Button title="Save" onPress={() => save()} busy={busy} />}>
+      <Text style={{ color: t.muted }}>
+        Worked out as {formatMoney(inst.total)}{inst.interest + inst.fee + inst.monthlyFee > 0 ? ` (${formatMoney(inst.principal)} of the purchase + ${formatMoney(inst.interest + inst.fee + inst.monthlyFee)} fees and interest)` : ''}, billed {shortDate(inst.date)}.
+      </Text>
+      <Field t={t} label="Billed on" hint="The date it shows on the card. Its part of the purchase counts in the budget of that month."><DateField value={date} onChange={setDate} /></Field>
+      {last ? <Text style={{ color: t.muted, fontSize: 13 }}>This is the last instalment: it is always what’s left of the purchase, so any cents the bank rounded differently end up here.</Text> : (
+        <Field t={t} label="Amount the bank billed" hint="Leave empty to use the worked-out amount. A few cents’ difference is evened out on the last instalment.">
+          <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder={inst.total.toFixed(2)} placeholderTextColor={t.muted} style={input} accessibilityLabel="Amount the bank billed" />
+        </Field>
+      )}
+      <Field t={t} label="Paid by" hint={paidBy ? 'This instalment shows as paid.' : found.length ? 'The payment to the card that covered it. Optional: it marks the instalment as paid.' : 'No payments to this card around this date yet.'}>
+        <Pressable onPress={() => setPick(true)} style={[styles.input, styles.pick, { borderColor: t.line, backgroundColor: t.card }]}>
+          <Text style={{ color: paidBy ? t.text : t.muted, flex: 1 }} numberOfLines={1}>{linked ? `${shortDate(linked.date)} · ${linked.display_name} · ${formatMoney(linked.amount)}` : paidBy ? 'Linked' : 'Not linked · choose a payment'}</Text>
+          <Ionicons name="chevron-down" size={16} color={t.muted} />
+        </Pressable>
+      </Field>
+      {(was.date || was.amount != null) && <Button title="Back to the worked-out date and amount" kind="plain" disabled={busy} onPress={() => save(true)} />}
+      {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+      <SinglePicker visible={pick} title="Payment" selected={paidBy ?? 'none'} onClose={() => setPick(false)}
+        items={[{ id: 'none', label: 'Not linked' }, ...found.map((x) => ({ id: x.id, label: `${shortDate(x.date)} · ${x.display_name}`, detail: formatMoney(x.amount) }))]}
+        onPick={(id) => { setPaidBy(id === 'none' ? null : id); setPick(false); }} />
     </Sheet>
   );
 }
@@ -151,8 +214,10 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
   // Purchases on this card for this amount, to link the plan to (when it wasn't started from one).
   useEffect(() => {
     if (mode !== 'purchase' || !accountId || isNaN(p) || p <= 0) { setFound([]); return; }
-    supabase.from('transaction_list').select('id, date, amount, display_name').eq('account_id', accountId).gte('amount', -Math.abs(p) - 0.005).lte('amount', -Math.abs(p) + 0.005)
-      .order('date', { ascending: false }).limit(20).then(({ data }) => setFound((data ?? []).map((x: any) => ({ ...x, amount: Number(x.amount) }))));
+    // Within a dollar, closest first: the bank's figure for the plan is often a few cents off the purchase.
+    supabase.from('transaction_list').select('id, date, amount, display_name').eq('account_id', accountId).gte('amount', -Math.abs(p) - 1.005).lte('amount', -Math.abs(p) + 1.005)
+      .order('date', { ascending: false }).limit(20).then(({ data }) => setFound((data ?? []).map((x: any) => ({ ...x, amount: Number(x.amount) }))
+        .sort((a: { amount: number }, b: { amount: number }) => Math.abs(Math.abs(a.amount) - Math.abs(p)) - Math.abs(Math.abs(b.amount) - Math.abs(p)))));
   }, [accountId, amount, mode]);
   const linked = found.find((x) => x.id === txnId);
 
@@ -248,7 +313,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
       <Field t={t} label="The purchase" hint={txnId ? 'It stops counting as spending in the month it was made; the instalments count instead.' : 'Not linked. If the purchase is in the app, link it; otherwise make sure it is categorized as a transfer so it isn’t counted twice.'}>
         <Pressable onPress={() => found.length && setPick('txn')} style={[styles.input, styles.pick, { borderColor: t.line, backgroundColor: t.card }]}>
           <Text style={{ color: txnId ? t.text : t.muted, flex: 1 }} numberOfLines={1}>
-            {linked ? `${shortDate(linked.date)} · ${linked.display_name} · ${formatMoney(linked.amount)}` : txnId ? 'Linked' : found.length ? `${found.length} on this card for this amount · choose` : 'None found on this card for this amount'}
+            {linked ? `${shortDate(linked.date)} · ${linked.display_name} · ${formatMoney(linked.amount)}` : txnId ? 'Linked' : found.length ? `${found.length} on this card for about this amount · choose` : 'None found on this card for about this amount'}
           </Text>
           {found.length > 0 && <Ionicons name="chevron-down" size={16} color={t.muted} />}
         </Pressable>

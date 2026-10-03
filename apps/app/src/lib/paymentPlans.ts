@@ -36,11 +36,14 @@ const fromRow = (r: any): CardPlan => ({
   id: r.id, description: r.description, principal: Number(r.principal), months: Number(r.months), startDate: r.start_date, setupFee: Number(r.setup_fee), apr: Number(r.apr),
   countFrom: r.count_from, closedOn: r.closed_on, accountId: r.account_id, transactionId: r.transaction_id, categoryId: r.category_id,
   interestCategoryId: r.interest_category_id, payingAccountId: r.paying_account_id, postCharges: r.post_charges, postFee: r.post_fee ?? true, monthlyFee: Number(r.monthly_fee ?? 0), offsetStart: !!r.offset_start,
+  instalments: r.instalments ?? {},
 });
 const toRow = (p: PlanInput) => ({
   description: p.description, principal: p.principal, months: p.months, start_date: p.startDate, setup_fee: p.setupFee, apr: p.apr, count_from: p.countFrom ?? null,
   closed_on: p.closedOn ?? null, account_id: p.accountId, transaction_id: p.transactionId, category_id: p.categoryId, interest_category_id: p.interestCategoryId,
   paying_account_id: p.payingAccountId, post_charges: p.postCharges, post_fee: p.postFee, monthly_fee: p.monthlyFee ?? 0, offset_start: p.offsetStart,
+  // Left out when absent, so an install that hasn't run the instalments migration can still save plans.
+  ...(p.instalments && Object.keys(p.instalments).length ? { instalments: p.instalments } : {}),
 });
 const fail = (e: { message: string } | null) => { if (e) throw new Error(e.message); };
 // An install that hasn't run the payment-plans migration yet simply has no plans.
@@ -156,6 +159,23 @@ export async function updatePlan(old: CardPlan, input: PlanInput): Promise<CardP
   await clearGenerated(plan.id);
   await syncPlans([plan]);
   return plan;
+}
+
+/**
+ * Change one instalment: its date, the amount the bank billed, the payment that paid it, or its
+ * budget suggestion. A new date or amount rewrites what the plan put in the books; the rest is
+ * only noted on the plan. `change` replaces what was set for that instalment.
+ */
+export async function setInstalment(plan: CardPlan, n: number, change: core.InstalmentChange) {
+  const before = plan.instalments?.[String(n)] ?? {};
+  const clean = Object.fromEntries(Object.entries(change).filter(([, v]) => v != null && v !== '')) as core.InstalmentChange;
+  const all = { ...(plan.instalments ?? {}) };
+  if (Object.keys(clean).length) all[String(n)] = clean; else delete all[String(n)];
+  const { error } = await supabase.from('payment_plans').update({ instalments: all }).eq('id', plan.id);
+  fail(error);
+  const next = { ...plan, instalments: all };
+  if (before.date !== clean.date || before.amount !== clean.amount) { await clearGenerated(plan.id); await syncPlans([next]); }
+  return next;
 }
 
 /** Paid off early: what was left becomes one last instalment today. */
