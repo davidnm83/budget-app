@@ -27,7 +27,21 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
     // What was already chosen when the list opened comes first; ticking a row never moves it.
     return [...hits.filter((i) => first.includes(i.id)), ...hits.filter((i) => !first.includes(i.id))];
   }, [items, q, first]);
+  // Grouped items (accounts by type, categories by group) sit under a heading that ticks the whole group.
+  const grouped = items.some((i) => i.group);
+  const rows = useMemo(() => {
+    if (!grouped) return list as (PickItem | { head: string; ids: string[] })[];
+    const order = [...new Set(items.map((i) => i.group ?? ''))];
+    const out: (PickItem | { head: string; ids: string[] })[] = [];
+    for (const g of order) {
+      const inG = list.filter((i) => (i.group ?? '') === g);
+      if (!inG.length) continue;
+      out.push({ head: g || 'Other', ids: inG.map((i) => i.id) }, ...inG);
+    }
+    return out;
+  }, [list, items, grouped]);
   const toggle = (id: string) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  const toggleGroup = (ids: string[]) => onChange(ids.every((id) => selected.includes(id)) ? selected.filter((x) => !ids.includes(x)) : [...new Set([...selected, ...ids])]);
   return (
     <ModalFrame visible={visible} onClose={onClose}>
       <View style={{ flex: 1 }}>
@@ -43,18 +57,30 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
             style={[{ flex: 1, color: t.text, paddingVertical: 9, fontSize: 15 }, { outlineStyle: 'none' } as any]} />
         </View>
         <FlatList {...LIST}
-          data={list}
-          keyExtractor={(i) => i.id}
+          data={rows}
+          keyExtractor={(i) => ('head' in i ? `h:${i.head}` : i.id)}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => {
+            if ('head' in item) {
+              const n = item.ids.filter((id) => selected.includes(id)).length;
+              const all = n === item.ids.length;
+              return (
+                <Pressable onPress={() => toggleGroup(item.ids)} accessibilityRole="checkbox" accessibilityState={{ checked: all ? true : n ? 'mixed' : false }} accessibilityLabel={`All of ${item.head}`}
+                  style={({ pressed }) => [styles.groupRow, { borderColor: t.line, backgroundColor: pressed ? t.line : t.bg }]}>
+                  <Ionicons name={all ? 'checkbox' : n ? 'remove-circle' : 'square-outline'} size={22} color={n ? t.accent : t.muted} />
+                  <Text style={{ color: t.text, fontSize: 13, fontWeight: '700', letterSpacing: 0.4, flex: 1 }}>{item.head.toUpperCase()}</Text>
+                  <Text style={{ color: t.muted, fontSize: 12 }}>{n ? `${n} of ${item.ids.length}` : `${item.ids.length}`}</Text>
+                </Pressable>
+              );
+            }
             const on = selected.includes(item.id);
             return (
-              <Pressable onPress={() => toggle(item.id)} style={({ pressed }) => [styles.row, { borderColor: t.line, backgroundColor: pressed ? t.line : t.card }]}>
+              <Pressable onPress={() => toggle(item.id)} style={({ pressed }) => [styles.row, grouped && { paddingLeft: 28 }, { borderColor: t.line, backgroundColor: pressed ? t.line : t.card }]}>
                 <Ionicons name={on ? 'checkbox' : 'square-outline'} size={22} color={on ? t.accent : t.muted} />
                 {item.icon}
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: t.text, fontSize: 15 }} numberOfLines={1}>{item.label}</Text>
-                  {!!item.group && <Text style={{ color: t.muted, fontSize: 12 }}>{item.group}</Text>}
+                  {!!item.group && !grouped && <Text style={{ color: t.muted, fontSize: 12 }}>{item.group}</Text>}
                 </View>
                 {!!item.detail && <Text style={{ color: t.muted, fontSize: 12 }}>{item.detail}</Text>}
               </Pressable>
@@ -132,4 +158,5 @@ const styles = StyleSheet.create({
   done: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8 },
   search: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 10, paddingHorizontal: 10, margin: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth },
+  groupRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
 });

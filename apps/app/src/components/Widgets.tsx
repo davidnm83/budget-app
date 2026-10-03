@@ -25,7 +25,7 @@ import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type
 import { PRESS, RISE } from '@/lib/motion';
 import { useWide } from '@/lib/layout';
 import { useTheme, type Theme } from '@/lib/theme';
-import { signedBalance, type Account } from '@/lib/types';
+import { accountGroup, byAccountGroup, signedBalance, type Account } from '@/lib/types';
 import { loadWatch, type Watched } from '@/lib/watch';
 import { dismissRadar, loadRadar, restoreRadar } from '@/lib/radar';
 import { toast } from '@/lib/toast';
@@ -630,7 +630,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
           {data && <MultiPicker visible={pick} title="Categories" onClose={() => setPick(false)} selected={selected} onChange={setIds}
             items={data.cats.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group }))} />}
           {data && <MultiPicker visible={pickAcc} title="Accounts" onClose={() => setPickAcc(false)} selected={chosen} onChange={setAccs}
-            items={pool.map((a) => ({ id: a.id, label: `${a.name}${a.mask ? ` ••${a.mask}` : ''}`, group: a.type === 'credit' ? 'Credit cards' : a.type === 'loan' ? 'Loans' : a.type === 'investment' ? 'Investments' : 'Cash' }))} />}
+            items={byAccountGroup(pool).map((a) => ({ id: a.id, label: `${a.name}${a.mask ? ` ••${a.mask}` : ''}`, group: accountGroup(a.type) }))} />}
         </>
       ) : (
         <>

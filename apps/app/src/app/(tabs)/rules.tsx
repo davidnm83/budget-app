@@ -11,6 +11,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useConfirm } from '@/components/Confirm';
 import { Field, Sheet, useChanged } from '@/components/Forms';
+import { accountGroup, byAccountGroup } from '@/lib/types';
 import { SinglePicker } from '@/components/Picker';
 import { EmptyState, RowsSkeleton } from '@/components/States';
 import { Button, Card, Segmented, Fab } from '@/components/ui';
@@ -23,7 +24,7 @@ import { toast } from '@/lib/toast';
 interface CatRule { id: string; match_text: string; category_id: string; account_id: string | null; min_amount: number | null; max_amount: number | null }
 interface NameRule { id: string; match: string; merchant: string; source: 'manual' | 'learned' }
 interface Cat { id: string; name: string; group_name: string; icon: string | null; kind: string }
-interface Acct { id: string; name: string; mask: string | null }
+interface Acct { id: string; name: string; mask: string | null; type: string | null }
 interface Recent { name: string; merchant: string | null; amount: number; account_id: string }
 type Tab = 'category' | 'merchant';
 const RECENT = 1000; // how many of the latest transactions the "decides" counts look at
@@ -50,7 +51,7 @@ export default function Rules() {
       supabase.from('category_rules').select('id, match_text, category_id, account_id, min_amount, max_amount').order('match_text'),
       supabase.from('merchant_rules').select('id, match, merchant, source').order('merchant').order('match'),
       supabase.from('categories').select('id, name, group_name, icon, kind').eq('is_hidden', false).order('group_name').order('name'),
-      supabase.from('accounts').select('id, name, mask').order('name'),
+      supabase.from('accounts').select('id, name, mask, type').order('name'),
       supabase.from('transactions').select('name, merchant, amount, account_id').order('date', { ascending: false }).limit(RECENT),
     ]);
     const err = a.error ?? b.error ?? c.error ?? d.error ?? e.error;
@@ -266,7 +267,7 @@ function CatRuleEditor({ t, initial, cats, accounts, recent, acctLabel, catLabel
       <SinglePicker visible={pick === 'cat'} title="Category" selected={categoryId || null} onClose={() => setPick(null)}
         items={cats.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))} onPick={(id) => { setCategoryId(id); setPick(null); }} />
       <SinglePicker visible={pick === 'acct'} title="Account" selected={accountId ?? 'any'} onClose={() => setPick(null)}
-        items={[{ id: 'any', label: 'Any account' }, ...accounts.map((a) => ({ id: a.id, label: acctLabel(a.id) }))]} onPick={(id) => { setAccountId(id === 'any' ? null : id); setPick(null); }} />
+        items={[{ id: 'any', label: 'Any account' }, ...byAccountGroup(accounts).map((a) => ({ id: a.id, label: acctLabel(a.id), group: accountGroup(a.type) }))]} onPick={(id) => { setAccountId(id === 'any' ? null : id); setPick(null); }} />
       {confirmSheet}
     </Sheet>
   );

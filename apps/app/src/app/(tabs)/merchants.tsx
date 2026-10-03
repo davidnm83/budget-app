@@ -24,7 +24,7 @@ import { useTxnSheet } from '@/components/TxnSheet';
 import { Bar, Card, Button, Chip, Segmented } from '@/components/ui';
 import { PAGE_MAX, TYPE, useWide } from '@/lib/layout';
 import { loadAccounts, today } from '@/lib/plan';
-import type { Account } from '@/lib/types';
+import { accountGroup, byAccountGroup, type Account } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 
@@ -182,7 +182,7 @@ export default function Merchants() {
         </Sheet>
       )}
       <MultiPicker visible={pick === 'accounts'} title="Accounts" onClose={() => setPick(null)} selected={accountIds} onChange={setAccountIds}
-        items={accounts.map((a) => ({ id: a.id, label: `${a.icon ?? ''} ${a.name}${a.mask ? ` ••${a.mask}` : ''}`.trim(), group: a.type ?? undefined }))} />
+        items={byAccountGroup(accounts).map((a) => ({ id: a.id, label: `${a.icon ?? ''} ${a.name}${a.mask ? ` ••${a.mask}` : ''}`.trim(), group: accountGroup(a.type) }))} />
       {confirmSheet}
       {txnSheet}
     </View>

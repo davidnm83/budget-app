@@ -29,6 +29,7 @@ import { MultiPicker } from '@/components/Picker';
 import { IconButton, TopBar } from '@/components/TopBar';
 import { Bar, Card, Button, Chip, Empty } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
+import { accountGroup, byAccountGroup } from '@/lib/types';
 import { useBackToClose } from '@/lib/useBackToClose';
 import { useTheme, type Theme } from '@/lib/theme';
 
@@ -87,7 +88,7 @@ export default function Transactions() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [accounts, setAccounts] = useState<{ id: string; name: string; mask: string | null; icon?: string | null }[]>([]);
+  const [accounts, setAccounts] = useState<{ id: string; name: string; mask: string | null; icon?: string | null; type?: string | null }[]>([]);
   const [cats, setCats] = useState<{ id: string; name: string; group_name: string; icon: string | null }[]>([]);
   const request = useRef(0);
 
@@ -95,7 +96,7 @@ export default function Transactions() {
   useEffect(() => { const h = setTimeout(() => setQuery(search), 300); return () => clearTimeout(h); }, [search]);
 
   useEffect(() => {
-    supabase.from('accounts').select('id, name, mask, icon').eq('is_hidden', false).order('name').then(({ data }) => setAccounts(data ?? []));
+    supabase.from('accounts').select('id, name, mask, icon, type').eq('is_hidden', false).order('name').then(({ data }) => setAccounts(byAccountGroup(data ?? [])));
     supabase.from('categories').select('id, name, group_name, icon').eq('is_hidden', false).order('sort').order('name').then(({ data }) => setCats(data ?? []));
   }, []);
 
@@ -349,7 +350,7 @@ function TxnRow({ t, item, showDate, onToggle, onOpen, selected }: { t: Theme; i
 
 function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total, onExport }: {
   visible: boolean; onClose: () => void; t: Theme; f: Filters; set: (p: Partial<Filters>) => void;
-  accounts: { id: string; name: string; mask: string | null; icon?: string | null }[]; cats: { id: string; name: string; group_name: string; icon: string | null }[]; reset: () => void; total: number | null;
+  accounts: { id: string; name: string; mask: string | null; icon?: string | null; type?: string | null }[]; cats: { id: string; name: string; group_name: string; icon: string | null }[]; reset: () => void; total: number | null;
   onExport: () => Promise<number>;
 }) {
   const [exporting, setExporting] = useState('');
@@ -419,7 +420,7 @@ function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total
         items={[{ id: 'none', label: 'Uncategorised' }, ...cats.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))]}
         selected={f.categories} onChange={(categories) => set({ categories })} />
       <MultiPicker visible={picker === 'accounts'} title="Accounts" onClose={() => setPicker(null)}
-        items={accounts.map((a) => ({ id: a.id, label: `${a.name}${a.mask ? ` ••${a.mask}` : ''}`, icon: <Logo size={28} name={a.name} uri={customPicture(`account:${a.id}`, lv) ?? (a.icon ? null : bankLogo(a.name, lv))} emoji={a.icon ?? undefined} /> }))}
+        items={accounts.map((a) => ({ id: a.id, label: `${a.name}${a.mask ? ` ••${a.mask}` : ''}`, group: accountGroup(a.type), icon: <Logo size={28} name={a.name} uri={customPicture(`account:${a.id}`, lv) ?? (a.icon ? null : bankLogo(a.name, lv))} emoji={a.icon ?? undefined} /> }))}
         selected={f.accounts} onChange={(accounts) => set({ accounts })} />
       <MultiPicker visible={picker === 'merchants'} title="Merchants" onClose={() => setPicker(null)}
         items={merchants.map((m) => ({ id: m.merchant, label: m.merchant, detail: String(m.txns), icon: <Logo size={28} name={m.merchant} uri={merchantLogo(m.merchant, lv)} /> }))}

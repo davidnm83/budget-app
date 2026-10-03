@@ -18,3 +18,12 @@ export interface PlaidItem { id: string; item_id: string; institution_name: stri
 
 // Plaid reports what you owe on cards and loans as a positive balance; the app shows it as negative.
 export const signedBalance = (a: Pick<Account, 'type' | 'current_balance'>) => (a.type === 'credit' || a.type === 'loan' ? -1 : 1) * Number(a.current_balance ?? 0);
+
+/** The heading an account sits under in lists and pickers, by its type. */
+export const ACCOUNT_GROUPS = ['Cash', 'Credit cards', 'Loans', 'Investments', 'Other'] as const;
+export function accountGroup(type: string | null | undefined): string {
+  return type === 'depository' ? 'Cash' : type === 'credit' ? 'Credit cards' : type === 'loan' ? 'Loans' : type === 'investment' ? 'Investments' : 'Other';
+}
+/** Accounts in picker order: by group (Cash, cards, loans…), then name. */
+export const byAccountGroup = <T extends { type?: string | null; name: string }>(list: T[]) =>
+  [...list].sort((a, b) => ACCOUNT_GROUPS.indexOf(accountGroup(a.type) as any) - ACCOUNT_GROUPS.indexOf(accountGroup(b.type) as any) || a.name.localeCompare(b.name));
