@@ -65,6 +65,11 @@ export default function Planner() {
   const name = (id: string | null) => data?.accounts.find((a) => a.id === id)?.name ?? '';
   const v = data?.view;
   const label = `${shortDate(week)} – ${shortDate(addDays(week, 6))}`;
+  // Actual against planned: today's real balance (this week) and a past week's real end.
+  const todayActual = data?.actual[now] ?? null;
+  const todayPlanned = v?.days.find((d) => d.date === now)?.endBalance ?? null;
+  const todayGap = todayActual != null && todayPlanned != null ? todayActual - todayPlanned : 0;
+  const pastEnd = addDays(week, 6) < now ? data?.actual[addDays(week, 6)] ?? null : null;
 
   // Unplanned transactions can be tucked away to leave just the plan; they still count in every balance.
   const [hideUnplanned, setHideUnplanned] = useState(() => { try { return globalThis.localStorage?.getItem('budget.planner.hideUnplanned') === '1'; } catch { return false; } });
@@ -114,8 +119,17 @@ export default function Planner() {
         {v && planAccounts.length > 0 && (
           <>
             <View style={styles.tiles}>
-              <Tile t={t} label="Start" value={money0(v.startBalance)} />
-              <Tile t={t} label={addDays(week, 6) < now ? 'End' : 'Projected end'} value={money0(v.endBalance)} strong warn={v.warnings.length > 0} />
+              <Tile t={t} label="Start" value={money0(v.startBalance)} three={todayActual != null} />
+              {/* The real balance today against where the plan expected it to be by now. */}
+              {todayActual != null && (
+                <Tile t={t} label="Today" value={money0(todayActual)} three
+                  sub={Math.abs(todayGap) < 1 ? 'on plan' : `${money0(Math.abs(todayGap))} ${todayGap < 0 ? 'under' : 'over'} plan`}
+                  color={Math.abs(todayGap) < 1 ? undefined : todayGap < 0 ? t.danger : t.positive} />
+              )}
+              <Tile t={t} label={addDays(week, 6) < now ? 'End' : todayActual != null ? 'Projected' : 'Projected end'} value={money0(v.endBalance)} strong warn={v.warnings.length > 0} three={todayActual != null}
+                sub={pastEnd != null && Math.abs(pastEnd - v.endBalance) >= 1 ? `actual ${money0(pastEnd)}` : undefined} />
+            </View>
+            <View style={styles.tiles}>
               <Tile t={t} label="Money in" value={money0(v.summary.actualIn)} sub={`of ${money0(v.summary.plannedIn)} planned`} />
               <Tile t={t} label="Money out" value={money0(v.summary.actualOut)} sub={`of ${money0(v.summary.plannedOut)} planned`} />
             </View>
@@ -161,7 +175,17 @@ export default function Planner() {
                   <View style={[styles.day, { backgroundColor: d.date === now ? t.track : 'transparent' }]}>
                     <Text style={{ color: t.text, fontWeight: '700', width: 40 }}>{DAYS[i]}</Text>
                     <Text style={{ color: t.muted, flex: 1 }}>{shortDate(d.date)}{d.date === now ? ' · today' : ''}</Text>
-                    <Text style={{ color: d.endBalance < 0 ? t.danger : t.muted, fontVariant: ['tabular-nums'], fontSize: 13 }}>{formatMoney(d.endBalance)}</Text>
+                    {(() => {
+                      // Up to today, the real end-of-day balance shows beside the plan's when the two differ.
+                      const real = data!.actual[d.date];
+                      const differs = real != null && Math.abs(real - d.endBalance) >= 1;
+                      return (
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={{ color: d.endBalance < 0 ? t.danger : t.muted, fontVariant: ['tabular-nums'], fontSize: 13 }}>{differs ? 'plan ' : ''}{formatMoney(d.endBalance)}</Text>
+                          {differs && <Text style={{ color: real < 0 ? t.danger : t.text, fontVariant: ['tabular-nums'], fontSize: 12, fontWeight: '600' }}>actual {formatMoney(real)}</Text>}
+                        </View>
+                      );
+                    })()}
                   </View>
                   {d.rows.filter((r) => !(hideUnplanned && r.kind === 'actual')).map((r) => <Row key={r.key} t={t} r={r} account={only ? '' : name(r.accountId)} onPress={() => openRow(r)} />)}
                 </View>
