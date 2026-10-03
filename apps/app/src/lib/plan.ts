@@ -84,6 +84,8 @@ export async function loadAccounts(): Promise<Account[]> {
 export interface PlannerData {
   view: WeekView; accounts: Account[]; recurring: Recurring[]; entries: PlanEntry[];
   ahead: { week: string; end: number; warning: WeekView['warnings'][number] | null }[];
+  /** The week strip: 8 weeks back (how they really ended), this week and 7 ahead (projected). */
+  strip: { week: string; end: number; warning: WeekView['warnings'][number] | null; past: boolean }[];
   /** The real end-of-day balance of the shown accounts, for each day of the week up to today. */
   actual: Record<string, number>;
 }
@@ -99,8 +101,10 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   const all = await loadAccounts();
   const planAccounts = all.filter((a) => a.plan_include);
   const ids = planAccounts.map((a) => a.id);
-  const from = week < thisWeek ? week : thisWeek;
-  const to = addDays(week > thisWeek ? week : thisWeek, 6);
+  // From 8 weeks back (the strip shows how past weeks really ended) to 8 weeks ahead, or the open week if further.
+  const back = addDays(thisWeek, -56), aheadEnd = addDays(thisWeek, 49);
+  const from = week < back ? week : back;
+  const to = addDays(week > aheadEnd ? week : aheadEnd, 6);
   const [recurring, entries, posted] = await Promise.all([
     loadRecurring(), loadEntries(addDays(from, -31), addDays(to, 31)), loadPosted(ids, addDays(from, -4), addDays(to > now ? to : now, 4)),
   ]);
@@ -117,10 +121,14 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   const starts = new Map<string, Record<string, number>>();
   const ahead: PlannerData['ahead'] = [];
   let roll = balanceOn(thisWeek);
-  const last = week > addDays(thisWeek, 21) ? week : addDays(thisWeek, 21);
+  const strip: PlannerData['strip'] = [];
+  const total = (bal: Record<string, number>) => Math.round(shown.reduce((s2, a) => s2 + bal[a.id], 0) * 100) / 100;
+  for (let w = back; w < thisWeek; w = addDays(w, 7)) strip.push({ week: w, end: total(balanceOn(addDays(w, 7))), warning: null, past: true });
+  const last = week > aheadEnd ? week : aheadEnd;
   for (let w = thisWeek; w <= last; w = addDays(w, 7)) {
     starts.set(w, roll);
     const v = buildWeek({ weekStart: w, today: now, planned: plannedFor(w), actuals: posted, accounts: accountsFor(roll) });
+    if (w <= aheadEnd) strip.push({ week: w, end: total(v.endBalanceByAccount), warning: v.warnings.find((x) => shownIds.has(x.accountId)) ?? null, past: false });
     if (ahead.length < 4) {
       ahead.push({ week: w, end: Math.round(shown.reduce((s2, a) => s2 + v.endBalanceByAccount[a.id], 0) * 100) / 100, warning: v.warnings.find((x) => shownIds.has(x.accountId)) ?? null });
     }
@@ -139,5 +147,5 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
     if (d > now) break;
     actual[d] = round2(shown.reduce((s, a) => s + balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), addDays(d, 1)), 0));
   }
-  return { view, accounts: all, recurring, entries, ahead, actual };
+  return { view, accounts: all, recurring, entries, ahead, actual, strip };
 }

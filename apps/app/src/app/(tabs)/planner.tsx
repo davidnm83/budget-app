@@ -8,7 +8,7 @@ import { UNDER_BAR } from '@/lib/layout';
 import { seedTxn } from '@/lib/txnCache';
 import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { addDays, addMonths, formatMoney, monthName, monthOf, shortDate, weekStart as mondayOf, type WeekRow , instalmentsBetween } from '@budget-app/core';
+import { addDays, addMonths, expandPlan, formatMoney, monthEnd, monthName, monthOf, shortDate, weekStart as mondayOf, type WeekRow , instalmentsBetween } from '@budget-app/core';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -20,7 +20,8 @@ import { loadPlans, type CardPlan } from '@/lib/paymentPlans';
 import { IconButton, TopBar } from '@/components/TopBar';
 import { Card, Chip, Empty, Segmented, Fab } from '@/components/ui';
 import Bills from './bills';
-import { loadWeek, today, type PlannerData } from '@/lib/plan';
+import { loadEntries, loadRecurring, loadWeek, today, type PlannerData } from '@/lib/plan';
+import { PeriodStrip, PeriodTitle, type Period } from '@/components/PeriodStrip';
 import { useTheme, type Theme } from '@/lib/theme';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -50,6 +51,22 @@ export default function Planner() {
   useEffect(() => { if (params.view === 'bills') { setView('month'); router.setParams({ view: undefined } as any); } }, [params.view]);
 
   const [cardPlans, setCardPlans] = useState<CardPlan[]>([]);
+  // Month view's strip: each month's bills and income added up, 6 months back to 12 ahead.
+  const [monthStrip, setMonthStrip] = useState<Period[]>([]);
+  useEffect(() => {
+    if (view !== 'month') return;
+    const cur = monthOf(today()), first = addMonths(cur, -6), lastM = addMonths(cur, 12);
+    Promise.all([loadRecurring(), loadEntries(first, monthEnd(lastM))]).then(([rec, ent]) => {
+      const out: Period[] = [];
+      for (let m = first; m <= lastM; m = addMonths(m, 1)) {
+        const net = expandPlan(rec, ent, m, monthEnd(m)).filter((p) => !p.transfer).reduce((x, p) => x + p.amount, 0);
+        const yr = m.slice(0, 4) !== cur.slice(0, 4) ? ` ${m.slice(2, 4)}` : '';
+        out.push({ key: m, label: m === cur ? 'THIS MONTH' : new Date(m + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' }).toUpperCase() + yr,
+          value: `${net < 0 ? '−' : '+'}${money0(Math.abs(net))}`, bad: net < 0, dim: m < cur });
+      }
+      setMonthStrip(out);
+    }).catch(() => setMonthStrip([]));
+  }, [view, billsKey]);
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try { const d = await loadWeek(week, only); setData(d); loadPlans().then(setCardPlans).catch(() => {}); if (week === mondayOf(today()) && !only) setPlannerBadge(d.view?.summary.overdue ?? 0); else refreshPlannerBadge(); }
@@ -89,18 +106,20 @@ export default function Planner() {
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
+      {/* Same header as the Budget: the open period and a way back to now, the view switch, then the strip of weeks or months. */}
       <TopBar>
-        <Pressable onPress={() => (view === 'week' ? setWeek(addDays(week, -7)) : setMonth(addMonths(month, -1)))} disabled={view === 'all'} style={{ opacity: view === 'all' ? 0 : 1 }} hitSlop={10} accessibilityLabel={view === 'week' ? 'Previous week' : 'Previous month'}><Ionicons name="chevron-back" size={22} color={t.accent} /></Pressable>
-        <Pressable onPress={() => (view === 'week' ? setWeek(thisWeek) : setMonth(monthOf(now)))} disabled={view === 'all'} style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{view === 'week' ? label : view === 'month' ? monthName(month) : 'All bills & income'}</Text>
-          {view === 'all' || (view === 'week' ? week === thisWeek : month === monthOf(now))
-            ? <Text style={{ color: t.muted, fontSize: 12 }}>{view === 'week' ? 'This week' : view === 'month' ? 'This month' : 'Everything that repeats'}</Text>
-            : <View style={[styles.today, { backgroundColor: t.accent + '1f' }]}><Ionicons name="return-down-back" size={12} color={t.accent} /><Text style={{ color: t.accent, fontSize: 12, fontWeight: '600' }}>{view === 'week' ? 'This week' : 'This month'}</Text></View>}
-        </Pressable>
-        <Pressable onPress={() => (view === 'week' ? setWeek(addDays(week, 7)) : setMonth(addMonths(month, 1)))} disabled={view === 'all'} style={{ opacity: view === 'all' ? 0 : 1 }} hitSlop={10} accessibilityLabel={view === 'week' ? 'Next week' : 'Next month'}><Ionicons name="chevron-forward" size={22} color={t.accent} /></Pressable>
+        <PeriodTitle t={t} title={view === 'week' ? label : view === 'month' ? monthName(month) : 'All bills & income'}
+          sub={view === 'week' ? (week === thisWeek ? 'This week' : week < thisWeek ? 'Past week' : 'Ahead') : view === 'month' ? (month === monthOf(now) ? 'This month' : month < monthOf(now) ? 'Past month' : 'Ahead') : 'Everything that repeats'}
+          away={view === 'week' ? week !== thisWeek : view === 'month' && month !== monthOf(now)} hereText={view === 'week' ? 'This week' : 'This month'}
+          onHere={() => (view === 'week' ? setWeek(thisWeek) : setMonth(monthOf(now)))} />
       </TopBar>
       <View style={styles.viewSwitch}>
         <Segmented value={view} onChange={setView} options={[{ value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }, { value: 'all', label: 'All bills' }]} />
+        {view === 'week' && data && (
+          <PeriodStrip t={t} selected={week} current={thisWeek} onSelect={setWeek}
+            items={data.strip.map((a) => ({ key: a.week, label: a.week === thisWeek ? 'THIS WEEK' : `WK OF ${shortDate(a.week).toUpperCase()}`, value: money0(a.end), bad: !a.past && (!!a.warning || a.end < 0), dim: a.past }))} />
+        )}
+        {view === 'month' && <PeriodStrip t={t} selected={month} current={monthOf(now)} onSelect={setMonth} items={monthStrip} />}
       </View>
       {view !== 'week' ? <Bills key={billsKey} mode={view} month={month} embedded /> : (
 
@@ -132,20 +151,6 @@ export default function Planner() {
             <View style={styles.tiles}>
               <Tile t={t} label="Money in" value={money0(v.summary.actualIn)} sub={`of ${money0(v.summary.plannedIn)} planned`} />
               <Tile t={t} label="Money out" value={money0(v.summary.actualOut)} sub={`of ${money0(v.summary.plannedOut)} planned`} />
-            </View>
-            {/* The look-ahead reads as week tabs: a tinted strip, the open week filled in. */}
-            <View style={[styles.ahead, { backgroundColor: t.line }]}>
-              {data!.ahead.map((a) => {
-                const on = a.week === week;
-                const bad = !!a.warning || a.end < 0;
-                return (
-                  <Pressable key={a.week} onPress={() => setWeek(a.week)} accessibilityRole="tab" accessibilityState={{ selected: on }}
-                    style={[styles.aheadCell, on && { backgroundColor: t.accent }]}>
-                    <Text style={{ color: on ? '#ffffffcc' : t.muted, fontSize: 10, fontWeight: '600' }}>{a.week === thisWeek ? 'THIS WEEK' : `WK OF ${shortDate(a.week).toUpperCase()}`}</Text>
-                    <Text style={{ color: on ? '#fff' : bad ? t.danger : t.text, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{bad && !on ? '⚠ ' : ''}{money0(a.end)}</Text>
-                  </Pressable>
-                );
-              })}
             </View>
             {v.warnings.map((w) => (
               <View key={w.accountId} style={[styles.warn, { borderColor: t.danger }]}>
@@ -262,7 +267,7 @@ function Row({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string
 const styles = StyleSheet.create({
   today: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 1, borderRadius: 10 },
   hideRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 32 },
-  viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
+  viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, gap: 8, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   page: { padding: 12, gap: 10, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   ahead: { flexDirection: 'row', gap: 2, padding: 3, borderRadius: 10 },

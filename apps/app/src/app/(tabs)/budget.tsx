@@ -18,6 +18,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Field, Sheet, useChanged } from '@/components/Forms';
+import { PeriodStrip, PeriodTitle, type Period } from '@/components/PeriodStrip';
 import { SinglePicker } from '@/components/Picker';
 import { TopBar } from '@/components/TopBar';
 import { Button, Card, Chip, Empty, Segmented, Stepper } from '@/components/ui';
@@ -73,13 +74,36 @@ export default function BudgetTab() {
   usePullRefresh(load);
 
   const [showTxns, txnSheet] = useTxnSheet();
+  const current = thisMonth();
+  // The strip: every month with a budget or spending, back to a year ago, and 12 months ahead. Under each,
+  // what's left to spend (red when over), or the budget for months still to come.
+  const strip = useMemo(() => {
+    const incomeCats = new Set(cats.filter((c) => c.kind === 'income').map((c) => c.id));
+    const first = [...summaries.map((x) => x.month), ...budgets.map((b) => b.month), addMonths(current, -12)].sort()[0];
+    const out: Period[] = [];
+    for (let m = first; m <= addMonths(current, 12); m = addMonths(m, 1)) {
+      const budgeted = budgets.filter((b) => b.month === m && !(b.categoryId && incomeCats.has(b.categoryId))).reduce((x, b) => x + b.amount, 0);
+      const spent = -(summaries.find((x) => x.month === m)?.spending ?? 0);
+      const yr = m.slice(0, 4) !== current.slice(0, 4) ? ` ${m.slice(2, 4)}` : '';
+      const label = m === current ? 'THIS MONTH' : new Date(m + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' }).toUpperCase() + yr;
+      out.push(m > current ? { key: m, label, value: budgeted ? money0(budgeted) : '–', dim: true }
+        : budgeted ? { key: m, label, value: `${budgeted - spent < 0 ? '−' : ''}${money0(Math.abs(budgeted - spent))}`, bad: budgeted - spent < 0 }
+        : { key: m, label, value: spent ? money0(spent) : '–', dim: true });
+    }
+    return out;
+  }, [budgets, summaries, cats, current]);
   const data = { t, cats, groupIcons, widgets, setWidgets, refresh, showTxns, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-    <TopBar title="Budget" />
+    {/* Same header as the Planner: the open period and a way back to now, the view switch, then the strip of months. */}
+    <TopBar>
+      <PeriodTitle t={t} title={view === 'year' ? 'Year by month' : monthName(month)} away={view !== 'year' && month !== current} hereText="This month" onHere={() => setMonth(current)}
+        sub={view === 'year' ? undefined : month === current ? 'This month' : month > current ? 'Planning ahead · spending shows once the month starts' : 'Past month'} />
+    </TopBar>
     <View style={styles.viewSwitch}>
       <Segmented<View_> value={view} onChange={setView}
         options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
+      {view !== 'year' && <PeriodStrip t={t} items={strip} selected={month} current={current} onSelect={setMonth} />}
     </View>
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
@@ -192,8 +216,6 @@ function MonthView(d: Data) {
 
   return (
     <>
-      <Stepper label={monthName(month)} onPrev={() => d.setMonth(addMonths(month, -1))} onNext={() => d.setMonth(addMonths(month, 1))} nextDisabled={month >= addMonths(current, 12)} here={month === current} onToday={() => d.setMonth(current)} />
-      {future && <Text style={{ color: t.muted, fontSize: 13, textAlign: 'center' }}>Planning ahead: set this month’s budget now. Spending shows once the month starts.</Text>}
 
       {/* Top: how the month stands. Left to spend (coloured by pace), actual net so far, and the plan's net. */}
       {(() => {
@@ -693,7 +715,6 @@ function CompareView(d: Data) {
 
   return (
     <>
-      <Stepper label={monthName(month)} onPrev={() => d.setMonth(addMonths(month, -1))} onNext={() => d.setMonth(addMonths(month, 1))} nextDisabled={month >= thisMonth()} here={month === thisMonth()} onToday={() => d.setMonth(thisMonth())} />
       <Segmented value={scope} onChange={setScope} options={[{ value: 'month', label: 'One month' }, { value: 'ytd', label: 'Year to date' }]} />
       {scope === 'month' && (
         <View style={styles.chips}>
@@ -821,7 +842,7 @@ function YearView(d: Data) {
 }
 
 const styles = StyleSheet.create({
-  viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
+  viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, gap: 8, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   page: { paddingHorizontal: 12, paddingTop: 4, gap: 8, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tile: { flexGrow: 1, flexBasis: '22%', minWidth: 78, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 6 },
