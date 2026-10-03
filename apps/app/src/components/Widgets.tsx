@@ -13,7 +13,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { BalanceChart } from '@/components/AccountSheet';
 import { Skeleton } from '@/components/Columns';
-import { Field, Sheet } from '@/components/Forms';
+import { Field, Sheet, useChanged } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
 import { loadTxnsFor } from '@/lib/accountTxns';
 import { supabase } from '@/lib/supabase';
@@ -525,6 +525,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
   const [text, setText] = useState(cfg.text ?? '');
   const [plain, setPlain] = useState(!!cfg.plain);
   const [radar, setRadar] = useState<RadarSettings>(cfg.radar ?? {});
+  const changed = useChanged([title, months, source, view, ids, accs, by, avgLine, numbers, legend, payoff, stack, compare, pace, text, plain, radar]);
   const radarNum = (k: 'unusualPct' | 'unusualMin' | 'cardPct' | 'runwayDays', v: string) => setRadar((r) => { const n = Number(v); const { [k]: _old, ...rest } = r; return v.trim() && isFinite(n) && n >= 0 ? { ...rest, [k]: n } : rest; });
   const [pick, setPick] = useState(false);
   const [pickAcc, setPickAcc] = useState(false);
@@ -578,7 +579,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
     </View>
   );
   return (
-    <Sheet title={kind === 'basic' ? def?.title ?? 'Widget' : kind === 'text' ? 'Text' : 'Chart'} onClose={onClose} footer={<Button title="Done" onPress={done} />}>
+    <Sheet title={kind === 'basic' ? def?.title ?? 'Widget' : kind === 'text' ? 'Text' : 'Chart'} dirty={changed} onClose={onClose} footer={<Button title="Done" onPress={done} />}>
       {kind === 'text' ? (
         <>
           <Field t={t} label="Text" hint="Start a line with a dash for a list. Leave a line empty for a new paragraph.">

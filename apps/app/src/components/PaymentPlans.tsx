@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useConfirm } from '@/components/Confirm';
 import { DateField } from '@/components/DateField';
-import { Field, Sheet } from '@/components/Forms';
+import { Field, Sheet, useChanged } from '@/components/Forms';
 import { SinglePicker } from '@/components/Picker';
 import { Bar, Button, Card, Chip, Segmented } from '@/components/ui';
 import { closePlan, createPlan, deletePlan, updatePlan, type CardPlan, type PlanInput } from '@/lib/paymentPlans';
@@ -129,6 +129,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
   const [pick, setPick] = useState<'cat' | 'cost' | 'txn' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const changed = useChanged([description, accountId, amount, start, months, fee, apr, monthlyFee, mode, offset, categoryId, payFrom, post, postFee, txnId, past]);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
 
   useEffect(() => {
@@ -189,7 +190,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
   };
 
   return (
-    <Sheet title={plan ? 'Edit payment plan' : 'Payment plan'} onClose={() => { if (!busy) onClose(); }} footer={<Button title={plan ? 'Save' : 'Add plan'} onPress={save} busy={busy} />}>
+    <Sheet title={plan ? 'Edit payment plan' : 'Payment plan'} dirty={changed && !busy} onClose={() => { if (!busy) onClose(); }} footer={<Button title={plan ? 'Save' : 'Add plan'} onPress={save} busy={busy} />}>
       <Field t={t} label="What it’s for"><TextInput value={description} onChangeText={setDescription} placeholder="e.g. Laptop" placeholderTextColor={t.muted} style={input} /></Field>
       <Field t={t} label="Card"><View style={styles.chips}>{cards.map((a) => <Chip key={a.id} label={a.name} on={accountId === a.id} onPress={() => setAccountId(a.id)} />)}</View></Field>
       <View style={{ flexDirection: 'row', gap: 12 }}>

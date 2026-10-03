@@ -9,7 +9,8 @@ import { useWide } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
 
 export function ModalFrame({ visible = true, onClose, children, fit, width = 560 }: {
-  visible?: boolean; onClose: () => void; children: ReactNode; fit?: boolean; width?: number;
+  /** May return false to stay open (unsaved changes: the form asks first). */
+  visible?: boolean; onClose: () => void | boolean; children: ReactNode; fit?: boolean; width?: number;
 }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -35,7 +36,7 @@ export function ModalFrame({ visible = true, onClose, children, fit, width = 560
  * The dimming fades in place while only the sheet itself slides up. The page behind is dimmed, not
  * blurred: blurring a whole page on every frame of the slide is what made pop-ups stutter on phones.
  */
-function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onClose: () => void; children: ReactNode; fit?: boolean }) {
+function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onClose: () => void | boolean; children: ReactNode; fit?: boolean }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   // Drag down to close, from anywhere on the sheet as long as whatever is under your finger is
@@ -86,8 +87,9 @@ function PhoneSheet({ visible, onClose, children, fit }: { visible: boolean; onC
       if (state !== 'drag') { state = 'idle'; return; }
       state = 'idle';
       const fast = last / Math.max(1, Date.now() - t0) > 0.9;
-      if (last > 110 || (fast && last > 40)) closeRef.current();
-      else { el.style.transition = 'transform 220ms cubic-bezier(0.2, 0.9, 0.2, 1)'; el.style.transform = 'translateY(0px)'; }
+      const back = () => { el.style.transition = 'transform 220ms cubic-bezier(0.2, 0.9, 0.2, 1)'; el.style.transform = 'translateY(0px)'; };
+      if (last > 110 || (fast && last > 40)) { if (closeRef.current() === false) back(); }
+      else back();
     };
     el.addEventListener('touchstart', start, { passive: true }); el.addEventListener('touchmove', move, { passive: false });
     el.addEventListener('touchend', end); el.addEventListener('touchcancel', end);

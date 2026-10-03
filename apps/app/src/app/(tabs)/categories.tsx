@@ -12,7 +12,7 @@ import { categoryIcon, groupIcon } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { Field, Sheet } from '@/components/Forms';
+import { Field, Sheet, useChanged } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
 import { Button, Card, Chip, Segmented, Fab } from '@/components/ui';
 import { loadGroupIcons, mergeCategories, renameGroup, setGroupIcon } from '@/lib/categories';
@@ -98,6 +98,7 @@ function CategoryEditor({ initial, cats, count, onClose, onSaved }: { initial: P
   const [groupName, setGroupName] = useState(initial.group_name ?? '');
   const [kind, setKind] = useState<Cat['kind']>(initial.kind ?? 'expense');
   const [hidden, setHidden] = useState(!!initial.is_hidden);
+  const changed = useChanged([name, icon, groupName, kind, hidden]);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [confirm, confirmSheet] = useConfirm();
   const [error, setError] = useState('');
@@ -129,7 +130,7 @@ function CategoryEditor({ initial, cats, count, onClose, onSaved }: { initial: P
   };
 
   return (
-    <Sheet title={initial.id ? 'Edit category' : 'New category'} onClose={onClose}
+    <Sheet title={initial.id ? 'Edit category' : 'New category'} dirty={changed} onClose={onClose}
       footer={<Button title="Save" onPress={save} />}>
       <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
         <Field t={t} label="Icon"><EmojiField value={icon} onChange={setIcon} placeholder={categoryIcon(name || '-', null)} /></Field>
@@ -171,6 +172,7 @@ function GroupEditor({ name, icon: initialIcon, cats, onClose, onSaved }: { name
   const before = cats.filter((c) => c.group_name === name && !isNew).map((c) => c.id);
   const [members, setMembers] = useState<string[]>(before);
   const [picking, setPicking] = useState(false);
+  const changed = useChanged([value, icon, members]);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
   const save = async () => {
     try {
@@ -191,7 +193,7 @@ function GroupEditor({ name, icon: initialIcon, cats, onClose, onSaved }: { name
   };
   const names = cats.filter((c) => members.includes(c.id)).map((c) => c.name);
   return (
-    <Sheet title={isNew ? 'New group' : 'Edit group'} onClose={onClose} footer={<Button title="Save" onPress={save} />}>
+    <Sheet title={isNew ? 'New group' : 'Edit group'} dirty={changed} onClose={onClose} footer={<Button title="Save" onPress={save} />}>
       <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
         <Field t={t} label="Icon"><EmojiField value={icon} onChange={setIcon} placeholder={groupIcon(value || name)} /></Field>
         <View style={{ flex: 1 }}><Field t={t} label="Group name"><TextInput value={value} onChangeText={setValue} placeholder="e.g. Pets" placeholderTextColor={t.muted} style={input} /></Field></View>
