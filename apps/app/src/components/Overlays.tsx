@@ -31,6 +31,11 @@ export function Toaster() {
             <Text style={{ color: fg, fontWeight: '800', fontSize: 13 }}>Undo</Text>
           </Pressable>
         )}
+        {m.action && (
+          <Pressable onPress={() => { dismissToast(); m.action!.run(); }} hitSlop={10} accessibilityLabel={m.action.label} style={[styles.undo, { borderColor: fg + '55' }]}>
+            <Text style={{ color: fg, fontWeight: '800', fontSize: 13 }}>{m.action.label}</Text>
+          </Pressable>
+        )}
         <Pressable onPress={dismissToast} hitSlop={10} accessibilityLabel="Dismiss message"><Ionicons name="close" size={16} color={fg} /></Pressable>
       </View>
     </View>

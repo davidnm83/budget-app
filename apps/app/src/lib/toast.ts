@@ -4,17 +4,18 @@ import { useSyncExternalStore } from 'react';
 import { supabase } from './supabase';
 import { refreshNow } from './pullRefresh';
 
-export interface Toast { id: number; text: string; undo?: () => Promise<void> | void; error?: boolean }
+export interface Toast { id: number; text: string; undo?: () => Promise<void> | void; error?: boolean; action?: { label: string; run: () => void } }
 let current: Toast | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let seq = 0;
 const subs = new Set<() => void>();
 const emit = () => subs.forEach((f) => f());
 
-export function toast(text: string, opts: { undo?: () => Promise<void> | void; error?: boolean } = {}) {
+/** `action` adds a button (like "Reload"); a message with one stays until it is used or closed. */
+export function toast(text: string, opts: { undo?: () => Promise<void> | void; error?: boolean; action?: Toast['action'] } = {}) {
   current = { id: ++seq, text, ...opts };
   if (timer) clearTimeout(timer);
-  timer = setTimeout(dismissToast, opts.undo ? 6000 : 2200);
+  timer = opts.action ? null : setTimeout(dismissToast, opts.undo ? 6000 : 2200);
   emit();
 }
 export function dismissToast() { current = null; if (timer) clearTimeout(timer); timer = null; emit(); }

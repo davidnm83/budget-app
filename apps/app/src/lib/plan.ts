@@ -44,11 +44,14 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
   const due = new Map<string, number>();
   for (const a of (accts ?? []) as any[]) {
     const owed = Math.max(0, Number(a.balance ?? 0)); // cards: amount owing is positive in balance
-    let amount = owed;
+    const mine = plans.filter((p) => p.accountId === a.id);
+    // With nothing left on the statement (or no statement dates), it's what's owed now, less the payment
+    // plan instalments not billed yet: those come due on later statements, not this payment.
+    let amount = Math.max(0, owed - plansDeferred(mine, now));
     if (a.statement_day && a.due_day) {
       const c = cardCycle(now, a.statement_day, a.due_day);
-      const st = cardStatus(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null, plansDeferred(plans.filter((p) => p.accountId === a.id), c.lastClose));
-      amount = st.leftToPay > 0 ? st.leftToPay : owed;
+      const st = cardStatus(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null, plansDeferred(mine, c.lastClose));
+      if (st.leftToPay > 0) amount = st.leftToPay;
     }
     due.set(a.id, round2(amount));
   }

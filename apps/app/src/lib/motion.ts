@@ -22,7 +22,8 @@ const S: Record<string, any> = web ? StyleSheet.create({
   // No lasting will-change: a sheet kept on its own GPU layer after it arrives is what Android Chrome fills with
   // black tiles on a long form (worse with one sheet over another). The animation is promoted while it runs anyway.
   sheet: kf({ transform: 'translateY(100%)' }, { transform: 'translateY(0%)' }, '280ms'),
-  fade: kf({ opacity: 0 }, { opacity: 1 }, '200ms', 'ease-out'),
+  // Same length and curve as the sheet, so the dimming deepens exactly as the sheet rises.
+  fade: kf({ opacity: 0 }, { opacity: 1 }, '280ms'),
   enterA: up(10), enterB: up(10.01),
   // After a swipe between tabs: the new page comes in from the side the finger was heading to (two copies each, so it replays).
   inR: kf({ opacity: 0.4, transform: 'translateX(60px)' }, { opacity: 1, transform: 'translateX(0px)' }, '220ms'),

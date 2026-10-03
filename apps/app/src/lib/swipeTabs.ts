@@ -80,10 +80,11 @@ export function useSwipeTabs(enabled: boolean, go: (dir: 1 | -1) => void, can: (
       if (Math.abs(dx) >= COMMIT || quick) {
         const dir: 1 | -1 = dx < 0 ? 1 : -1;
         enterFrom = dir;
+        // The page being left stays where the finger took it until it's hidden; snapping it back first
+        // showed it again for a frame (the flash). It's put straight once the next tab has taken over.
         const old = scene;
-        reset(false);
-        if (old) { old.style.transform = ''; old.style.opacity = ''; }
         goRef.current(dir);
+        setTimeout(() => { if (old) { old.style.transition = 'none'; old.style.transform = ''; old.style.opacity = ''; } }, 400);
       } else reset(true);
     };
     const cancel = () => { if (state === 'drag') reset(true); state = 'idle'; };

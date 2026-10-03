@@ -252,7 +252,6 @@ const LEGEND_ROW = 26, LEGEND_COL = 200;
  * auto: around when the card is wide enough for labels on both sides, otherwise the list.
  */
 export type PieLabels = 'auto' | 'around' | 'list' | 'none';
-const AROUND_W = 112; // room for one label beside the ring, each side
 
 export function Donut({ t, slices, format, note, width, height, labels = 'auto' }: { t: Theme; slices: Slice[]; format: (n: number) => string; note?: string; width: number; height: number; labels?: PieLabels }) {
   const [sel, setSel] = useState<number | null>(null);
@@ -265,10 +264,10 @@ export function Donut({ t, slices, format, note, width, height, labels = 'auto' 
   if (rest > 0) parts.push({ label: `${slices.length - keep} others`, value: rest, color: t.muted });
   const total = parts.reduce((s, p) => s + p.value, 0);
   if (total <= 0) return <Text style={{ color: t.muted }}>Nothing to show{note ? ` ${note}` : ''}.</Text>;
-  const aroundSize = Math.floor(Math.min(height - 12, width - 2 * (AROUND_W + 22)));
-  const fits = aroundSize >= 80 && !!aroundLayout(parts, total, width / 2, height / 2, aroundSize / 2, height);
-  const mode = labels === 'auto' ? (aroundSize >= 120 && fits ? 'around' : 'list') : labels === 'around' && !fits ? 'list' : labels;
-  if (mode === 'around') return <AroundPie t={t} parts={parts} total={total} format={format} note={note} width={width} height={height} size={Math.max(80, aroundSize)} />;
+  const lay = labels === 'auto' || labels === 'around' ? radialLayout(parts, total, width, height, (i) => `${Math.round((parts[i].value / total) * 100)}% · ${format(parts[i].value)}`) : null;
+  // Automatic: around the ring when that leaves a good-sized ring, otherwise the separate legend.
+  const mode = labels === 'auto' ? (lay && lay.size >= 130 ? 'around' : 'list') : labels === 'around' && !lay ? 'list' : labels;
+  if (mode === 'around' && lay) return <AroundPie t={t} parts={parts} total={total} format={format} note={note} width={width} height={height} lay={lay} />;
   const legend = mode === 'list';
 
   // Beside or under: whichever gives the bigger ring (beside wins a tie: it reads better on a wide card).
@@ -337,47 +336,98 @@ export function Donut({ t, slices, format, note, width, height, labels = 'auto' 
   );
 }
 
-interface Spot { i: number; right: boolean; ax: number; ay: number; y: number }
+interface LabelBox { i: number; left: number; top: number; w: number; h: number; align: 'left' | 'right' | 'center' }
+/** A rough width for a line of label text (12px): emoji count double. */
+const textW = (str: string, px = 6.6) => [...str].reduce((w, ch) => w + (/\p{Extended_Pictographic}/u.test(ch) ? 2.2 : 1) * px, 0);
+const LABEL_H = 30; // name, then "37% · $72"
+
 /**
- * Where each label goes beside the ring: the side its slice faces, then balanced (slices near the
- * top or bottom can go either way), spread so none overlap. Two-line labels when there's room,
- * one line when there isn't; null when even that doesn't fit.
+ * Labels around the ring, each at its own slice's angle: beside the ring at the sides, above or below it
+ * at the top and bottom. Tries the biggest ring first and shrinks it until every label fits inside the
+ * card without touching another label or the ring. null when even a small ring doesn't leave room.
  */
-function aroundLayout(parts: { value: number }[], total: number, cx: number, cy: number, R: number, height: number): { spots: Spot[]; line: number } | null {
+type PieLayout = { size: number; boxes: LabelBox[]; cy?: number };
+function radialLayout(parts: { label: string; value: number }[], total: number, W: number, H: number, second: (i: number) => string): PieLayout | null {
+  const cx = W / 2, cy = H / 2, GAP = 6;
+  const sizes = parts.map((p, i) => ({ w: Math.min(W * 0.48, Math.ceil(Math.max(textW(p.label), textW(second(i), 6.1)) + 4)), h: LABEL_H }));
   let acc = 0;
-  const spots: (Spot & { c: number })[] = parts.map((p, i) => {
-    const mid = acc + p.value / total / 2; acc += p.value / total;
-    const th = mid * 2 * Math.PI - Math.PI / 2;
-    return { i, c: Math.cos(th), right: Math.cos(th) >= 0, ax: cx + (R + 8) * Math.cos(th), ay: cy + (R + 8) * Math.sin(th), y: cy + (R + 8) * Math.sin(th) };
-  });
-  // A side with more labels than room: move the ones nearest the top or bottom across.
-  for (;;) {
-    const r = spots.filter((x) => x.right).length, l = spots.length - r;
-    if (Math.abs(r - l) <= 1 || Math.max(r, l) * 30 <= height) break;
-    const from = r > l;
-    const pick = spots.filter((x) => x.right === from).sort((a, b) => Math.abs(a.c) - Math.abs(b.c))[0];
-    pick.right = !from;
+  const angle = parts.map((p) => { const mid = acc + p.value / total / 2; acc += p.value / total; return mid * 2 * Math.PI - Math.PI / 2; });
+  const hits = (a: LabelBox, b: LabelBox) => a.left < b.left + b.w + 2 && b.left < a.left + a.w + 2 && a.top < b.top + b.h && b.top < a.top + a.h;
+  const touchesRing = (b: LabelBox, R: number) => {
+    const nx = Math.max(b.left, Math.min(cx, b.left + b.w)), ny = Math.max(b.top, Math.min(cy, b.top + b.h));
+    return Math.hypot(nx - cx, ny - cy) < R + 2;
+  };
+  for (let size = Math.floor(Math.min(W, H) - 8); size >= 80; size -= 6) {
+    const R = size / 2;
+    const boxes: LabelBox[] = parts.map((_, i) => {
+      const c = Math.cos(angle[i]), sn = Math.sin(angle[i]), { w, h } = sizes[i];
+      const px = cx + (R + GAP) * c, py = cy + (R + GAP) * sn;
+      const align: LabelBox['align'] = c > 0.25 ? 'left' : c < -0.25 ? 'right' : 'center';
+      const left = align === 'left' ? px : align === 'right' ? px - w : px - w / 2;
+      const top = sn > 0.25 ? py : sn < -0.25 ? py - h : py - h / 2;
+      return { i, left, top, w, h, align };
+    });
+    // Neighbours that overlap are eased apart up and down (a few rounds), keeping them by their slices.
+    for (let round = 0; round < 6; round++) {
+      let moved = false;
+      for (let a = 0; a < boxes.length; a++) for (let b = a + 1; b < boxes.length; b++) {
+        const A = boxes[a], B = boxes[b];
+        if (!hits(A, B)) continue;
+        const push = (Math.min(A.top + A.h, B.top + B.h) - Math.max(A.top, B.top)) / 2 + 1;
+        if (A.top <= B.top) { A.top -= push; B.top += push; } else { A.top += push; B.top -= push; }
+        moved = true;
+      }
+      if (!moved) break;
+    }
+    const ok = boxes.every((b) => b.left >= 0 && b.top >= 0 && b.left + b.w <= W && b.top + b.h <= H && !touchesRing(b, R))
+      && boxes.every((b, k) => boxes.every((o, j) => j <= k || !hits(b, o)));
+    if (ok) return best(stacked(), { size, boxes });
   }
-  const most = Math.max(spots.filter((x) => x.right).length, spots.filter((x) => !x.right).length);
-  const line = height >= most * 30 ? 30 : height >= most * 17 ? 17 : 0;
-  if (!line) return null;
-  for (const side of [true, false]) {
-    const list = spots.filter((x) => x.right === side).sort((a, b) => a.y - b.y);
-    for (let k = 0; k < list.length; k++) list[k].y = Math.max(list[k].y, k ? list[k - 1].y + line : line / 2);
-    for (let k = list.length - 1; k >= 0; k--) list[k].y = Math.min(list[k].y, k < list.length - 1 ? list[k + 1].y - line : height - line / 2);
+  return stacked();
+
+  // On a narrow card labels beside the ring squeeze it; rows above and below (top-half slices above,
+  // bottom-half below, left to right as they sit on the ring) can leave a much bigger one.
+  function stacked(): PieLayout | null {
+    if (W > H * 1.25) return null; // a wide card reads better with the legend beside the ring
+    const pack = (ids: number[]) => {
+      const rows: number[][] = [];
+      let used = Infinity;
+      for (const i of ids) {
+        if (used + 10 + sizes[i].w > W) { rows.push([]); used = -10; }
+        rows[rows.length - 1].push(i); used += 10 + sizes[i].w;
+      }
+      return rows;
+    };
+    const byX = (a: number, b: number) => Math.cos(angle[a]) - Math.cos(angle[b]);
+    const up = parts.map((_, i) => i).filter((i) => Math.sin(angle[i]) < 0).sort(byX);
+    const down = parts.map((_, i) => i).filter((i) => Math.sin(angle[i]) >= 0).sort(byX);
+    const above = pack(up), below = pack(down);
+    const size = Math.floor(Math.min(W - 8, H - (above.length + below.length) * LABEL_H - (above.length ? GAP * 2 : 0) - (below.length ? GAP * 2 : 0)));
+    if (size < 80) return null;
+    const boxes: LabelBox[] = [];
+    const topH = above.length ? above.length * LABEL_H + GAP * 2 : 0, botH = below.length ? below.length * LABEL_H + GAP * 2 : 0;
+    const ringTop = topH + (H - topH - botH - size) / 2;
+    const place = (rows: number[][], top0: number) => rows.forEach((row, k) => {
+      const w = row.reduce((s, i) => s + sizes[i].w, 0) + (row.length - 1) * 10;
+      let x = (W - w) / 2;
+      for (const i of row) { boxes.push({ i, left: x, top: top0 + k * LABEL_H, w: sizes[i].w, h: LABEL_H, align: 'center' }); x += sizes[i].w + 10; }
+    });
+    // Rows nearest the ring hold the labels nearest it: the top block reads downwards into the ring.
+    place(above, ringTop - GAP * 2 - above.length * LABEL_H);
+    place(below, ringTop + size + GAP * 2);
+    return { size, boxes, cy: ringTop + size / 2 };
   }
-  return { spots, line };
+  function best(a: PieLayout | null, b: PieLayout) { return a && a.size > b.size * 1.15 ? a : b; }
 }
 
 /** The ring with each slice's name outside it, on a short line from the slice's middle. Labels on a side are spread so they never overlap. */
-function AroundPie({ t, parts, total, format, note, width, height, size }: {
-  t: Theme; parts: (Slice & { color: string })[]; total: number; format: (n: number) => string; note?: string; width: number; height: number; size: number;
+function AroundPie({ t, parts, total, format, note, width, height, lay }: {
+  t: Theme; parts: (Slice & { color: string })[]; total: number; format: (n: number) => string; note?: string; width: number; height: number; lay: PieLayout;
 }) {
   const [sel, setSel] = useState<number | null>(null);
   const ring = useRef<View>(null);
-  const cx = width / 2, cy = height / 2, R = size / 2, sw = Math.max(14, size * 0.2), r = R - sw / 2, C = 2 * Math.PI * r;
-  const lay = aroundLayout(parts, total, cx, cy, R, height)!;
-  const spots = lay.spots, LINE = lay.line;
+  const size = lay.size;
+  const cx = width / 2, cy = lay.cy ?? height / 2, R = size / 2, sw = Math.max(14, size * 0.2), r = R - sw / 2, C = 2 * Math.PI * r;
   let acc = 0;
   const ends = parts.map((p) => (acc += p.value / total));
   const pickAt = (e: any) => {
@@ -409,19 +459,15 @@ function AroundPie({ t, parts, total, format, note, width, height, size }: {
           {shown?.onPress && <Text style={{ color: t.accent, fontSize: 10, marginTop: 2 }}>tap again to open</Text>}
         </View>
       </Pressable>
-      {spots.map((x) => {
-        const p = parts[x.i];
+      {lay.boxes.map((b) => {
+        const p = parts[b.i];
         // Each label sits just outside its own slice (no lines): the slice's colour ties them together.
-        // A label moved to the other side (to fit) starts beside the ring instead.
-        const edge = x.right ? Math.max(x.ax, cx + 8) : Math.min(x.ax, cx - 8);
-        const near = (x.right ? 1 : -1) * Math.cos(Math.asin(Math.max(-1, Math.min(1, (x.y - cy) / (R + 8))))) * (R + 8);
-        const at = Math.abs(x.y - cy) < R + 8 ? cx + near : edge;
-        const left = x.right ? at : 0, w = x.right ? width - at : at;
+        const ta = b.align === 'center' ? 'center' : b.align;
         return (
-          <Pressable key={x.i} onPress={p.onPress} disabled={!p.onPress} onHoverIn={() => setSel(x.i)} onHoverOut={() => setSel(null)}
-            style={{ position: 'absolute', left, width: w, top: x.y - LINE / 2, height: LINE, justifyContent: 'center', alignItems: x.right ? 'flex-start' : 'flex-end' }}>
-            <Text style={{ color: p.color === t.muted ? t.text : p.color, fontSize: 12, fontWeight: sel === x.i ? '800' : '700' }} numberOfLines={1}>{p.label}{LINE < 30 ? <Text style={{ color: t.muted, fontSize: 11 }}>{`  ${Math.round((p.value / total) * 100)}%`}</Text> : null}</Text>
-            {LINE >= 30 && <Text style={{ color: t.muted, fontSize: 11, fontVariant: ['tabular-nums'] }} numberOfLines={1}>{Math.round((p.value / total) * 100)}% · {format(p.value)}</Text>}
+          <Pressable key={b.i} onPress={p.onPress} disabled={!p.onPress} onHoverIn={() => setSel(b.i)} onHoverOut={() => setSel(null)}
+            style={{ position: 'absolute', left: b.left, top: b.top, width: b.w, height: b.h, justifyContent: 'center' }}>
+            <Text style={{ color: p.color === t.muted ? t.text : p.color, fontSize: 12, lineHeight: 15, fontWeight: sel === b.i ? '800' : '700', textAlign: ta }} numberOfLines={1}>{p.label}</Text>
+            <Text style={{ color: t.muted, fontSize: 11, lineHeight: 14, fontVariant: ['tabular-nums'], textAlign: ta }} numberOfLines={1}>{Math.round((p.value / total) * 100)}% · {format(p.value)}</Text>
           </Pressable>
         );
       })}

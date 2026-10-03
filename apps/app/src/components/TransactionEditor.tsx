@@ -232,8 +232,11 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   };
 
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.bg }];
+  // The record, its category list and the suggestions arrive at slightly different moments: until all three
+  // are in, a placeholder of the same shape shows, then the whole form fades in once (nothing shifts or flashes).
+  if (!(ready && hinted && cats.length)) return <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}><EditorPlaceholder t={t} /></ScrollView>;
   return (
-    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+    <ScrollView style={[{ backgroundColor: t.bg }, FADE]} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <Card style={{ gap: 4 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <TxnLogo size={40} name={merchant.trim() || txn.merchant || txn.name || '?'} transfer={split ? false : cats.find((c: any) => c.id === categoryId)?.kind === 'transfer'} category={(cats.find((c: any) => c.id === categoryId) as any)?.name} />
@@ -273,10 +276,6 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       <Text style={[styles.label, { color: t.muted }]}>Merchant</Text>
       <SuggestInput style={input} value={merchant} onChange={setMerchant} options={known.merchants} placeholder="Search your merchants or type a new name" />
 
-      {/* Category, splits, notes and tags arrive a moment after the rest (the full record, suggestions):
-          a placeholder holds their place, then they appear together, so nothing jumps while you look. */}
-      {!(ready && hinted && cats.length) ? <EditorPlaceholder t={t} /> : (
-      <View style={[{ gap: 4 }, FADE]}>
       <View style={[styles.ruleRow, { marginTop: 16 }]}>
         <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>{split ? 'Split across categories' : 'Category'}</Text>
         {split
@@ -345,8 +344,6 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       <Text style={[styles.label, { color: t.muted }]}>Tags (comma-separated)</Text>
       <SuggestInput multi style={input} value={tags} onChange={setTags} options={known.tags} placeholder="e.g. trip, reimbursable" />
 
-      </View>
-      )}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <Button title="Save and mark reviewed" onPress={save} busy={busy || !ready} style={{ marginTop: 16 }} />
       {(txn as any)?.accounts?.type === 'credit' && txn!.amount < 0 && !String((txn as any).import_id ?? '').startsWith('plan:') && (
@@ -378,6 +375,11 @@ function EditorPlaceholder({ t }: { t: Theme }) {
   const bar = (h: number, w: number | string = '100%', mt = 0) => <View style={[{ height: h, width: w as any, borderRadius: 10, backgroundColor: t.track, marginTop: mt }, PULSE]} />;
   return (
     <View style={{ gap: 8 }} accessibilityLabel="Loading">
+      {bar(112)}
+      {bar(12, 120, 8)}
+      {bar(44)}
+      {bar(12, 70, 8)}
+      {bar(44)}
       {bar(12, 70, 16)}
       {bar(52)}
       {bar(30)}
