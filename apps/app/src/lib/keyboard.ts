@@ -3,9 +3,29 @@
 // and it made pop-ups jump. Instead, the keyboard's height is kept in the CSS variable --kb, which
 // pop-ups use to sit above it, and the field being typed in is scrolled into view.
 // Uses Chrome's VirtualKeyboard API; where it's missing, the browser's own behaviour stays.
+//
+// The way can be changed per device (localStorage 'kb-mode', for trying out on the installed app, where
+// Android's window behaves differently): 'overlays' (the default, above), 'resizes-visual' or
+// 'resizes-content' (Chrome's own handling: the page or the visible part of it shrinks; no --kb).
+export type KeyboardMode = 'overlays' | 'resizes-visual' | 'resizes-content';
+export function keyboardMode(): KeyboardMode {
+  try { const m = localStorage.getItem('kb-mode'); return m === 'resizes-visual' || m === 'resizes-content' ? m : 'overlays'; } catch { return 'overlays'; }
+}
+export function setKeyboardMode(m: KeyboardMode) {
+  try { if (m === 'overlays') localStorage.removeItem('kb-mode'); else localStorage.setItem('kb-mode', m); } catch { /* stays as it is */ }
+}
+
 export function installKeyboard(): () => void {
   const vk = typeof navigator !== 'undefined' ? (navigator as any).virtualKeyboard : null;
-  if (!vk || typeof document === 'undefined') return () => {};
+  if (typeof document === 'undefined') return () => {};
+  const mode = keyboardMode();
+  if (mode !== 'overlays') {
+    const meta = document.querySelector('meta[name="viewport"]');
+    meta?.setAttribute('content', (meta.getAttribute('content') ?? '').replace(/interactive-widget=[a-z-]+/, `interactive-widget=${mode}`));
+    if (vk) vk.overlaysContent = false;
+    return () => {};
+  }
+  if (!vk) return () => {};
   vk.overlaysContent = true;
   const root = document.documentElement;
   // After the pop-up has moved up, bring the field into view inside the list it sits in. Only that list
