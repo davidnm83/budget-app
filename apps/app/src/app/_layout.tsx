@@ -10,6 +10,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { Platform, View } from 'react-native';
 import { Panels, Sidebar } from '@/components/Menu';
+import { CsvReminder } from '@/components/CsvReminder';
 import { useScheme, useTheme } from '@/lib/theme';
 import { SessionProvider, useSession } from '@/lib/session';
 import Setup from '@/components/Setup';
@@ -48,6 +49,7 @@ function RootStack() {
     </View>
     {!!session && <PullIndicator />}
     {!!session && <Panels />}
+    {!!session && !cover && <CsvReminder />}
     {cover}
     {!!session && <OfflinePill />}
     <Toaster />

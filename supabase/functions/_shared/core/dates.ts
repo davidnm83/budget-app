@@ -64,6 +64,25 @@ export function syncDue(hour: number, every: number | null | undefined): boolean
   return (((hour - 5) % n) + n) % n === 0;
 }
 
+/**
+ * The latest scheduled sync time at or before `now`, in the device's own time (the same hours syncDue
+ * picks: every N hours from 5 AM; no setting = 5 AM daily). null when nothing syncs on its own.
+ */
+export function lastSyncTime(now: Date, every: number | null | undefined): Date | null {
+  const n = every == null || !SYNC_CHOICES.some((c) => c.every === every) ? 24 : every;
+  if (n === 0) return null;
+  const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 5, 0, 0, 0);
+  if (t > now) t.setDate(t.getDate() - 1); // before 5 AM: count from yesterday's 5 AM
+  const steps = Math.floor((now.getTime() - t.getTime()) / 3600000 / n);
+  t.setHours(t.getHours() + steps * n);
+  return t;
+}
+
+/** Whether an account gets the import-a-CSV reminder: its own setting, else cash accounts and credit cards do. */
+export function csvReminderOn(type: string | null | undefined, setting: boolean | null | undefined): boolean {
+  return setting ?? (type === 'depository' || type === 'credit');
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export function shortDate(iso: IsoDate): string {
   return `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${Number(iso.slice(8, 10))}`;

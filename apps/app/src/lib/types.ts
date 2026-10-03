@@ -4,7 +4,7 @@ export interface Account {
   current_balance: number | null; available_balance: number | null; balance_updated_at: string | null; is_hidden: boolean; plaid_item_id: string | null;
   official_name?: string | null; plan_include?: boolean; plan_buffer?: number; start_balance?: number | null;
   credit_limit?: number | null; statement_day?: number | null; due_day?: number | null; apr?: number | null;
-  loan_payment_match?: string | null; loan_paying_account_id?: string | null; loan_last_balance?: number | null; loan_last_balance_date?: string | null; icon?: string | null;
+  loan_payment_match?: string | null; loan_paying_account_id?: string | null; loan_last_balance?: number | null; loan_last_balance_date?: string | null; icon?: string | null; csv_reminder?: boolean | null;
 }
 export interface Txn {
   id: string; account_id: string; date: string; amount: number; currency: string; name: string; merchant: string | null;

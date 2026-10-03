@@ -21,6 +21,7 @@ import { ModalFrame } from '@/components/ModalFrame';
 import {
   accountIcon, addDays, balanceHistory, cardCycle, cardStatus, plansDeferred, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
   monthlyFlow, shortDate, utilization,
+  csvReminderOn,
 } from '@budget-app/core';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
@@ -487,6 +488,17 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
                 style={[input, { width: 100, textAlign: 'right' }]} />
             </View>
           )}
+        </Field>
+      )}
+
+      {(account.kind === 'manual' || account.type === 'depository' || account.type === 'credit' || account.csv_reminder) && (
+        <Field t={t} label="Import reminder">
+          <View style={styles.between}>
+            <Text style={{ color: t.text, flex: 1 }}>
+              {account.kind === 'manual' ? 'Remind me to import a CSV at each bank sync time' : "Remind me to import a CSV when this account's sync fails"}
+            </Text>
+            <Switch value={csvReminderOn(account.type, account.csv_reminder)} onValueChange={(v) => save({ csv_reminder: v }, v ? 'Reminders on.' : 'Reminders off.')} />
+          </View>
         </Field>
       )}
 

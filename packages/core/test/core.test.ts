@@ -198,7 +198,7 @@ describe('bills whose amount changed (BIL-7)', () => {
   });
 });
 
-import { syncDue } from '../src/index.ts';
+import { csvReminderOn, lastSyncTime, syncDue } from '../src/index.ts';
 describe('scheduled sync', () => {
   it('runs at 5 AM by default and on the chosen rhythm otherwise', () => {
     expect([4, 5, 6].map((h) => syncDue(h, null))).toEqual([false, true, false]);
@@ -209,5 +209,24 @@ describe('scheduled sync', () => {
     expect([5, 13].map((h) => syncDue(h, 0))).toEqual([false, false]);
     expect(syncDue(5, 7)).toBe(true);   // a value the app doesn't offer falls back to once a day
     expect(syncDue(12, 7)).toBe(false);
+  });
+});
+
+describe('import reminders', () => {
+  const at = (d: string) => new Date(d); // local time
+  const hhmm = (x: Date | null) => x && `${x.getDate()} ${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`;
+  it('finds the latest scheduled sync time', () => {
+    expect(hhmm(lastSyncTime(at('2026-10-03T09:30:00'), null))).toBe('3 05:00');
+    expect(hhmm(lastSyncTime(at('2026-10-03T04:59:00'), 24))).toBe('2 05:00');   // before 5 AM: yesterday's
+    expect(hhmm(lastSyncTime(at('2026-10-03T16:59:00'), 12))).toBe('3 05:00');
+    expect(hhmm(lastSyncTime(at('2026-10-03T17:00:00'), 12))).toBe('3 17:00');
+    expect(hhmm(lastSyncTime(at('2026-10-03T02:10:00'), 6))).toBe('2 23:00');
+    expect(hhmm(lastSyncTime(at('2026-10-03T13:45:00'), 1))).toBe('3 13:00');
+    expect(lastSyncTime(at('2026-10-03T13:45:00'), 0)).toBeNull();               // only by hand: no reminders
+    expect(hhmm(lastSyncTime(at('2026-10-03T13:45:00'), 7))).toBe('3 05:00');    // unknown value: once a day
+  });
+  it('reminds for cash and cards unless told otherwise', () => {
+    expect([csvReminderOn('depository', null), csvReminderOn('credit', undefined), csvReminderOn('loan', null), csvReminderOn('investment', null)]).toEqual([true, true, false, false]);
+    expect([csvReminderOn('credit', false), csvReminderOn('loan', true)]).toEqual([false, true]);
   });
 });

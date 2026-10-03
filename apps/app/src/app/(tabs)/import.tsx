@@ -3,7 +3,7 @@
 // Several files can be chosen at once; they are then taken one at a time, each with its own account and preview.
 // Rows the account already has (same amount within 3 days) are skipped, so overlapping exports are safe.
 import { formatMoney, parseBankCsv, shortDate, type CsvRow, type ParsedCsv } from '@budget-app/core';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button, Card } from '@/components/ui';
@@ -46,6 +46,9 @@ export default function ImportScreen() {
   }, []);
 
   const account = accounts.find((a) => a.id === accountId) ?? null;
+  // Opened from the import reminder: the files go into that account unless you pick another.
+  const want = useLocalSearchParams<{ account?: string }>().account;
+  const wanted = want ? accounts.find((a) => a.id === want) ?? null : null;
 
   // Re-check duplicates whenever the file or the chosen account changes.
   useEffect(() => {
@@ -64,7 +67,7 @@ export default function ImportScreen() {
   const open = (f: { name: string; parsed: ParsedCsv }, list: Account[] = accounts, went: Record<string, string> = used) => {
     setFile(f);
     const word = f.parsed.label.split(' ')[0].toLowerCase();
-    const match = list.find((a) => a.id === went[f.parsed.label]) ?? list.find((a) => a.kind === 'manual' && a.name.toLowerCase().includes(word));
+    const match = list.find((a) => a.id === went[f.parsed.label]) ?? list.find((a) => a.id === want) ?? list.find((a) => a.kind === 'manual' && a.name.toLowerCase().includes(word));
     setAccountId(match?.id ?? NEW);
     setNewName(f.parsed.format === 'generic' || f.parsed.format === 'headerless' ? '' : f.parsed.label);
     setNewType(TYPES[0]);
@@ -144,6 +147,7 @@ export default function ImportScreen() {
 
       <Card style={{ gap: 8 }}>
         <Text style={[styles.h, { color: t.text }]}>1. Choose the file{total > 1 ? 's' : ''}</Text>
+        {wanted && !file && <Text style={{ color: t.text, fontWeight: '600' }}>For {wanted.name}{wanted.mask ? ` ••${wanted.mask}` : ''}</Text>}
         <Text style={{ color: t.muted }}>Download the transactions as CSV from your bank's website. Rogers, PC Financial and American Express are recognised; most other CSVs with date, description and amount columns work too. You can choose several files at once; they are taken one at a time.</Text>
         <Button title={file ? 'Choose different files' : 'Choose CSV files'} kind={file ? 'plain' : 'primary'} onPress={choose} />
         {file && total > 1 && <Text style={{ color: t.muted, fontWeight: '600' }}>File {total - rest.length} of {total}</Text>}
