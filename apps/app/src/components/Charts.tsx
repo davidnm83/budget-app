@@ -1,9 +1,9 @@
 // The charts every widget draws with. One look everywhere: thin marks, a quiet grid, colours in a
 // fixed order, a legend whenever there is more than one series, and a readout line that shows
 // the values under the pointer (hover on a computer, tap on a phone).
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWide } from '@/lib/layout';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { GROW, SPIN } from '@/lib/motion';
 import type { Theme } from '@/lib/theme';
@@ -93,6 +93,21 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, colors, 
   }
   const n = labels.length;
   const ticks = min < 0 && max > 0 ? [max, 0, min] : [max, (max + min) / 2, min];
+  // Line charts on a touch screen: drag a finger sideways along the plot and the readout follows it
+  // (up and down still scrolls the page).
+  const plot = useRef<View>(null);
+  useEffect(() => {
+    const el = plot.current as unknown as HTMLElement | null;
+    if (Platform.OS !== 'web' || !free || !el?.addEventListener || n < 2) return;
+    let on = false;
+    const at = (e: PointerEvent) => { const b = el.getBoundingClientRect(); return Math.max(0, Math.min(n - 1, Math.floor(((e.clientX - b.left) / b.width) * n))); };
+    const down = (e: PointerEvent) => { if (e.pointerType === 'touch') { on = true; } };
+    const move = (e: PointerEvent) => { if (on) setSel(at(e)); };
+    const up = () => { on = false; };
+    el.addEventListener('pointerdown', down); el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); el.addEventListener('pointerleave', up);
+    return () => { el.removeEventListener('pointerdown', down); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); el.removeEventListener('pointerleave', up); };
+  }, [free, n, w]);
   return (
     <View style={{ gap: 4 }}>
       {legend && <Legend t={t} series={series} col={col} />}
@@ -109,7 +124,7 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, colors, 
           <View style={{ height }} onLayout={(e) => setW(e.nativeEvent.layout.width)}>
             {w > 0 && <View style={GROW}>{children(w, height, min, max, sel)}</View>}
             {refLine != null && max > min && <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: height - ((refLine - min) / (max - min)) * height, borderTopWidth: 1, borderStyle: 'dashed', borderColor: t.text, opacity: 0.45 }} />}
-            <View style={[StyleSheet.absoluteFill, { flexDirection: 'row' }]}>
+            <View ref={plot} {...({ dataSet: { scrub: free ? '1' : undefined } } as any)} style={[StyleSheet.absoluteFill, { flexDirection: 'row' }, free && ({ touchAction: 'pan-y' } as any)]}>
               {labels.map((l, i) => (
                 <Pressable key={i} style={{ flex: 1 }} accessibilityLabel={`${l}: ${series.map((s) => `${s.name} ${format(s.values[i] ?? 0)}`).join(', ')}`}
                   onHoverIn={() => setSel(i)} onHoverOut={() => setSel((c) => (c === i ? null : c))}

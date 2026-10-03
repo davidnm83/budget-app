@@ -11,7 +11,7 @@ const MAX_MS = 700;   // a swipe, not a slow drag
 
 function ownsSideways(start: Element | null): boolean {
   for (let n = start; n && n !== document.body; n = n.parentElement) {
-    if (n.closest('input, textarea, select, svg, [role="slider"], [role="dialog"], [aria-modal="true"]')) return true;
+    if (n.closest('input, textarea, select, svg, [data-scrub], [role="slider"], [role="dialog"], [aria-modal="true"]')) return true;
     const cs = getComputedStyle(n);
     if (/(auto|scroll)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1) return true;
   }
