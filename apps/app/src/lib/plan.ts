@@ -84,6 +84,8 @@ export async function loadAccounts(): Promise<Account[]> {
 export interface PlannerData {
   view: WeekView; accounts: Account[]; recurring: Recurring[]; entries: PlanEntry[];
   ahead: { week: string; end: number; warning: WeekView['warnings'][number] | null }[];
+  /** The real end-of-day balance of the shown accounts, for each day of the week up to today. */
+  actual: Record<string, number>;
 }
 
 /**
@@ -130,5 +132,12 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
     weekStart: week, today: now, planned: plannedFor(week), actuals: posted,
     accounts: shown.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })),
   });
-  return { view, accounts: all, recurring, entries, ahead };
+  // What the accounts really held at the end of each day so far, to set against the plan's running balance.
+  const actual: Record<string, number> = {};
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(week, i);
+    if (d > now) break;
+    actual[d] = round2(shown.reduce((s, a) => s + balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), addDays(d, 1)), 0));
+  }
+  return { view, accounts: all, recurring, entries, ahead, actual };
 }
