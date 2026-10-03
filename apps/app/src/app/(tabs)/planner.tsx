@@ -88,8 +88,9 @@ export default function Planner() {
         <Pressable onPress={() => (view === 'week' ? setWeek(addDays(week, -7)) : setMonth(addMonths(month, -1)))} disabled={view === 'all'} style={{ opacity: view === 'all' ? 0 : 1 }} hitSlop={10} accessibilityLabel={view === 'week' ? 'Previous week' : 'Previous month'}><Ionicons name="chevron-back" size={22} color={t.accent} /></Pressable>
         <Pressable onPress={() => (view === 'week' ? setWeek(thisWeek) : setMonth(monthOf(now)))} disabled={view === 'all'} style={{ flex: 1, alignItems: 'center' }}>
           <Text style={{ color: t.text, fontSize: 16, fontWeight: '700' }}>{view === 'week' ? label : view === 'month' ? monthName(month) : 'All bills & income'}</Text>
-          <Text style={{ color: t.muted, fontSize: 12 }}>{view === 'week' ? (week === thisWeek ? 'This week' : week < thisWeek ? 'Past week · tap for this week' : 'Ahead · tap for this week')
-            : view === 'month' ? (month === monthOf(now) ? 'This month' : 'Tap for this month') : 'Everything that repeats'}</Text>
+          {view === 'all' || (view === 'week' ? week === thisWeek : month === monthOf(now))
+            ? <Text style={{ color: t.muted, fontSize: 12 }}>{view === 'week' ? 'This week' : view === 'month' ? 'This month' : 'Everything that repeats'}</Text>
+            : <View style={[styles.today, { backgroundColor: t.accent + '1f' }]}><Ionicons name="return-down-back" size={12} color={t.accent} /><Text style={{ color: t.accent, fontSize: 12, fontWeight: '600' }}>{view === 'week' ? 'This week' : 'This month'}</Text></View>}
         </Pressable>
         <Pressable onPress={() => (view === 'week' ? setWeek(addDays(week, 7)) : setMonth(addMonths(month, 1)))} disabled={view === 'all'} style={{ opacity: view === 'all' ? 0 : 1 }} hitSlop={10} accessibilityLabel={view === 'week' ? 'Next week' : 'Next month'}><Ionicons name="chevron-forward" size={22} color={t.accent} /></Pressable>
       </TopBar>
@@ -235,6 +236,7 @@ function Row({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string
 
 
 const styles = StyleSheet.create({
+  today: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 1, borderRadius: 10 },
   hideRow: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 32 },
   viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   page: { padding: 12, gap: 10, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },

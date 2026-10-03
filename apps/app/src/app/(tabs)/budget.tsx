@@ -189,7 +189,7 @@ function MonthView(d: Data) {
 
   return (
     <>
-      <Stepper label={monthName(month)} onPrev={() => d.setMonth(addMonths(month, -1))} onNext={() => d.setMonth(addMonths(month, 1))} nextDisabled={month >= current} />
+      <Stepper label={monthName(month)} onPrev={() => d.setMonth(addMonths(month, -1))} onNext={() => d.setMonth(addMonths(month, 1))} nextDisabled={month >= current} here={month === current} onToday={() => d.setMonth(current)} />
 
       {/* Top: how the month stands. Left to spend (coloured by pace), actual net so far, and the plan's net. */}
       {(() => {
@@ -574,7 +574,7 @@ function CompareView(d: Data) {
 
   return (
     <>
-      <Stepper label={monthName(month)} onPrev={() => d.setMonth(addMonths(month, -1))} onNext={() => d.setMonth(addMonths(month, 1))} nextDisabled={month >= thisMonth()} />
+      <Stepper label={monthName(month)} onPrev={() => d.setMonth(addMonths(month, -1))} onNext={() => d.setMonth(addMonths(month, 1))} nextDisabled={month >= thisMonth()} here={month === thisMonth()} onToday={() => d.setMonth(thisMonth())} />
       <Segmented value={scope} onChange={setScope} options={[{ value: 'month', label: 'One month' }, { value: 'ytd', label: 'Year to date' }]} />
       {scope === 'month' && (
         <View style={styles.chips}>
@@ -665,7 +665,7 @@ function YearView(d: Data) {
 
   return (
     <>
-      <Stepper label={String(year)} onPrev={() => setYear(year - 1)} onNext={() => setYear(year + 1)} nextDisabled={year >= Number(thisMonth().slice(0, 4))} />
+      <Stepper label={String(year)} onPrev={() => setYear(year - 1)} onNext={() => setYear(year + 1)} nextDisabled={year >= Number(thisMonth().slice(0, 4))} here={year === Number(thisMonth().slice(0, 4))} hereText="This year" onToday={() => setYear(Number(thisMonth().slice(0, 4)))} />
       <Text style={{ color: t.muted, fontSize: 13 }}>Spending per month. Where a budget was set, it shows underneath; red means over. Scroll sideways for all 12 months; tap an amount for its transactions.</Text>
       {!lines.length ? <Empty text={`No spending in ${year}.`} /> : (
         <Card style={{ padding: 0 }}>
