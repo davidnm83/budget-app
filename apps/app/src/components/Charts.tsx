@@ -348,7 +348,7 @@ function aroundLayout(parts: { value: number }[], total: number, cx: number, cy:
   const spots: (Spot & { c: number })[] = parts.map((p, i) => {
     const mid = acc + p.value / total / 2; acc += p.value / total;
     const th = mid * 2 * Math.PI - Math.PI / 2;
-    return { i, c: Math.cos(th), right: Math.cos(th) >= 0, ax: cx + (R + 2) * Math.cos(th), ay: cy + (R + 2) * Math.sin(th), y: cy + (R + 12) * Math.sin(th) };
+    return { i, c: Math.cos(th), right: Math.cos(th) >= 0, ax: cx + (R + 8) * Math.cos(th), ay: cy + (R + 8) * Math.sin(th), y: cy + (R + 8) * Math.sin(th) };
   });
   // A side with more labels than room: move the ones nearest the top or bottom across.
   for (;;) {
@@ -395,12 +395,6 @@ function AroundPie({ t, parts, total, format, note, width, height, size }: {
   const shown = sel == null ? null : parts[sel];
   return (
     <View style={{ width, height }}>
-      <Svg width={width} height={height} style={StyleSheet.absoluteFill as any} pointerEvents="none">
-        {spots.map((x) => {
-          const ex = cx + (x.right ? 1 : -1) * (R + 14), lx = cx + (x.right ? 1 : -1) * (R + 20);
-          return <Path key={x.i} d={`M ${x.ax} ${x.ay} L ${ex} ${x.y} L ${lx} ${x.y}`} stroke={parts[x.i].color} strokeWidth={1.2} fill="none" opacity={sel == null || sel === x.i ? 0.9 : 0.35} />;
-        })}
-      </Svg>
       <Pressable ref={ring} onPress={pickAt} style={{ position: 'absolute', left: cx - R, top: cy - R, width: size, height: size, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Chart. Tap a slice for its amount.">
         <Svg width={size} height={size} style={[StyleSheet.absoluteFill, SPIN] as any}>
           {parts.map((p, i) => {
@@ -417,11 +411,16 @@ function AroundPie({ t, parts, total, format, note, width, height, size }: {
       </Pressable>
       {spots.map((x) => {
         const p = parts[x.i];
-        const left = x.right ? cx + R + 23 : 0, w = x.right ? width - (cx + R + 23) : cx - R - 23;
+        // Each label sits just outside its own slice (no lines): the slice's colour ties them together.
+        // A label moved to the other side (to fit) starts beside the ring instead.
+        const edge = x.right ? Math.max(x.ax, cx + 8) : Math.min(x.ax, cx - 8);
+        const near = (x.right ? 1 : -1) * Math.cos(Math.asin(Math.max(-1, Math.min(1, (x.y - cy) / (R + 8))))) * (R + 8);
+        const at = Math.abs(x.y - cy) < R + 8 ? cx + near : edge;
+        const left = x.right ? at : 0, w = x.right ? width - at : at;
         return (
           <Pressable key={x.i} onPress={p.onPress} disabled={!p.onPress} onHoverIn={() => setSel(x.i)} onHoverOut={() => setSel(null)}
             style={{ position: 'absolute', left, width: w, top: x.y - LINE / 2, height: LINE, justifyContent: 'center', alignItems: x.right ? 'flex-start' : 'flex-end' }}>
-            <Text style={{ color: t.text, fontSize: 12, fontWeight: sel === x.i ? '700' : '500' }} numberOfLines={1}>{p.label}{LINE < 30 ? <Text style={{ color: t.muted, fontSize: 11 }}>{`  ${Math.round((p.value / total) * 100)}%`}</Text> : null}</Text>
+            <Text style={{ color: p.color === t.muted ? t.text : p.color, fontSize: 12, fontWeight: sel === x.i ? '800' : '700' }} numberOfLines={1}>{p.label}{LINE < 30 ? <Text style={{ color: t.muted, fontSize: 11 }}>{`  ${Math.round((p.value / total) * 100)}%`}</Text> : null}</Text>
             {LINE >= 30 && <Text style={{ color: t.muted, fontSize: 11, fontVariant: ['tabular-nums'] }} numberOfLines={1}>{Math.round((p.value / total) * 100)}% · {format(p.value)}</Text>}
           </Pressable>
         );

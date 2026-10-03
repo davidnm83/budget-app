@@ -20,7 +20,8 @@ import { forgetKnown, knownMerchants, knownTags } from '@/lib/known';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Button, Card } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
-import { useTheme } from '@/lib/theme';
+import { useTheme, type Theme } from '@/lib/theme';
+import { FADE, PULSE } from '@/lib/motion';
 import { DateField } from '@/components/DateField';
 import type { Category, Txn } from '@/lib/types';
 
@@ -36,6 +37,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   const seed = useMemo(() => peekTxn(id), [id]);
   const [txn, setTxn] = useState<Txn | null>(seed as Txn | null);
   const [ready, setReady] = useState(false);
+  const [hinted, setHinted] = useState(false); // category suggestions have arrived
   const [cats, setCats] = useState<Category[]>(peekCategories);
   const [merchant, setMerchant] = useState(seed?.merchant ?? '');
   const [categoryId, setCategoryId] = useState<string | null>(seed?.category_id ?? null);
@@ -98,7 +100,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     Promise.all([
       supabase.from('transactions').select('category_id').or(`merchant.eq.${q(who)},name.eq.${q(txn.name)}`).not('category_id', 'is', null).neq('id', txn.id).order('date', { ascending: false }).limit(10),
       supabase.from('transactions').select('category_id').eq('category_source', 'manual').not('category_id', 'is', null).order('date', { ascending: false }).limit(60),
-    ]).then(([same, recent]) => setSuggested([...new Set([...(same.data ?? []), ...(recent.data ?? [])].map((r: any) => r.category_id as string))].slice(0, 8)));
+    ]).then(([same, recent]) => { setSuggested([...new Set([...(same.data ?? []), ...(recent.data ?? [])].map((r: any) => r.category_id as string))].slice(0, 8)); setHinted(true); },
+      () => setHinted(true));
   }, [txn?.id, who]);
 
   // How many unreviewed transactions a new rule would also catch.
@@ -270,6 +273,10 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       <Text style={[styles.label, { color: t.muted }]}>Merchant</Text>
       <SuggestInput style={input} value={merchant} onChange={setMerchant} options={known.merchants} placeholder="Search your merchants or type a new name" />
 
+      {/* Category, splits, notes and tags arrive a moment after the rest (the full record, suggestions):
+          a placeholder holds their place, then they appear together, so nothing jumps while you look. */}
+      {!(ready && hinted && cats.length) ? <EditorPlaceholder t={t} /> : (
+      <View style={[{ gap: 4 }, FADE]}>
       <View style={[styles.ruleRow, { marginTop: 16 }]}>
         <Text style={{ color: t.muted, fontSize: 13, flex: 1 }}>{split ? 'Split across categories' : 'Category'}</Text>
         {split
@@ -338,6 +345,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       <Text style={[styles.label, { color: t.muted }]}>Tags (comma-separated)</Text>
       <SuggestInput multi style={input} value={tags} onChange={setTags} options={known.tags} placeholder="e.g. trip, reimbursable" />
 
+      </View>
+      )}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <Button title="Save and mark reviewed" onPress={save} busy={busy || !ready} style={{ marginTop: 16 }} />
       {(txn as any)?.accounts?.type === 'credit' && txn!.amount < 0 && !String((txn as any).import_id ?? '').startsWith('plan:') && (
@@ -363,3 +372,19 @@ const styles = StyleSheet.create({
   chip: { borderWidth: 1, borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12 },
   ruleRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 },
 });
+
+/** Where the category, notes and tags will be, while they load: the same rough shape, gently pulsing. */
+function EditorPlaceholder({ t }: { t: Theme }) {
+  const bar = (h: number, w: number | string = '100%', mt = 0) => <View style={[{ height: h, width: w as any, borderRadius: 10, backgroundColor: t.track, marginTop: mt }, PULSE]} />;
+  return (
+    <View style={{ gap: 8 }} accessibilityLabel="Loading">
+      {bar(12, 70, 16)}
+      {bar(52)}
+      {bar(30)}
+      {bar(12, 50, 8)}
+      {bar(60)}
+      {bar(12, 140, 8)}
+      {bar(44)}
+    </View>
+  );
+}

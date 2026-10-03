@@ -1,15 +1,16 @@
-// Phones: a clear sideways swipe on a tab's page moves to the tab beside it (left → next, right →
-// previous). Only on the page itself: not while a pop-up is open, not near the screen edges
-// (Android's back gesture lives there), and not on anything that scrolls sideways or takes a drag
-// of its own (chip rows, charts, sliders, text fields).
+// Phones: a sideways swipe along the bottom navigation bar (on it or just above it) moves to the
+// tab beside it (left → next, right → previous). Swipes anywhere else on the page are left alone,
+// so chip rows, charts and lists never switch tabs by accident. Not near the screen edges (Android's
+// back gesture lives there) and not while a pop-up is open.
 //
-// While the finger moves, the page follows it and a label for the tab it leads to slides in from
-// that side; past the point where letting go switches, the label fills in. Let go short and the
-// page springs back. All of it is done on the elements directly: nothing re-renders per frame.
+// While the finger moves, the page follows it; let go far enough and the next tab slides in from
+// that side, short of that and the page springs back. Done on the element directly: nothing
+// re-renders per frame.
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 
 const EDGE = 28;       // px from each side left to the system's own gestures
+const ZONE = 130;      // px up from the bottom of the screen: the bar and a strip just above it
 const COMMIT = 90;     // how far the finger has to travel sideways to switch
 const FLICK = 50;      // or this far, quickly
 const FLICK_MS = 250;
@@ -31,27 +32,17 @@ function ownsSideways(start: Element | null): boolean {
   return false;
 }
 
-export function useSwipeTabs(enabled: boolean, go: (dir: 1 | -1) => void, peek: (dir: 1 | -1) => string | null, colors: { text: string; card: string; accent: string; line: string }) {
+/** `can(dir)`: whether there is a tab that way (not past the first or last). */
+export function useSwipeTabs(enabled: boolean, go: (dir: 1 | -1) => void, can: (dir: 1 | -1) => boolean) {
   const goRef = useRef(go); goRef.current = go;
-  const peekRef = useRef(peek); peekRef.current = peek;
-  const colorRef = useRef(colors); colorRef.current = colors;
+  const canRef = useRef(can); canRef.current = can;
   useEffect(() => {
     if (Platform.OS !== 'web' || !enabled || typeof document === 'undefined') return;
     let x0 = 0, y0 = 0, t0 = 0, state: 'idle' | 'maybe' | 'drag' = 'idle', dx = 0, way: 1 | -1 = 1;
-    // The label for the tab the swipe leads to.
-    const tag = document.createElement('div');
-    tag.style.cssText = 'position:fixed;top:45%;z-index:50;padding:9px 14px;border-radius:20px;font:600 14px system-ui,sans-serif;pointer-events:none;opacity:0;transition:background-color .15s,color .15s;box-shadow:0 4px 16px rgba(0,0,0,.18)';
-    document.body.appendChild(tag);
-    const paint = (dist: number, dir: 1 | -1) => {
-      const c = colorRef.current, past = Math.abs(dist) >= COMMIT;
-      tag.style.opacity = String(Math.min(1, Math.abs(dist) / 60));
-      tag.style.background = past ? c.accent : c.card; tag.style.color = past ? '#fff' : c.text; tag.style.border = `1px solid ${past ? c.accent : c.line}`;
-      const inset = Math.min(16, -40 + Math.abs(dist) * 0.6);
-      tag.style.left = dir === 1 ? '' : `${inset}px`; tag.style.right = dir === 1 ? `${inset}px` : '';
+    const paint = (dist: number) => {
       if (scene) { scene.style.transition = 'none'; scene.style.transform = `translateX(${dist * 0.45}px)`; scene.style.opacity = String(1 - Math.min(0.35, Math.abs(dist) / 600)); }
     };
     const reset = (animate: boolean) => {
-      tag.style.opacity = '0';
       if (!scene) return;
       scene.style.transition = animate ? 'transform 200ms cubic-bezier(0.2,0.9,0.2,1), opacity 200ms' : 'none';
       scene.style.transform = 'translateX(0px)'; scene.style.opacity = '1';
@@ -61,6 +52,7 @@ export function useSwipeTabs(enabled: boolean, go: (dir: 1 | -1) => void, peek: 
       if (e.touches.length !== 1) return;
       const x = e.touches[0].clientX;
       if (x < EDGE || x > window.innerWidth - EDGE) return;
+      if (e.touches[0].clientY < window.innerHeight - ZONE) return; // only along the bottom bar
       if (document.querySelector('[aria-modal="true"]')) return; // a pop-up is open
       if (ownsSideways(e.target as Element)) return;
       x0 = x; y0 = e.touches[0].clientY; t0 = Date.now(); state = 'maybe'; dx = 0;
@@ -74,13 +66,12 @@ export function useSwipeTabs(enabled: boolean, go: (dir: 1 | -1) => void, peek: 
         if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { state = 'idle'; return; }
         if (Math.abs(dx) < 14 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
         way = dx < 0 ? 1 : -1;
-        const target = peekRef.current(way);
-        if (!target) { state = 'idle'; return; }    // nothing that way (first or last tab)
-        state = 'drag'; tag.textContent = way === 1 ? `${target} ›` : `‹ ${target}`;
+        if (!canRef.current(way)) { state = 'idle'; return; }    // nothing that way (first or last tab)
+        state = 'drag';
       }
       if ((dx < 0 ? 1 : -1) !== way) { state = 'idle'; reset(true); return; } // turned back past where it started
       if (e.cancelable) e.preventDefault();
-      paint(dx, dx < 0 ? 1 : -1);
+      paint(dx);
     };
     const end = () => {
       if (state !== 'drag') { state = 'idle'; return; }
@@ -102,7 +93,6 @@ export function useSwipeTabs(enabled: boolean, go: (dir: 1 | -1) => void, peek: 
     document.addEventListener('touchcancel', cancel);
     return () => {
       document.removeEventListener('touchstart', start); document.removeEventListener('touchmove', move); document.removeEventListener('touchend', end); document.removeEventListener('touchcancel', cancel);
-      tag.remove();
     };
   }, [enabled]);
 }

@@ -27,7 +27,6 @@ import {
   type Budget, type Category, type CategoryMonth, type MonthSummary,
 } from '@/lib/reports';
 import { loadGroupIcons } from '@/lib/categories';
-import { WidgetBoard } from '@/components/WidgetBoard';
 import { DEFAULT_BUDGET } from '@/components/Widgets';
 import { useTxnSheet, type TxnQuery } from '@/components/TxnSheet';
 import { loadPrefs, savePrefs } from '@/lib/prefs';
@@ -154,7 +153,6 @@ function MonthView(d: Data) {
   const [busy, setBusy] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [incomeOpen, setIncomeOpen] = useState(true);
-  const [editingWidgets, setEditingWidgets] = useState(false);
 
   const monthBudgets = d.budgets.filter((b) => b.month === month);
   const view = useMemo(() => {
@@ -319,8 +317,6 @@ function MonthView(d: Data) {
       {copying && <CopyAhead d={d} monthBudgets={monthBudgets} onClose={() => setCopying(false)} />}
       {adding && <AddBudget d={d} monthBudgets={monthBudgets} onClose={() => setAdding(false)} onAdd={(r) => { add([r]); setAdding(false); }} suggestion={suggestion} />}
 
-      <WidgetBoard place="budget" entries={d.widgets} refresh={d.refresh} anchor={month} editing={editingWidgets} onEditing={setEditingWidgets}
-        onChange={(next) => { d.setWidgets(next); savePrefs({ budget_widgets: next }).catch((e: unknown) => d.setError(e instanceof Error ? e.message : String(e))); }} />
       <Archive d={d} months={pastMonths} />
       {editing && <BudgetEditor d={d} line={editing} onClose={() => setEditing(null)} />}
     </>

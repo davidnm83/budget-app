@@ -10,7 +10,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { Platform, View } from 'react-native';
 import { Panels, Sidebar } from '@/components/Menu';
-import { useScheme } from '@/lib/theme';
+import { useScheme, useTheme } from '@/lib/theme';
 import { SessionProvider, useSession } from '@/lib/session';
 import Setup from '@/components/Setup';
 import { useSetup } from '@/lib/setup';
@@ -99,7 +99,15 @@ function useNoAutofill() {
 
 export default function RootLayout() {
   const scheme = useScheme();
+  const t = useTheme();
   useNoAutofill();
+  // The page's own background and the browser bar follow the app's theme (also when it isn't the phone's), so
+  // nothing black or off-colour shows if the page is ever nudged, e.g. while the keyboard comes up.
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    document.documentElement.style.backgroundColor = t.bg; document.body.style.backgroundColor = t.bg;
+    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute('content', t.bg));
+  }, [t.bg]);
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       <SessionProvider>

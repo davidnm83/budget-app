@@ -1,6 +1,6 @@
 // What a chart widget can show. Each source turns the account's data into the same shape, so
 // any view (bars, line, pie, list, table, tiles) can draw it and a tap can open what's behind it.
-import { addDays, addMonths, balanceHistory, daysBetween, loanSummary, monthName, monthOf, categoryIcon, formatMoney, monthEnd, shortDate } from '@budget-app/core';
+import { addDays, addMonths, weekStart, balanceHistory, daysBetween, loanSummary, monthName, monthOf, categoryIcon, formatMoney, monthEnd, shortDate } from '@budget-app/core';
 import { supabase } from './supabase';
 import type { TxnQuery } from '@/components/TxnSheet';
 import { loadTxnsFor } from './accountTxns';
@@ -74,6 +74,7 @@ export interface ChartData {
 
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
 const monthShort = (m: string) => new Date(m + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' });
+const dayShort = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-CA', { weekday: 'short', timeZone: 'UTC' });
 const avg = (v: number[]) => (v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0);
 
 /** Which categories a spending widget covers: picked ones, a whole group, or by name (templates). None = all spending. */
@@ -99,11 +100,20 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
     const start = !range.from || monthOf(range.from) < floor ? floor : monthOf(range.from);
     n = 1; for (let m = start; m < cur; m = addMonths(m, 1)) n++;
   }
-  const past = cur < thisMonth();
-  const first = addMonths(cur, -(n - 1));
-  const months = Array.from({ length: n }, (_, i) => addMonths(first, i));
-  const period = past ? (n === 1 ? monthShort(cur) : `${n} months to ${monthShort(cur)}`) : n === 1 ? 'this month' : `last ${n} months`;
-  const base = { labels: months.map(monthShort), period, from: first, to: monthEnd(cur) };
+  // "This week" (months: 0): the chart's columns are the days Monday to Sunday instead of months.
+  const week = cfg.months === 0 && !range;
+  if (week) n = 7;
+  const monday = weekStart(now);
+  const past = !week && cur < thisMonth();
+  const first = week ? monday : addMonths(cur, -(n - 1));
+  const months = week ? Array.from({ length: 7 }, (_, i) => addDays(monday, i)) : Array.from({ length: n }, (_, i) => addMonths(first, i));
+  /** The last day a column covers (a month's end, or the day itself). */
+  const endOf = (k: string) => (week ? k : monthEnd(k));
+  const lastKey = months[months.length - 1];
+  const period = week ? 'this week' : past ? (n === 1 ? monthShort(cur) : `${n} months to ${monthShort(cur)}`) : n === 1 ? 'this month' : `last ${n} months`;
+  const base = { labels: months.map((k) => (week ? dayShort(k) : monthShort(k))), period, from: first, to: endOf(lastKey) };
+  /** Columns up to today (a week's days still to come have nothing yet). */
+  const sofar = week ? months.filter((k) => k <= now).length : n;
   const source = cfg.source ?? 'spending';
 
   const allAccounts = (await loadAccounts()).filter((a) => !a.is_hidden);
@@ -117,11 +127,11 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
     const sign = source === 'income' ? 1 : -1;
     const stack = !!cfg.stack;
     const compare = !!cfg.compare && !stack;
-    // The period before is the same number of months, straight before this one.
-    const dataFrom = compare ? addMonths(first, -n) : first;
-    // Per-account numbers come from the transactions themselves; otherwise the database's monthly totals.
-    const perAccount = accIds.length > 0 || by === 'account';
-    const [cats, rows] = await Promise.all([loadCategories(), perAccount ? loadLines(dataFrom, monthEnd(cur), accIds) : loadCategoryMonths(dataFrom, cur).then((r) => r.map((x) => ({ ...x, account_id: '' })))]);
+    // The period before is the same number of months (or the week before), straight before this one.
+    const dataFrom = compare ? (week ? addDays(first, -7) : addMonths(first, -n)) : first;
+    // Per-account or per-day numbers come from the transactions themselves; otherwise the database's monthly totals.
+    const perAccount = week || accIds.length > 0 || by === 'account';
+    const [cats, rows] = await Promise.all([loadCategories(), perAccount ? loadLines(dataFrom, endOf(lastKey), accIds, week) : loadCategoryMonths(dataFrom, cur).then((r) => r.map((x) => ({ ...x, account_id: '' })))]);
     const picked = cfgCategories(cfg, cats).filter((c) => source === 'spending' || c.kind === 'income');
     const scope = picked.length ? picked : cats.filter((c) => c.kind === want);
     const byId = new Map(scope.map((c) => [c.id, c]));
@@ -153,11 +163,15 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
       series = top.map((id) => ({ name: part(id, 0).label.replace(/^\S+ /, by === 'group' ? '$&' : ''), values: per(id) }));
       if (parts.length > top.length) series.push({ name: 'Everything else', values: months.map((m, i) => values[i] - series.reduce((x, sr) => x + sr.values[i], 0)) });
     } else if (compare) {
-      const before = Array.from({ length: n }, (_, i) => addMonths(dataFrom, i));
+      const before = Array.from({ length: n }, (_, i) => (week ? addDays(dataFrom, i) : addMonths(dataFrom, i)));
       series = [{ name: 'This period', values }, { name: 'Period before', values: before.map((m) => total(all, m)) }];
     }
     const sumOf = (v: number[]) => v.reduce((x, y) => x + y, 0);
-    const tiles: ChartData['tiles'] = [
+    const tiles: ChartData['tiles'] = week ? [
+      { label: 'This week', value: money0(sumOf(values)) },
+      { label: 'Per day', value: money0(sumOf(values) / Math.max(1, sofar)), sub: `${sofar} day${sofar === 1 ? '' : 's'} so far` },
+      { label: 'Today', value: money0(values[Math.max(0, sofar - 1)]) },
+    ] : [
       { label: past ? monthShort(cur) : 'This month', value: money0(values[n - 1]) },
       { label: `Average · ${prior.length || 1} mo`, value: money0(avg(prior.length ? prior : values)), sub: 'per month' },
       { label: `Total · ${n} mo`, value: money0(sumOf(values)) },
@@ -165,7 +179,7 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
     if (compare) { const d = sumOf(values) - sumOf(series[1].values); tiles[1] = { label: 'Against the period before', value: `${d < 0 ? '−' : '+'}${money0(Math.abs(d))}`, sub: `was ${money0(sumOf(series[1].values))}` }; }
     // Where this month is heading: what's spent so far plus what the rest of the month usually costs.
     let outline: ChartData['outline'], note: string | undefined, refLine = mean(values);
-    if (cfg.pace && source === 'spending' && !past && n > 1) {
+    if (cfg.pace && source === 'spending' && !past && !week && n > 1) {
       const last3 = values.slice(Math.max(0, n - 4), n - 1);
       const avg3 = avg(last3);
       const rest = await restOfMonth(picked.length ? ids : null, accIds, cur, Math.min(3, n - 1), Number(now.slice(8, 10)));
@@ -179,14 +193,14 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
       ...base, series, stacked: stack && series.length > 1,
       breakdown: parts.map(([id, value]) => part(id, value)),
       refLine, outline, note, tiles,
-      drill: (i) => ({ from: months[i], to: monthEnd(months[i]), ...kindQ, ...acc, noTransfers: true }),
+      drill: (i) => ({ from: months[i], to: endOf(months[i]), ...kindQ, ...acc, noTransfers: true }),
     };
   }
 
   if (source === 'cashflow' || source === 'savings') {
     let income: number[], spending: number[];
-    if (accIds.length) {
-      const lines = await loadLines(first, monthEnd(cur), accIds);
+    if (accIds.length || week) {
+      const lines = await loadLines(first, endOf(lastKey), accIds, week);
       const sum = (m: string, kind: string) => Math.abs(lines.filter((r) => r.month === m && r.kind === kind).reduce((x, r) => x + r.total, 0));
       income = months.map((m) => sum(m, 'income')); spending = months.map((m) => sum(m, 'expense'));
     } else {
@@ -204,10 +218,10 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
         breakdown: [],
         refLine: mean(rate),
         tiles: [
-          { label: past ? monthShort(cur) : 'This month', value: `${rate[n - 1]}%`, sub: `${money0(net[n - 1])} of ${money0(income[n - 1])}` },
-          { label: `Over ${n} mo`, value: `${tin > 0 ? Math.round((tnet / tin) * 100) : 0}%`, sub: `${money0(tnet)} kept` },
+          { label: week ? 'Today' : past ? monthShort(cur) : 'This month', value: `${rate[sofar - 1] ?? 0}%`, sub: `${money0(net[sofar - 1] ?? 0)} of ${money0(income[sofar - 1] ?? 0)}` },
+          { label: week ? 'This week' : `Over ${n} mo`, value: `${tin > 0 ? Math.round((tnet / tin) * 100) : 0}%`, sub: `${money0(tnet)} kept` },
         ],
-        drill: (i) => ({ from: months[i], to: monthEnd(months[i]), ...(accIds.length ? { accountIds: accIds } : {}), noTransfers: true }),
+        drill: (i) => ({ from: months[i], to: endOf(months[i]), ...(accIds.length ? { accountIds: accIds } : {}), noTransfers: true }),
       };
     }
     return {
@@ -215,10 +229,12 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
       series: [{ name: 'Money in', values: income }, { name: 'Money out', values: spending }],
       breakdown: [],
       tiles: [
+        ...(week ? (() => { const tin = income.reduce((x, y) => x + y, 0), tout = spending.reduce((x, y) => x + y, 0); return [
+          { label: 'Net this week', value: `${tin - tout < 0 ? '−' : '+'}${money0(Math.abs(tin - tout))}`, sub: `${money0(tin)} in · ${money0(tout)} out` }]; })() : [
         { label: past ? `Net · ${monthShort(cur)}` : 'Net this month', value: `${net[n - 1] < 0 ? '−' : '+'}${money0(Math.abs(net[n - 1]))}`, sub: `${money0(income[n - 1])} in · ${money0(spending[n - 1])} out` },
-        { label: `Average net · ${n} mo`, value: `${avg(net) < 0 ? '−' : '+'}${money0(Math.abs(avg(net)))}`, sub: 'per month' },
+        { label: `Average net · ${n} mo`, value: `${avg(net) < 0 ? '−' : '+'}${money0(Math.abs(avg(net)))}`, sub: 'per month' }]),
       ],
-      drill: (i) => ({ from: months[i], to: monthEnd(months[i]), ...(accIds.length ? { accountIds: accIds } : {}), noTransfers: true }),
+      drill: (i) => ({ from: months[i], to: endOf(months[i]), ...(accIds.length ? { accountIds: accIds } : {}), noTransfers: true }),
     };
   }
 
@@ -232,13 +248,15 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   // Debts are drawn as the amount owed, so paying them down makes the line go down.
   const owedView = source === 'carddebt' || source === 'utilization' || (source === 'balance' && accounts.every(isDebt));
   const loan = source === 'balance' && cfg.payoff !== false && accounts.length === 1 && accounts[0].type === 'loan' ? accounts[0] : null;
-  const points = Math.max(2, Math.round(n * 4.35) + 1);
+  // Weekly points, or for "This week" one a day from the Monday (the day before it too, as the starting point).
+  const step = week ? 1 : 7;
+  const points = week ? daysBetween(addDays(monday, -1), now) + 1 : Math.max(2, Math.round(n * 4.35) + 1);
   const span = cfg.compare ? points * 2 : points;
   // Balances are worked back from today's, so a past month needs the weeks since then too.
   const end = past ? monthEnd(cur) : now;
-  const total = span + Math.ceil(Math.max(0, daysBetween(end, now)) / 7) + 1;
-  const txns = await loadTxnsFor(accounts.map((a) => a.id), loan ? '1900-01-01' : addDays(now, -total * 7 - 7));
-  const per = accounts.map((a) => balanceHistory(signedBalance(a), txns.filter((x) => x.account_id === a.id && x.date >= addDays(now, -total * 7 - 7)), now, total, 7).filter((p) => p.date <= end).slice(-span));
+  const total = span + Math.ceil(Math.max(0, daysBetween(end, now)) / step) + 1;
+  const txns = await loadTxnsFor(accounts.map((a) => a.id), loan ? '1900-01-01' : addDays(now, -total * step - 7));
+  const per = accounts.map((a) => balanceHistory(signedBalance(a), txns.filter((x) => x.account_id === a.id && x.date >= addDays(now, -total * step - 7)), now, total, step).filter((p) => p.date <= end).slice(-span));
   const allDates = per[0]?.map((p) => p.date) ?? [];
   const sign = owedView ? -1 : 1;
   const limit = accounts.reduce((x, a) => x + Number(a.credit_limit ?? 0), 0);
@@ -260,7 +278,7 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
     : accounts.map((a) => ({ label: `${accountIcon(a)} ${a.name}`, value: pct ? Math.round((Math.max(0, -signedBalance(a)) / Number(a.credit_limit)) * 100) : worth(a), query: { accountIds: [a.id] } })).filter((x) => Math.abs(x.value) > 0.5).sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
   const tiles: ChartData['tiles'] = [
     { label: past ? shortDate(dates[dates.length - 1] ?? end) : pct ? 'In use' : owedView ? 'Owing' : source === 'balance' ? 'Balance' : 'Now', value: show(last), sub: pct ? `of ${money0(limit)}` : accounts.length > 1 && source !== 'networth' ? `${accounts.length} accounts` : undefined },
-    { label: `Change · ${n} mo`, value: pct ? `${last - firstV < 0 ? '−' : '+'}${Math.abs(last - firstV)} pts` : `${last - firstV < 0 ? '−' : '+'}${money0(Math.abs(last - firstV))}`, sub: `from ${show(firstV)}` },
+    { label: week ? 'Change · this week' : `Change · ${n} mo`, value: pct ? `${last - firstV < 0 ? '−' : '+'}${Math.abs(last - firstV)} pts` : `${last - firstV < 0 ? '−' : '+'}${money0(Math.abs(last - firstV))}`, sub: `from ${show(firstV)}` },
   ];
   if (source === 'carddebt') {
     const lim = accounts.filter((a) => a.credit_limit);
@@ -281,11 +299,11 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
     tiles.push({ label: 'Interest to date', value: money0(ls.interestToDate), sub: `paid ${money0(ls.paymentsToDate)}` });
   }
   return {
-    labels: dates.map((d) => shortDate(d)), period, from: dates[0] ?? now, to: end,
+    labels: dates.map((d) => (week ? dayShort(d) : shortDate(d))), period, from: dates[0] ?? now, to: end,
     series: before ? [{ name: 'This period', values }, { name: 'Period before', values: before }] : [{ name: owedView && source === 'balance' ? 'Owed' : source === 'balance' ? 'Balance' : SOURCES[source].title, values }],
     breakdown, tiles, refLine: mean(values), percent: pct,
     title: source === 'balance' && accounts.length === 1 ? accounts[0].name : undefined,
-    drill: (i) => (i === 0 ? null : { from: addDays(dates[i], -6), to: dates[i], accountIds: ids }),
+    drill: (i) => (i === 0 ? null : { from: addDays(dates[i], -(step - 1)), to: dates[i], accountIds: ids }),
   };
 }
 
@@ -319,16 +337,18 @@ export function pickAccounts(cfg: ChartCfg, all: Account[]): Account[] {
 }
 
 /** Monthly totals per category and account, straight from the transactions (for account filters). */
-async function loadLines(from: string, to: string, accountIds: string[]): Promise<{ month: string; category_id: string | null; account_id: string; kind: any; total: number; txns: number }[]> {
+/** Lines added up per month (or, with `byDay`, per day: the `month` field then holds the date). */
+async function loadLines(from: string, to: string, accountIds: string[], byDay = false): Promise<{ month: string; category_id: string | null; account_id: string; kind: any; total: number; txns: number }[]> {
   const m = new Map<string, { month: string; category_id: string | null; account_id: string; kind: any; total: number; txns: number }>();
   for (let p = 0; p < 20; p++) {
-    let q = supabase.from('transaction_lines').select('month, category_id, account_id, kind, amount').gte('date', from).lte('date', to).order('date').range(p * 1000, p * 1000 + 999);
+    let q = supabase.from('transaction_lines').select('month, date, category_id, account_id, kind, amount').gte('date', from).lte('date', to).order('date').range(p * 1000, p * 1000 + 999);
     if (accountIds.length) q = q.in('account_id', accountIds);
     const { data, error } = await q;
     if (error) throw new Error(error.message);
     for (const r of (data ?? []) as any[]) {
-      const k = `${r.month}|${r.category_id}|${r.account_id}|${r.kind}`;
-      const x = m.get(k) ?? { month: r.month, category_id: r.category_id, account_id: r.account_id, kind: r.kind, total: 0, txns: 0 };
+      const key = byDay ? r.date : r.month;
+      const k = `${key}|${r.category_id}|${r.account_id}|${r.kind}`;
+      const x = m.get(k) ?? { month: key, category_id: r.category_id, account_id: r.account_id, kind: r.kind, total: 0, txns: 0 };
       x.total += Number(r.amount); x.txns++; m.set(k, x);
     }
     if (!data || data.length < 1000) break;

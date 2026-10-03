@@ -605,7 +605,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
             </View>
           </Field>
           <Field t={t} label="Over">
-            <View style={chips}>{[1, 3, 6, 12, 24].map((m) => <Chip key={m} label={m === 1 ? 'This month' : `${m} months`} on={months === m} onPress={() => setMonths(m)} />)}</View>
+            <View style={chips}>{[0, 1, 3, 6, 12, 24].map((m) => <Chip key={m} label={m === 0 ? 'This week' : m === 1 ? 'This month' : `${m} months`} on={months === m} onPress={() => setMonths(m)} />)}</View>
           </Field>
           {!NO_ACCOUNTS.includes(source) && <Field t={t} label="Accounts" hint={chosen.length ? pool.filter((a) => chosen.includes(a.id)).map((a) => a.name).join(' · ') : source === 'balance' ? 'Choose one account, or several to add together.' : source === 'carddebt' ? 'All cards. Choose cards to narrow it.' : 'All accounts. Choose accounts to narrow it.'}>
             <Button kind="plain" title={chosen.length ? `${chosen.length} chosen · change` : 'Choose accounts'} onPress={() => setPickAcc(true)} />

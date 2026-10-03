@@ -8,10 +8,20 @@ export function installKeyboard(): () => void {
   if (!vk || typeof document === 'undefined') return () => {};
   vk.overlaysContent = true;
   const root = document.documentElement;
+  // After the pop-up has moved up, bring the field into view inside the list it sits in. Only that list
+  // scrolls: never the page itself (moving the page is what showed a bar under it).
   const show = (el: Element | null) => {
     if (!el || !/^(INPUT|TEXTAREA)$/.test(el.tagName)) return;
-    // After the pop-up has moved up, bring the field to the middle of what's left above the keyboard.
-    setTimeout(() => (el as HTMLElement).scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 60);
+    setTimeout(() => {
+      let box: HTMLElement | null = el.parentElement;
+      while (box && box !== document.body && !(/(auto|scroll)/.test(getComputedStyle(box).overflowY) && box.scrollHeight > box.clientHeight)) box = box.parentElement;
+      if (!box || box === document.body) return;
+      const kb = vk.boundingRect?.height ?? 0;
+      const room = box.getBoundingClientRect(), f = el.getBoundingClientRect();
+      const bottom = Math.min(room.bottom, window.innerHeight - kb) - 16, top = room.top + 16;
+      if (f.bottom > bottom) box.scrollBy({ top: f.bottom - bottom, behavior: 'smooth' });
+      else if (f.top < top) box.scrollBy({ top: f.top - top, behavior: 'smooth' });
+    }, 80);
   };
   const onGeometry = () => {
     const h = Math.round(vk.boundingRect?.height ?? 0);

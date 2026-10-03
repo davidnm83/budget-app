@@ -22,11 +22,13 @@ export async function refreshNow() {
   try { await handler(); } finally { setTimeout(() => set(0), 350); }
 }
 
-const THRESHOLD = 84;
+// A deliberate pull: nothing shows for the first DEAD px, and it refreshes only past THRESHOLD.
+// Mostly sideways movement, or a list that has started scrolling, cancels it.
+const THRESHOLD = 140, DEAD = 24;
 /** Attach the touch listeners (web). Returns a function that removes them. */
 export function installPullRefresh(): () => void {
   if (typeof document === 'undefined') return () => {};
-  let startY = 0, tracking = false;
+  let startY = 0, startX = 0, tracking = false, sc: Element | null = null;
   const scroller = (el: Element | null): Element | null => {
     for (let n = el; n && n !== document.body; n = n.parentElement) {
       const s = getComputedStyle(n);
@@ -39,15 +41,16 @@ export function installPullRefresh(): () => void {
     tracking = false;
     if (!handler || pull === 2 || !target || e.touches.length !== 1) return;
     if (target.closest('[aria-modal="true"], input, textarea')) return; // not inside pop-ups or while typing
-    const sc = scroller(target);
+    sc = scroller(target);
     if (sc && sc.scrollTop > 0) return;
-    startY = e.touches[0].clientY; tracking = true;
+    startY = e.touches[0].clientY; startX = e.touches[0].clientX; tracking = true;
   };
   const move = (e: TouchEvent) => {
     if (!tracking) return;
-    const dy = e.touches[0].clientY - startY;
-    if (dy <= 0) { set(0); return; }
-    set(Math.min(1, dy / THRESHOLD));
+    const dy = e.touches[0].clientY - startY, dx = e.touches[0].clientX - startX;
+    if (Math.abs(dx) > 30 && Math.abs(dx) > dy || (sc && sc.scrollTop > 0)) { tracking = false; set(0); return; }
+    if (dy <= DEAD) { set(0); return; }
+    set(Math.min(1, (dy - DEAD) / (THRESHOLD - DEAD)));
   };
   const end = () => {
     if (!tracking) return;

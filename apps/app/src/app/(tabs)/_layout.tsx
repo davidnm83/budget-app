@@ -74,10 +74,9 @@ function FloatingBar({ state, descriptors, navigation }: any) {
   const current = state.routes[state.index]?.name;
   const onTab = TABS.some((x) => x.name === current);
   const dark = useScheme() === 'dark';
-  // Swipe sideways on one of the five tabs to reach the one beside it.
+  // Swipe sideways along the bar to reach the tab beside it.
   const beside = (dir: 1 | -1) => TABS[TABS.findIndex((x) => x.name === current) + dir] ?? null;
-  useSwipeTabs(onTab, (dir) => { const x = beside(dir); if (x) navigation.navigate(x.name); }, (dir) => beside(dir)?.title ?? null,
-    { text: t.text, card: t.card, accent: t.accent, line: t.line });
+  useSwipeTabs(onTab, (dir) => { const x = beside(dir); if (x) navigation.navigate(x.name); }, (dir) => !!beside(dir));
   return (
     <View pointerEvents="box-none" style={[styles.dock, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       {/* Content fades out as it passes under the bar, down to the edge of the screen. */}
