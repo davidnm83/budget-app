@@ -10,8 +10,9 @@ import { seedTxn } from '@/lib/txnCache';
 import { Tile } from '@/components/Tile';
 import {
   actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
-  categoryIcon, groupIcon, shortDate, suggestBudget, todayIn, type BudgetLine, type Month,
+  categoryIcon, groupIcon, instalmentsBetween, shortDate, suggestBudget, todayIn, type BudgetLine, type Month,
 } from '@budget-app/core';
+import { loadPlans, setInstalment, type CardPlan } from '@/lib/paymentPlans';
 import { router, useFocusEffect } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -183,13 +184,16 @@ function MonthView(d: Data) {
   const daysIn = Number(monthEnd(month).slice(8, 10));
   const pace = month === current ? Number(todayIn(Intl.DateTimeFormat().resolvedOptions().timeZone).slice(8, 10)) / daysIn : month < current ? 1 : 0;
   const pastMonths = d.summaries.filter((s) => s.month < current && s.month !== month);
+  const future = month > current;
+  const [copying, setCopying] = useState(false);
   const tot = view.totals;
   const toggle = (g: string) => setCollapsed((c) => { const n = new Set(c); n.has(g) ? n.delete(g) : n.add(g); return n; });
   const catIcon = (id: string | null) => { const c = d.cats.find((x) => x.id === id); return c ? categoryIcon(c.name, c.icon) : '•'; };
 
   return (
     <>
-      <Stepper label={monthName(month)} onPrev={() => d.setMonth(addMonths(month, -1))} onNext={() => d.setMonth(addMonths(month, 1))} nextDisabled={month >= current} here={month === current} onToday={() => d.setMonth(current)} />
+      <Stepper label={monthName(month)} onPrev={() => d.setMonth(addMonths(month, -1))} onNext={() => d.setMonth(addMonths(month, 1))} nextDisabled={month >= addMonths(current, 12)} here={month === current} onToday={() => d.setMonth(current)} />
+      {future && <Text style={{ color: t.muted, fontSize: 13, textAlign: 'center' }}>Planning ahead: set this month’s budget now. Spending shows once the month starts.</Text>}
 
       {/* Top: how the month stands. Left to spend (coloured by pace), actual net so far, and the plan's net. */}
       {(() => {
@@ -198,6 +202,13 @@ function MonthView(d: Data) {
         const net = tot.actualIncome - tot.actualExpenses;
         const planNet = tot.budgetedIncome - tot.budgetedExpenses;
         const tone = (n: number) => (n >= 0 ? t.accent : t.danger);
+        if (future) return (
+          <View style={styles.tiles}>
+            <Tile t={t} label="Budgeted" value={money0(tot.budgetedExpenses)} sub="to spend" />
+            <Tile t={t} label="Expected in" value={money0(tot.budgetedIncome)} />
+            <Tile t={t} label="Planned net" value={`${planNet < 0 ? '−' : '+'}${money0(Math.abs(planNet))}`} color={tone(planNet)} sub="expected in − budget" />
+          </View>
+        );
         return (
           <View style={styles.tiles}>
             <Tile t={t} label={left < 0 ? 'Over budget' : 'Left to spend'} value={money0(Math.abs(left))} color={stateColor(t, st)}
@@ -209,6 +220,7 @@ function MonthView(d: Data) {
       })()}
       {tot.unbudgetedExpenses > 0 && <Text style={{ color: t.muted, fontSize: 12 }}>{formatMoney(tot.unbudgetedExpenses)} spent outside the budget (listed at the bottom).</Text>}
 
+      <PlanSuggestions d={d} monthBudgets={monthBudgets} />
       {!monthBudgets.length && (
         <Card style={{ gap: 8 }}>
           <Text style={{ color: t.text, fontWeight: '600' }}>No budget for {monthName(month, false)} yet</Text>
@@ -281,6 +293,8 @@ function MonthView(d: Data) {
       )}
 
       {monthBudgets.length > 0 && <Button title="Add a budget" kind="plain" onPress={() => setAdding(true)} />}
+      {monthBudgets.length > 0 && month >= current && <Button title="Copy this budget to the following months" kind="plain" onPress={() => setCopying(true)} />}
+      {copying && <CopyAhead d={d} monthBudgets={monthBudgets} onClose={() => setCopying(false)} />}
       {adding && <AddBudget d={d} monthBudgets={monthBudgets} onClose={() => setAdding(false)} onAdd={(r) => { add([r]); setAdding(false); }} suggestion={suggestion} />}
 
       <WidgetBoard place="budget" entries={d.widgets} refresh={d.refresh} anchor={month} editing={editingWidgets} onEditing={setEditingWidgets}
@@ -460,6 +474,110 @@ function BudgetEditor({ d, line, onClose }: { d: Data; line: BudgetLine; onClose
         </Sheet>
       )}
     </Sheet>
+  );
+}
+
+/** Copy this month's budget into the months after it: fill only the ones not set yet, or replace them too. */
+function CopyAhead({ d, monthBudgets, onClose }: { d: Data; monthBudgets: Budget[]; onClose: () => void }) {
+  const { t, month } = d;
+  const [n, setN] = useState(3);
+  const [replace, setReplace] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      // Payment plan instalments added to this month's budget stay behind: each month is offered its own.
+      const plans = await loadPlans().catch(() => [] as CardPlan[]);
+      const planned = new Map<string, number>();
+      for (const { plan, inst } of instalmentsBetween(plans, month, monthEnd(month))) {
+        if (plan.instalments?.[String(inst.n)]?.budget !== 'added') continue;
+        const cat = d.cats.find((x) => x.id === plan.categoryId);
+        if (!cat) continue;
+        const key = monthBudgets.some((b) => b.categoryId === cat.id) ? `c:${cat.id}` : `g:${cat.group}`;
+        planned.set(key, (planned.get(key) ?? 0) + inst.principal);
+      }
+      const amountOf = (b: Budget) => Math.max(0, Math.round((b.amount - (planned.get(budgetKey(b)) ?? 0)) * 100) / 100);
+      for (let k = 1; k <= n; k++) {
+        const m = addMonths(month, k);
+        const have = new Map(d.budgets.filter((b) => b.month === m).map((b) => [budgetKey(b), b]));
+        for (const b of monthBudgets) {
+          const old = have.get(budgetKey(b));
+          if (old && !replace) continue;
+          const r = old ? await supabase.from('budgets').update({ amount: amountOf(b), rollover: b.rollover }).eq('id', old.id)
+            : await supabase.from('budgets').insert({ month: m, amount: amountOf(b), rollover: b.rollover, ...(b.categoryId ? { category_id: b.categoryId } : { group_name: b.groupName }) });
+          if (r.error) throw new Error(r.error.message);
+        }
+      }
+      onClose(); d.reload();
+    } catch (e) { d.setError(e instanceof Error ? e.message : String(e)); setBusy(false); }
+  };
+  return (
+    <Sheet title="Copy to the following months" onClose={onClose} footer={<Button title={`Copy to ${n} month${n === 1 ? '' : 's'}`} onPress={run} busy={busy} />}>
+      <Text style={{ color: t.muted }}>Every budget line of {monthName(month)} goes into the months after it, through {monthName(addMonths(month, n))}. Payment plan instalments you added this month aren’t copied: each month offers its own.</Text>
+      <Field t={t} label="How many months">
+        <View style={styles.chips}>{[1, 3, 6, 12].map((k) => <Chip key={k} label={String(k)} on={n === k} onPress={() => setN(k)} />)}</View>
+      </Field>
+      <View style={styles.between}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: t.text }}>Replace amounts already set</Text>
+          <Text style={{ color: t.muted, fontSize: 12 }}>Off: a month keeps any line you already set for it, and only the missing lines are added.</Text>
+        </View>
+        <Switch value={replace} onValueChange={setReplace} />
+      </View>
+    </Sheet>
+  );
+}
+
+/**
+ * Payment plan instalments due this month, offered as budget changes: each one's part of the
+ * purchase goes into its category's budget (or the group's, when the group is what's budgeted)
+ * once you say so. Answered ones aren't asked again.
+ */
+function PlanSuggestions({ d, monthBudgets }: { d: Data; monthBudgets: Budget[] }) {
+  const { t, month } = d;
+  const [plans, setPlans] = useState<CardPlan[]>([]);
+  const [busy, setBusy] = useState('');
+  useEffect(() => { loadPlans().then(setPlans).catch(() => setPlans([])); }, [d.refresh]);
+  const due = instalmentsBetween(plans, month, monthEnd(month)).filter(({ plan, inst }) => {
+    const c = d.cats.find((x) => x.id === plan.categoryId);
+    return c && c.kind === 'expense' && inst.principal > 0 && !plan.instalments?.[String(inst.n)]?.budget;
+  });
+  if (!due.length) return null;
+  const answer = async (plan: CardPlan, n: number, amount: number, add: boolean) => {
+    setBusy(`${plan.id}:${n}`);
+    try {
+      if (add) {
+        const cat = d.cats.find((x) => x.id === plan.categoryId)!;
+        const own = monthBudgets.find((b) => b.categoryId === cat.id), group = monthBudgets.find((b) => b.groupName === cat.group);
+        const target = own ?? group;
+        const r = target ? await supabase.from('budgets').update({ amount: Math.round((target.amount + amount) * 100) / 100 }).eq('id', target.id)
+          : await supabase.from('budgets').insert({ month, category_id: cat.id, amount, rollover: false });
+        if (r.error) throw new Error(r.error.message);
+      }
+      await setInstalment(plan, n, { ...(plan.instalments?.[String(n)] ?? {}), budget: add ? 'added' : 'skipped' });
+      d.reload();
+    } catch (e) { d.setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(''); }
+  };
+  return (
+    <Card style={{ gap: 8 }}>
+      <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>PAYMENT PLANS THIS MONTH</Text>
+      {due.map(({ plan, inst, count }) => {
+        const cat = d.cats.find((x) => x.id === plan.categoryId)!;
+        const where = monthBudgets.some((b) => b.categoryId === cat.id) ? cat.name : monthBudgets.some((b) => b.groupName === cat.group) ? `${cat.group} (group)` : cat.name;
+        const key = `${plan.id}:${inst.n}`;
+        return (
+          <View key={key} style={{ gap: 6, paddingTop: 6, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }}>
+            <Text style={{ color: t.text }}>{plan.description} · {inst.n} of {count} · <Text style={{ fontWeight: '700' }}>{formatMoney(inst.principal)}</Text> on {shortDate(inst.date)}</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }}>It counts as spending in {cat.name} this month. Add it to the {where} budget?</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Button title="Not this month" kind="plain" style={{ flex: 1 }} disabled={!!busy} onPress={() => answer(plan, inst.n, inst.principal, false)} />
+              <Button title={`Add ${formatMoney(inst.principal)}`} style={{ flex: 1 }} busy={busy === key} disabled={!!busy && busy !== key} onPress={() => answer(plan, inst.n, inst.principal, true)} />
+            </View>
+          </View>
+        );
+      })}
+    </Card>
   );
 }
 
