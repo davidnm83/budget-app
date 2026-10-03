@@ -35,8 +35,10 @@ import { cfgCategories, loadChart, NO_ACCOUNTS, pickAccounts, SOURCES, SPLITS, S
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
 
 export interface WidgetDef { key: string; title: string; about: string; home: boolean; budget: boolean; config?: 'spend' | 'chart' | 'text';
-  /** Has a chart or a list, so it can be short, medium or tall. Widgets that are only numbers have one height. */
-  sizable?: boolean }
+  /** Has a chart or a list, so it can be short, medium or tall. */
+  sizable?: boolean;
+  /** Numbers, a list or a note: as tall as its content unless a size is chosen, then that size, scrolling inside. */
+  fits?: boolean }
 
 /** A placed widget is its key, or `key::{json settings}` for the ones with settings of their own (VIEW-15). */
 export interface WidgetCfg extends ChartCfg { title?: string; chart?: Chart;
@@ -44,6 +46,8 @@ export interface WidgetCfg extends ChartCfg { title?: string; chart?: Chart;
   text?: string; plain?: boolean;
   /** Chart widgets: false hides the numbers above a bar or line chart. */
   numbers?: boolean;
+  /** Pie: false hides the legend (the ring takes the space; tap a slice for its amount). */
+  legend?: boolean;
   /** Chart widgets: what to show and how. */
   view?: ChartView;
   /** Layout: width on wide screens, and chart height. */
@@ -74,16 +78,16 @@ export function parseEntry(e: string): [string, WidgetCfg] {
 export const keyOf = (e: string) => { const k = parseEntry(e)[0]; return k === 'spend' ? 'chart' : k; };
 export const makeEntry = (key: string, cfg: WidgetCfg) => `${key}::${JSON.stringify(cfg)}`;
 export const WIDGETS: WidgetDef[] = [
-  { key: 'radar', title: 'Radar', about: 'What needs attention: a balance about to dip, a late or changed bill, a budget running over, unusual spending', home: true, budget: false },
-  { key: 'review', title: 'To review', about: 'New transactions waiting to be checked', home: true, budget: false },
-  { key: 'week', title: 'This week', about: 'Cash now, projected end of week, what’s next', home: true, budget: false },
-  { key: 'budget', title: 'Budget pace', about: 'This month’s spending against an even pace', home: true, budget: false },
-  { key: 'networth', title: 'Net worth', about: 'Assets minus debts, and the change this month', home: true, budget: false },
-  { key: 'cash', title: 'Cash position', about: 'Cash, card debt, and what’s left after paying the cards', home: true, budget: true },
-  { key: 'runway', title: 'Cash runway', about: 'How many days your cash lasts at your usual daily spending', home: true, budget: true },
+  { key: 'radar', title: 'Radar', about: 'What needs attention: a balance about to dip, a late or changed bill, a budget running over, unusual spending', home: true, budget: false, fits: true },
+  { key: 'review', title: 'To review', about: 'New transactions waiting to be checked', home: true, budget: false, fits: true },
+  { key: 'week', title: 'This week', about: 'Cash now, projected end of week, what’s next', home: true, budget: false, fits: true },
+  { key: 'budget', title: 'Budget pace', about: 'This month’s spending against an even pace', home: true, budget: false, fits: true },
+  { key: 'networth', title: 'Net worth', about: 'Assets minus debts, and the change this month', home: true, budget: false, fits: true },
+  { key: 'cash', title: 'Cash position', about: 'Cash, card debt, and what’s left after paying the cards', home: true, budget: true, fits: true },
+  { key: 'runway', title: 'Cash runway', about: 'How many days your cash lasts at your usual daily spending', home: true, budget: true, fits: true },
   { key: 'watch', title: 'Spending watch', about: 'Your watch-list categories against their average', home: true, budget: true, sizable: true },
-  { key: 'calendar', title: 'Bills calendar', about: 'This month’s bills and income on a calendar', home: true, budget: true },
-  { key: 'text', title: 'Text', about: 'A heading and a note of your own: what a page is for, a reminder, a goal', home: true, budget: true, config: 'text' },
+  { key: 'calendar', title: 'Bills calendar', about: 'This month’s bills and income on a calendar', home: true, budget: true, fits: true },
+  { key: 'text', title: 'Text', about: 'A heading and a note of your own: what a page is for, a reminder, a goal', home: true, budget: true, config: 'text', fits: true },
   { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or an account, for the accounts and categories you choose', home: true, budget: true, config: 'chart', sizable: true },
   { key: 'tags', title: 'Tag totals', about: 'Everything under each tag added up: a trip, a move, a repair', home: true, budget: true, sizable: true },
 ];
@@ -93,11 +97,23 @@ export const DEFAULT_BUDGET: string[] = [];
 /** `after` renders outside the pressable card (pop-ups opened from inside it, so their taps don't reach the card). */
 const HOVER: any = { transform: [{ translateY: -2 }], boxShadow: '0 6px 18px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)' };
 
+/**
+ * The height chosen for a widget whose content has no chart to stretch (numbers, a list, a note):
+ * undefined = as tall as its content; otherwise its body is that size and scrolls when there's more.
+ */
+export const FitHeight = createContext<WidgetCfg['h'] | undefined>(undefined);
+/** A fixed-height body that scrolls, for FitHeight. */
+function Scrolled({ h, children }: { h?: WidgetCfg['h']; children: ReactNode }) {
+  if (!h) return <>{children}</>;
+  return <ScrollView style={{ height: BODY[h], flexGrow: 0 }} contentContainerStyle={{ gap: 10 }} nestedScrollEnabled showsVerticalScrollIndicator>{children}</ScrollView>;
+}
+
 /** A title you gave a widget in its settings; the card shows it in place of its own. */
 export const TitleOverride = createContext<string | undefined>(undefined);
 
 export function CardShell({ t, title: own, link, onPress, children, after }: { t: Theme; title: string; link?: string; onPress?: () => void; children: ReactNode; after?: ReactNode }) {
   const title = useContext(TitleOverride) ?? own;
+  const h = useContext(FitHeight);
   return (
     <>
     <Pressable onPress={onPress} style={({ pressed, hovered }: any) => [styles.card, LIFT, RISE, PRESS, { backgroundColor: t.card, borderColor: t.line }, hovered && onPress ? HOVER : null, pressed && onPress ? { transform: [{ scale: 0.985 }] } : null]}>
@@ -105,7 +121,7 @@ export function CardShell({ t, title: own, link, onPress, children, after }: { t
         <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title.toUpperCase()}</Text>
         {link && <Text style={{ color: t.accent, fontSize: 12 }}>{link} ›</Text>}
       </View>
-      {children}
+      <Scrolled h={h}>{children}</Scrolled>
     </Pressable>
     {after}
     </>
@@ -196,9 +212,8 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
         {data.empty ? <Text style={{ color: t.muted }}>{data.empty}</Text>
           : view === 'tiles' ? <><Fill>{() => <View style={styles.tiles}>{data.tiles.map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}</Fill>{period}</>
           : view === 'pie' ? (
-            // The ring is as big as the space allows (and leaves room for the legend beside it); the legend lists what fits.
             <Fill>{(h, w) => <Donut t={t} slices={data.breakdown.map((b) => ({ label: b.label, value: b.value, onPress: openPart(b) }))} format={fmt} note={data.period}
-              size={Math.max(84, Math.min(h, 170, w - 214))} rows={fit(h, 19, 2)} />}</Fill>
+              width={w} height={h} legend={cfg.legend !== false} />}</Fill>
           ) : view === 'list' ? (
             <>
               <Fill>{(h) => (data.breakdown.length ? data.breakdown.slice(0, fit(h, 25)).map((b) => (
@@ -335,6 +350,7 @@ function Runway({ t, refresh }: { t: Theme; refresh: number }) {
 
 /** Your own words on a page. Lines starting with "- " become a list; a blank line starts a new paragraph. */
 function TextNote({ t, cfg }: { t: Theme; cfg: WidgetCfg }) {
+  const h = useContext(FitHeight);
   const lines = (cfg.text ?? '').split('\n');
   const body = (
     <View style={{ gap: 4 }}>
@@ -345,7 +361,7 @@ function TextNote({ t, cfg }: { t: Theme; cfg: WidgetCfg }) {
         : <Text key={i} style={{ color: t.text, fontSize: 14, lineHeight: 20 }}>{l}</Text>))}
     </View>
   );
-  return cfg.plain ? <View style={{ paddingHorizontal: 4, paddingVertical: 6 }}>{body}</View> : <View style={[styles.card, LIFT, { backgroundColor: t.card, borderColor: t.line }]}>{body}</View>;
+  return cfg.plain ? <View style={{ paddingHorizontal: 4, paddingVertical: 6 }}><Scrolled h={h}>{body}</Scrolled></View> : <View style={[styles.card, LIFT, { backgroundColor: t.card, borderColor: t.line }]}><Scrolled h={h}>{body}</Scrolled></View>;
 }
 
 // IDEA-14: each tag as a project total. Transfers between your accounts are left out.
@@ -501,6 +517,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
   const [by, setBy] = useState<SplitBy | undefined>(cfg.by);
   const [avgLine, setAvgLine] = useState(!!cfg.avg);
   const [numbers, setNumbers] = useState(cfg.numbers !== false);
+  const [legend, setLegend] = useState(cfg.legend !== false);
   const [payoff, setPayoff] = useState(cfg.payoff !== false);
   const [stack, setStack] = useState(!!cfg.stack);
   const [compare, setCompare] = useState(!!cfg.compare);
@@ -550,6 +567,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
       ...(splits.length > 1 && split !== splits[0] ? { by: split } : {}),
       ...(avgLine && drawn ? { avg: true } : {}),
       ...(numbers ? {} : { numbers: false }),
+      ...(shown === 'pie' && !legend ? { legend: false } : {}),
       ...(oneLoan && !payoff ? { payoff: false } : {}),
     });
   const chips = { flexDirection: 'row', flexWrap: 'wrap', gap: 6 } as const;
@@ -605,6 +623,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
           {canPace && toggle('Where this month is heading, against the 3-month average', pace, setPace)}
           {canCompare && !(canStack && stack) && toggle('Compare with the period before', compare, setCompare)}
           {drawn && toggle('Numbers above the chart', numbers, setNumbers)}
+          {shown === 'pie' && toggle('Show the legend (off: tap a slice for its amount)', legend, setLegend)}
           {drawn && source !== 'cashflow' && !(canPace && pace) && toggle('Dashed line at the average', avgLine, setAvgLine)}
           {oneLoan && toggle('Loan payoff date and interest', payoff, setPayoff)}
           {data && <MultiPicker visible={pick} title="Categories" onClose={() => setPick(false)} selected={selected} onChange={setIds}
