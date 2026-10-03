@@ -231,7 +231,15 @@ const LEGEND_ROW = 26, LEGEND_COL = 200;
  * tap opens what's behind it, as on the other charts). At most as many named slices as there are
  * chart colours; the rest are gathered as "N others".
  */
-export function Donut({ t, slices, format, note, width, height, legend = true }: { t: Theme; slices: Slice[]; format: (n: number) => string; note?: string; width: number; height: number; legend?: boolean }) {
+/**
+ * How a pie names its slices. around: each label sits outside its slice on a short line;
+ * list: a legend beside or under the ring; none: the ring alone (tap a slice).
+ * auto: around when the card is wide enough for labels on both sides, otherwise the list.
+ */
+export type PieLabels = 'auto' | 'around' | 'list' | 'none';
+const AROUND_W = 112; // room for one label beside the ring, each side
+
+export function Donut({ t, slices, format, note, width, height, labels = 'auto' }: { t: Theme; slices: Slice[]; format: (n: number) => string; note?: string; width: number; height: number; labels?: PieLabels }) {
   const [sel, setSel] = useState<number | null>(null);
   const ring = useRef<View>(null);
   const most = t.series.length;
@@ -242,6 +250,11 @@ export function Donut({ t, slices, format, note, width, height, legend = true }:
   if (rest > 0) parts.push({ label: `${slices.length - keep} others`, value: rest, color: t.muted });
   const total = parts.reduce((s, p) => s + p.value, 0);
   if (total <= 0) return <Text style={{ color: t.muted }}>Nothing to show{note ? ` ${note}` : ''}.</Text>;
+  const aroundSize = Math.floor(Math.min(height - 12, width - 2 * (AROUND_W + 22)));
+  const fits = aroundSize >= 80 && !!aroundLayout(parts, total, width / 2, height / 2, aroundSize / 2, height);
+  const mode = labels === 'auto' ? (aroundSize >= 120 && fits ? 'around' : 'list') : labels === 'around' && !fits ? 'list' : labels;
+  if (mode === 'around') return <AroundPie t={t} parts={parts} total={total} format={format} note={note} width={width} height={height} size={Math.max(80, aroundSize)} />;
+  const legend = mode === 'list';
 
   // Beside or under: whichever gives the bigger ring (beside wins a tie: it reads better on a wide card).
   const GAP = 14;
@@ -305,6 +318,99 @@ export function Donut({ t, slices, format, note, width, height, legend = true }:
           ))}
         </ScrollView>
       )}
+    </View>
+  );
+}
+
+interface Spot { i: number; right: boolean; ax: number; ay: number; y: number }
+/**
+ * Where each label goes beside the ring: the side its slice faces, then balanced (slices near the
+ * top or bottom can go either way), spread so none overlap. Two-line labels when there's room,
+ * one line when there isn't; null when even that doesn't fit.
+ */
+function aroundLayout(parts: { value: number }[], total: number, cx: number, cy: number, R: number, height: number): { spots: Spot[]; line: number } | null {
+  let acc = 0;
+  const spots: (Spot & { c: number })[] = parts.map((p, i) => {
+    const mid = acc + p.value / total / 2; acc += p.value / total;
+    const th = mid * 2 * Math.PI - Math.PI / 2;
+    return { i, c: Math.cos(th), right: Math.cos(th) >= 0, ax: cx + (R + 2) * Math.cos(th), ay: cy + (R + 2) * Math.sin(th), y: cy + (R + 12) * Math.sin(th) };
+  });
+  // A side with more labels than room: move the ones nearest the top or bottom across.
+  for (;;) {
+    const r = spots.filter((x) => x.right).length, l = spots.length - r;
+    if (Math.abs(r - l) <= 1 || Math.max(r, l) * 30 <= height) break;
+    const from = r > l;
+    const pick = spots.filter((x) => x.right === from).sort((a, b) => Math.abs(a.c) - Math.abs(b.c))[0];
+    pick.right = !from;
+  }
+  const most = Math.max(spots.filter((x) => x.right).length, spots.filter((x) => !x.right).length);
+  const line = height >= most * 30 ? 30 : height >= most * 17 ? 17 : 0;
+  if (!line) return null;
+  for (const side of [true, false]) {
+    const list = spots.filter((x) => x.right === side).sort((a, b) => a.y - b.y);
+    for (let k = 0; k < list.length; k++) list[k].y = Math.max(list[k].y, k ? list[k - 1].y + line : line / 2);
+    for (let k = list.length - 1; k >= 0; k--) list[k].y = Math.min(list[k].y, k < list.length - 1 ? list[k + 1].y - line : height - line / 2);
+  }
+  return { spots, line };
+}
+
+/** The ring with each slice's name outside it, on a short line from the slice's middle. Labels on a side are spread so they never overlap. */
+function AroundPie({ t, parts, total, format, note, width, height, size }: {
+  t: Theme; parts: (Slice & { color: string })[]; total: number; format: (n: number) => string; note?: string; width: number; height: number; size: number;
+}) {
+  const [sel, setSel] = useState<number | null>(null);
+  const ring = useRef<View>(null);
+  const cx = width / 2, cy = height / 2, R = size / 2, sw = Math.max(14, size * 0.2), r = R - sw / 2, C = 2 * Math.PI * r;
+  const lay = aroundLayout(parts, total, cx, cy, R, height)!;
+  const spots = lay.spots, LINE = lay.line;
+  let acc = 0;
+  const ends = parts.map((p) => (acc += p.value / total));
+  const pickAt = (e: any) => {
+    const el = ring.current as unknown as HTMLElement | null;
+    const box = el?.getBoundingClientRect?.();
+    const x = box ? e.nativeEvent.pageX - box.left - window.scrollX : e.nativeEvent.locationX, y = box ? e.nativeEvent.pageY - box.top - window.scrollY : e.nativeEvent.locationY;
+    const dx = x - R, dy = y - R, d = Math.hypot(dx, dy);
+    if (d < r - sw / 2 - 6 || d > R + 6) { setSel(null); return; }
+    const f = ((Math.atan2(dx, -dy) / (2 * Math.PI)) + 1) % 1;
+    const i = ends.findIndex((v) => f <= v);
+    if (i < 0) return;
+    if (sel === i) parts[i].onPress?.(); else setSel(i);
+  };
+  let off = 0;
+  const shown = sel == null ? null : parts[sel];
+  return (
+    <View style={{ width, height }}>
+      <Svg width={width} height={height} style={StyleSheet.absoluteFill as any} pointerEvents="none">
+        {spots.map((x) => {
+          const ex = cx + (x.right ? 1 : -1) * (R + 14), lx = cx + (x.right ? 1 : -1) * (R + 20);
+          return <Path key={x.i} d={`M ${x.ax} ${x.ay} L ${ex} ${x.y} L ${lx} ${x.y}`} stroke={parts[x.i].color} strokeWidth={1.2} fill="none" opacity={sel == null || sel === x.i ? 0.9 : 0.35} />;
+        })}
+      </Svg>
+      <Pressable ref={ring} onPress={pickAt} style={{ position: 'absolute', left: cx - R, top: cy - R, width: size, height: size, alignItems: 'center', justifyContent: 'center' }} accessibilityLabel="Chart. Tap a slice for its amount.">
+        <Svg width={size} height={size} style={[StyleSheet.absoluteFill, SPIN] as any}>
+          {parts.map((p, i) => {
+            const len = (p.value / total) * C, o = off; off += len;
+            return <Circle key={p.label} cx={R} cy={R} r={r} fill="none" stroke={p.color} strokeWidth={sel === i ? sw + 4 : sw} strokeOpacity={sel == null || sel === i ? 1 : 0.5}
+              strokeDasharray={`${Math.max(0, len - 2)} ${C - Math.max(0, len - 2)}`} strokeDashoffset={-o} transform={`rotate(-90 ${R} ${R})`} />;
+          })}
+        </Svg>
+        <View style={{ maxWidth: size - sw * 2 - 8, alignItems: 'center' }} pointerEvents="none">
+          <Text style={{ color: t.text, fontWeight: '700', fontSize: size >= 180 ? 20 : 15, fontVariant: ['tabular-nums'] }} numberOfLines={1}>{format(shown ? shown.value : total)}</Text>
+          <Text style={{ color: shown ? t.text : t.muted, fontSize: size >= 180 ? 12 : 10, textAlign: 'center', lineHeight: size >= 180 ? 15 : 12 }} numberOfLines={2}>{shown ? shown.label : note ?? 'total'}</Text>
+          {shown?.onPress && <Text style={{ color: t.accent, fontSize: 10, marginTop: 2 }}>tap again to open</Text>}
+        </View>
+      </Pressable>
+      {spots.map((x) => {
+        const p = parts[x.i];
+        const left = x.right ? cx + R + 23 : 0, w = x.right ? width - (cx + R + 23) : cx - R - 23;
+        return (
+          <Pressable key={x.i} onPress={p.onPress} disabled={!p.onPress} onHoverIn={() => setSel(x.i)} onHoverOut={() => setSel(null)}
+            style={{ position: 'absolute', left, width: w, top: x.y - LINE / 2, height: LINE, justifyContent: 'center', alignItems: x.right ? 'flex-start' : 'flex-end' }}>
+            <Text style={{ color: t.text, fontSize: 12, fontWeight: sel === x.i ? '700' : '500' }} numberOfLines={1}>{p.label}{LINE < 30 ? <Text style={{ color: t.muted, fontSize: 11 }}>{`  ${Math.round((p.value / total) * 100)}%`}</Text> : null}</Text>
+            {LINE >= 30 && <Text style={{ color: t.muted, fontSize: 11, fontVariant: ['tabular-nums'] }} numberOfLines={1}>{Math.round((p.value / total) * 100)}% · {format(p.value)}</Text>}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }

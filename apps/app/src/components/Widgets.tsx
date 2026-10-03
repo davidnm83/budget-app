@@ -29,7 +29,7 @@ import { accountGroup, byAccountGroup, signedBalance, type Account } from '@/lib
 import { loadWatch, type Watched } from '@/lib/watch';
 import { dismissRadar, loadRadar, restoreRadar } from '@/lib/radar';
 import { toast } from '@/lib/toast';
-import { BarChart, Donut, LineChart, plotChrome } from '@/components/Charts';
+import { BarChart, Donut, LineChart, plotChrome, type PieLabels } from '@/components/Charts';
 import { cfgCategories, loadChart, NO_ACCOUNTS, pickAccounts, SOURCES, SPLITS, SPLIT_LABEL, VIEW_LABEL, type ChartCfg, type ChartData, type ChartView, type Source, type SplitBy } from '@/lib/widgetData';
 
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
@@ -46,8 +46,8 @@ export interface WidgetCfg extends ChartCfg { title?: string; chart?: Chart;
   text?: string; plain?: boolean;
   /** Chart widgets: false hides the numbers above a bar or line chart. */
   numbers?: boolean;
-  /** Pie: false hides the legend (the ring takes the space; tap a slice for its amount). */
-  legend?: boolean;
+  /** Pie: how the slices are named (see PieLabels). `legend: false` is the older way of saying 'none'. */
+  labels?: PieLabels; legend?: boolean;
   /** Chart widgets: what to show and how. */
   view?: ChartView;
   /** Layout: width on wide screens, and chart height. */
@@ -213,7 +213,7 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
           : view === 'tiles' ? <><Fill>{() => <View style={styles.tiles}>{data.tiles.map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}</Fill>{period}</>
           : view === 'pie' ? (
             <Fill>{(h, w) => <Donut t={t} slices={data.breakdown.map((b) => ({ label: b.label, value: b.value, onPress: openPart(b) }))} format={fmt} note={data.period}
-              width={w} height={h} legend={cfg.legend !== false} />}</Fill>
+              width={w} height={h} labels={cfg.labels ?? (cfg.legend === false ? 'none' : 'auto')} />}</Fill>
           ) : view === 'list' ? (
             <>
               <Fill>{(h) => (data.breakdown.length ? data.breakdown.slice(0, fit(h, 25)).map((b) => (
@@ -517,7 +517,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
   const [by, setBy] = useState<SplitBy | undefined>(cfg.by);
   const [avgLine, setAvgLine] = useState(!!cfg.avg);
   const [numbers, setNumbers] = useState(cfg.numbers !== false);
-  const [legend, setLegend] = useState(cfg.legend !== false);
+  const [labels, setLabels] = useState<PieLabels>(cfg.labels ?? (cfg.legend === false ? 'none' : 'auto'));
   const [payoff, setPayoff] = useState(cfg.payoff !== false);
   const [stack, setStack] = useState(!!cfg.stack);
   const [compare, setCompare] = useState(!!cfg.compare);
@@ -525,7 +525,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
   const [text, setText] = useState(cfg.text ?? '');
   const [plain, setPlain] = useState(!!cfg.plain);
   const [radar, setRadar] = useState<RadarSettings>(cfg.radar ?? {});
-  const changed = useChanged([title, months, source, view, ids, accs, by, avgLine, numbers, legend, payoff, stack, compare, pace, text, plain, radar]);
+  const changed = useChanged([title, months, source, view, ids, accs, by, avgLine, numbers, labels, payoff, stack, compare, pace, text, plain, radar]);
   const radarNum = (k: 'unusualPct' | 'unusualMin' | 'cardPct' | 'runwayDays', v: string) => setRadar((r) => { const n = Number(v); const { [k]: _old, ...rest } = r; return v.trim() && isFinite(n) && n >= 0 ? { ...rest, [k]: n } : rest; });
   const [pick, setPick] = useState(false);
   const [pickAcc, setPickAcc] = useState(false);
@@ -568,7 +568,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
       ...(splits.length > 1 && split !== splits[0] ? { by: split } : {}),
       ...(avgLine && drawn ? { avg: true } : {}),
       ...(numbers ? {} : { numbers: false }),
-      ...(shown === 'pie' && !legend ? { legend: false } : {}),
+      ...(shown === 'pie' && labels !== 'auto' ? { labels } : {}),
       ...(oneLoan && !payoff ? { payoff: false } : {}),
     });
   const chips = { flexDirection: 'row', flexWrap: 'wrap', gap: 6 } as const;
@@ -624,7 +624,11 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
           {canPace && toggle('Where this month is heading, against the 3-month average', pace, setPace)}
           {canCompare && !(canStack && stack) && toggle('Compare with the period before', compare, setCompare)}
           {drawn && toggle('Numbers above the chart', numbers, setNumbers)}
-          {shown === 'pie' && toggle('Show the legend (off: tap a slice for its amount)', legend, setLegend)}
+          {shown === 'pie' && (
+            <Field t={t} label="Slice names" hint={labels === 'auto' ? 'Around the pie where the card is wide enough, otherwise a separate legend: each phone or computer gets what fits.' : labels === 'none' ? 'Tap a slice for its name and amount.' : undefined}>
+              <View style={chips}>{([['auto', 'Automatic'], ['around', 'Around the pie'], ['list', 'Separate legend'], ['none', 'None']] as [PieLabels, string][]).map(([k, l]) => <Chip key={k} label={l} on={labels === k} onPress={() => setLabels(k)} />)}</View>
+            </Field>
+          )}
           {drawn && source !== 'cashflow' && !(canPace && pace) && toggle('Dashed line at the average', avgLine, setAvgLine)}
           {oneLoan && toggle('Loan payoff date and interest', payoff, setPayoff)}
           {data && <MultiPicker visible={pick} title="Categories" onClose={() => setPick(false)} selected={selected} onChange={setIds}
