@@ -9,8 +9,8 @@ import { EmptyState, PageSkeleton, RowsSkeleton } from '@/components/States';
 import { ALL_TIME, DateRangeBody, type Range } from '@/components/DateRange';
 import { toast } from '@/lib/toast';
 import { usePullRefresh } from '@/lib/pullRefresh';
-import { merchantLogo, useLogos, useLogoVersion } from '@/lib/logos';
-import { Logo } from '@/components/Logo';
+import { bankLogo, customPicture, merchantLogo, useLogoVersion, useLogos } from '@/lib/logos';
+import { Logo, TxnLogo } from '@/components/Logo';
 import { PANEL } from '@/lib/motion';
 import { UNDER_BAR } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -49,6 +49,8 @@ interface Filters {
 }
 
 const PAGE = 100;
+// This list is long and gets flicked through: build more rows per pass and keep more of them either side of the screen.
+const BIG_LIST = { initialNumToRender: 20, maxToRenderPerBatch: 30, updateCellsBatchingPeriod: 16, windowSize: 15 } as const;
 const DEFAULTS: Filters = { range: ALL_TIME, direction: 'any', min: '', max: '', accounts: [], categories: [], merchants: [], sort: 'newest' };
 const SORTS: { key: Sort; label: string }[] = [
   { key: 'newest', label: 'Newest' }, { key: 'oldest', label: 'Oldest' }, { key: 'largest', label: 'Largest' },
@@ -85,7 +87,7 @@ export default function Transactions() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [accounts, setAccounts] = useState<{ id: string; name: string; mask: string | null }[]>([]);
+  const [accounts, setAccounts] = useState<{ id: string; name: string; mask: string | null; icon?: string | null }[]>([]);
   const [cats, setCats] = useState<{ id: string; name: string; group_name: string; icon: string | null }[]>([]);
   const request = useRef(0);
 
@@ -93,7 +95,7 @@ export default function Transactions() {
   useEffect(() => { const h = setTimeout(() => setQuery(search), 300); return () => clearTimeout(h); }, [search]);
 
   useEffect(() => {
-    supabase.from('accounts').select('id, name, mask').eq('is_hidden', false).order('name').then(({ data }) => setAccounts(data ?? []));
+    supabase.from('accounts').select('id, name, mask, icon').eq('is_hidden', false).order('name').then(({ data }) => setAccounts(data ?? []));
     supabase.from('categories').select('id, name, group_name, icon').eq('is_hidden', false).order('sort').order('name').then(({ data }) => setCats(data ?? []));
   }, []);
 
@@ -152,6 +154,10 @@ export default function Transactions() {
   };
 
   const byDate = filters.sort === 'newest' || filters.sort === 'oldest';
+  // A different view (filters, search, to-review or all) gets a fresh list, back at the top. Keeping
+  // the old one meant it held on to the old view's scroll position and row measurements, and could
+  // show an empty stretch under the date heading until it caught up.
+  const listKey = useMemo(() => JSON.stringify([mode, filters, query]), [mode, filters, query]);
   const sections = useMemo(() => (byDate ? groupByDay(rows) : []), [rows, byDate]);
   const nFilters = activeCount(filters);
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
@@ -200,7 +206,7 @@ export default function Transactions() {
       {/* Same rule as Merchants (lib/layout SPLIT): the list keeps its width, the pane beside it narrows, then steps aside. */}
       <View style={wide ? SPLIT_LIST : { flex: 1 }}>
       {byDate ? (
-        <SectionList {...LIST}
+        <SectionList {...LIST} {...BIG_LIST} key={listKey}
           sections={sections}
           keyExtractor={(r) => r.id}
           stickySectionHeadersEnabled
@@ -218,7 +224,7 @@ export default function Transactions() {
           contentContainerStyle={{ paddingBottom: UNDER_BAR }}
         />
       ) : (
-        <FlatList {...LIST}
+        <FlatList {...LIST} {...BIG_LIST} key={listKey}
           data={rows}
           keyExtractor={(r) => r.id}
           refreshControl={<RefreshControl refreshing={loading && !rows.length} onRefresh={reload} />}
@@ -319,7 +325,7 @@ function TxnRow({ t, item, showDate, onToggle, onOpen, selected }: { t: Theme; i
       <Pressable accessibilityLabel={item.reviewed ? 'Mark not reviewed' : 'Mark reviewed'} hitSlop={10} onPress={onToggle} style={styles.check}>
         <Ionicons name={item.reviewed ? 'checkmark-circle' : 'ellipse-outline'} size={24} color={item.reviewed ? t.accent : t.muted} />
       </Pressable>
-      {logos && <View style={{ marginRight: 10 }}><Logo size={34} name={item.display_name} uri={merchantLogo(item.display_name, lv)} /></View>}
+      {logos && <View style={{ marginRight: 10 }}><TxnLogo size={34} name={item.display_name} transfer={item.is_transfer} category={item.category_name} /></View>}
       <View style={{ flex: 1, gap: 2 }}>
         <Text numberOfLines={1} style={[ROW.title, { color: t.text }]}>{item.display_name}</Text>
         <Text numberOfLines={1} style={[ROW.sub, { color: category ? t.text : t.danger }]}>
@@ -343,10 +349,11 @@ function TxnRow({ t, item, showDate, onToggle, onOpen, selected }: { t: Theme; i
 
 function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total, onExport }: {
   visible: boolean; onClose: () => void; t: Theme; f: Filters; set: (p: Partial<Filters>) => void;
-  accounts: { id: string; name: string; mask: string | null }[]; cats: { id: string; name: string; group_name: string; icon: string | null }[]; reset: () => void; total: number | null;
+  accounts: { id: string; name: string; mask: string | null; icon?: string | null }[]; cats: { id: string; name: string; group_name: string; icon: string | null }[]; reset: () => void; total: number | null;
   onExport: () => Promise<number>;
 }) {
   const [exporting, setExporting] = useState('');
+  const lv = useLogoVersion();
   const insets = useSafeAreaInsets();
   const [picker, setPicker] = useState<null | 'categories' | 'accounts' | 'merchants'>(null);
   useBackToClose(visible, onClose);
@@ -412,10 +419,10 @@ function FilterSheet({ visible, onClose, t, f, set, accounts, cats, reset, total
         items={[{ id: 'none', label: 'Uncategorised' }, ...cats.map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))]}
         selected={f.categories} onChange={(categories) => set({ categories })} />
       <MultiPicker visible={picker === 'accounts'} title="Accounts" onClose={() => setPicker(null)}
-        items={accounts.map((a) => ({ id: a.id, label: `${a.name}${a.mask ? ` ••${a.mask}` : ''}` }))}
+        items={accounts.map((a) => ({ id: a.id, label: `${a.name}${a.mask ? ` ••${a.mask}` : ''}`, icon: <Logo size={28} name={a.name} uri={customPicture(`account:${a.id}`, lv) ?? (a.icon ? null : bankLogo(a.name, lv))} emoji={a.icon ?? undefined} /> }))}
         selected={f.accounts} onChange={(accounts) => set({ accounts })} />
       <MultiPicker visible={picker === 'merchants'} title="Merchants" onClose={() => setPicker(null)}
-        items={merchants.map((m) => ({ id: m.merchant, label: m.merchant, detail: String(m.txns) }))}
+        items={merchants.map((m) => ({ id: m.merchant, label: m.merchant, detail: String(m.txns), icon: <Logo size={28} name={m.merchant} uri={merchantLogo(m.merchant, lv)} /> }))}
         selected={f.merchants} onChange={(merchants) => set({ merchants })} />
     </ModalFrame>
   );

@@ -14,8 +14,10 @@ export default function PlaidLinkButton({ itemId, title = 'Link a bank', onDone,
     onSuccess: async (publicToken, metadata) => {
       try {
         if (itemId) {
-          await callFunction('plaid-sync', { itemId });
-          onDone?.('Connection fixed and synced.');
+          // Signing in again can succeed while the sync that follows still fails; say which happened.
+          const r = await callFunction<{ results?: { status: string; error?: string }[] }>('plaid-sync', { itemId });
+          const bad = r.results?.find((x) => x.status !== 'ok');
+          onDone?.(bad ? `Signed in again, but the sync still failed${bad.error ? `: ${bad.error}` : ''}. The connection stays marked until a sync succeeds; try Sync now on the Accounts tab in a few minutes.` : 'Connection fixed and synced.');
         } else {
           const r = await callFunction<{ institution: string; added: number }>('plaid-exchange', {
             publicToken, institutionName: metadata.institution?.name,

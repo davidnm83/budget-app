@@ -224,7 +224,7 @@ function Radar({ t, refresh, settings }: { t: Theme; refresh: number; settings?:
   const LOOK = { act: { icon: 'alert-circle', color: t.danger }, heads: { icon: 'warning', color: t.series2 }, info: { icon: 'information-circle', color: t.muted } } as const;
   const shown = all ? data.cards : data.cards.slice(0, 4);
   const hide = async (id: string) => {
-    try { await dismissRadar(id, data.cards.map((c) => c.id)); setAgain((n) => n + 1); }
+    try { await dismissRadar(id, data.ids); setAgain((n) => n + 1); }
     catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); }
   };
   const bringBack = async () => { try { await restoreRadar(); setAgain((n) => n + 1); } catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); } };

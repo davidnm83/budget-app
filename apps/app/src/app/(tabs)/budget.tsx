@@ -553,6 +553,24 @@ function CompareView(d: Data) {
   const labels = new Map<string, string>([['none', 'Uncategorized'], ...d.cats.map((c) => [c.id, c.name] as [string, string])]);
   const rows = compareTotals(labels, spend(aMonths), spend(bMonths));
   const totalA = rows.reduce((s, r) => s + r.a, 0), totalB = rows.reduce((s, r) => s + r.b, 0);
+  // Grouped like the Month tab: each group with its total, its categories underneath; the biggest change first.
+  const groups = (() => {
+    const by = new Map<string, typeof rows>();
+    for (const r of rows) { const g = r.key === 'none' ? 'Uncategorized' : d.cats.find((c) => c.id === r.key)?.group ?? 'Other'; (by.get(g) ?? by.set(g, []).get(g)!).push(r); }
+    return [...by.entries()].map(([group, list]) => ({ group, list, a: list.reduce((s, r) => s + r.a, 0), b: list.reduce((s, r) => s + r.b, 0) }))
+      .sort((x, y) => Math.abs(y.a - y.b) - Math.abs(x.a - x.b));
+  })();
+  const [closed, setClosed] = useState<Set<string>>(new Set());
+  const flip = (g: string) => setClosed((c) => { const n = new Set(c); if (n.has(g)) n.delete(g); else n.add(g); return n; });
+  const iconOf = (key: string) => { const c = d.cats.find((x) => x.id === key); return c ? categoryIcon(c.name, c.icon) : '•'; };
+  const head = (
+    <View style={[styles.cmpHead, { borderColor: t.line }]}>
+      <Text style={[styles.cmpLabel, { color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }]}>SPENDING</Text>
+      <Text style={[styles.cmpNum, { color: t.text, fontWeight: '600', fontSize: 12 }]} numberOfLines={1}>{label(aMonths)}</Text>
+      <Text style={[styles.cmpNum, { color: t.muted, fontSize: 12 }]} numberOfLines={1}>{label(bMonths)}</Text>
+      <Text style={[styles.cmpNum, { color: t.muted, fontSize: 12 }]}>Change</Text>
+    </View>
+  );
 
   return (
     <>
@@ -567,39 +585,62 @@ function CompareView(d: Data) {
       )}
       {scope === 'month' && against === 'pick' && <Stepper label={monthName(picked)} onPrev={() => setPicked(addMonths(picked, -1))} onNext={() => setPicked(addMonths(picked, 1))} />}
 
-      <Card style={{ paddingVertical: 8 }}>
-        <View style={[styles.cmpRow, { borderColor: t.line }]}>
-          <Text style={[styles.cmpLabel, { color: t.muted }]} />
-          <Text style={[styles.cmpNum, { color: t.text, fontWeight: '600' }]}>{label(aMonths)}</Text>
-          <Text style={[styles.cmpNum, { color: t.muted }]}>{label(bMonths)}</Text>
-          <Text style={[styles.cmpNum, { color: t.muted }]}>Change</Text>
-        </View>
-        <CmpRow t={t} label="Spent" a={totalA} b={totalB} bold />
-        <CmpRow t={t} label="Budgeted" a={budgeted(aMonths)} b={budgeted(bMonths)} />
-        <CmpRow t={t} label="Money in" a={sumIn(aMonths)} b={sumIn(bMonths)} />
-      </Card>
-      <Text style={[styles.h, { color: t.muted }]}>By category, biggest change first</Text>
-      <Card style={{ paddingVertical: 8 }}>
-        {rows.length ? rows.map((r) => <CmpRow key={r.key} t={t} label={r.label} a={r.a} b={r.b} />) : <Empty text="No spending in either period." />}
+      <View style={styles.tiles}>
+        <CmpTile t={t} label="Spent" a={totalA} b={totalB} moreIsBad />
+        <CmpTile t={t} label="Budgeted" a={budgeted(aMonths)} b={budgeted(bMonths)} />
+        <CmpTile t={t} label="Money in" a={sumIn(aMonths)} b={sumIn(bMonths)} moreIsGood />
+      </View>
+      <Card style={{ padding: 0 }}>
+        {head}
+        {!groups.length && <View style={{ padding: 12 }}><Empty text="No spending in either period." /></View>}
+        {groups.map((g) => {
+          const single = g.list.length === 1 && g.list[0].label === g.group;
+          const open = !closed.has(g.group);
+          return (
+            <View key={g.group}>
+              <Pressable onPress={() => !single && flip(g.group)} style={[styles.groupRow, { backgroundColor: t.bg, borderColor: t.line }]}>
+                <Ionicons name={single ? 'ellipse' : open ? 'chevron-down' : 'chevron-forward'} size={single ? 4 : 14} color={t.muted} />
+                <CmpRow t={t} icon={g.group === 'Uncategorized' ? '•' : groupIcon(g.group, d.groupIcons[g.group])} label={g.group} a={g.a} b={g.b} bold />
+              </Pressable>
+              {!single && open && g.list.map((r) => (
+                <View key={r.key} style={styles.lineRow}><CmpRow t={t} icon={iconOf(r.key)} label={r.label} a={r.a} b={r.b} /></View>
+              ))}
+            </View>
+          );
+        })}
+        {groups.length > 0 && (
+          <View style={[styles.groupRow, { borderColor: t.line, paddingLeft: 30 }]}><CmpRow t={t} icon="" label="All spending" a={totalA} b={totalB} bold /></View>
+        )}
       </Card>
     </>
   );
 }
 
-function CmpRow({ t, label, a, b, bold }: { t: Theme; label: string; a: number; b: number; bold?: boolean }) {
+function CmpRow({ t, icon, label, a, b, bold }: { t: Theme; icon: string; label: string; a: number; b: number; bold?: boolean }) {
   const change = a - b;
   const pct = b ? Math.round((change / Math.abs(b)) * 100) : null;
   return (
-    <View style={[styles.cmpRow, { borderColor: t.line }]}>
-      <Text style={[styles.cmpLabel, { color: t.text, fontWeight: bold ? '600' : '400' }]} numberOfLines={1}>{label}</Text>
-      <Text style={[styles.cmpNum, { color: t.text }]}>{money0(a)}</Text>
+    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <View style={[styles.cmpLabel, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+        {!!icon && <Text style={{ fontSize: 16, width: 22, textAlign: 'center' }}>{icon}</Text>}
+        <Text style={{ color: t.text, fontWeight: bold ? '700' : '400', flex: 1 }} numberOfLines={1}>{label}</Text>
+      </View>
+      <Text style={[styles.cmpNum, { color: t.text, fontWeight: bold ? '700' : '400' }]}>{money0(a)}</Text>
       <Text style={[styles.cmpNum, { color: t.muted }]}>{money0(b)}</Text>
-      <Text style={[styles.cmpNum, { color: t.text }]}>
+      {/* More spent than before reads as a warning, less as good, the way the Month tab colours over and under. */}
+      <Text style={[styles.cmpNum, { color: change === 0 ? t.muted : change > 0 ? t.danger : t.accent, fontSize: 13 }]} numberOfLines={1}>
         {change === 0 ? '—' : `${change > 0 ? '▲' : '▼'} ${money0(Math.abs(change))}`}
         {pct !== null && change !== 0 ? <Text style={{ color: t.muted }}>{` ${Math.abs(pct)}%`}</Text> : null}
       </Text>
     </View>
   );
+}
+
+/** A summary tile for the comparison: this period's figure, and how it moved against the other. */
+function CmpTile({ t, label, a, b, moreIsBad, moreIsGood }: { t: Theme; label: string; a: number; b: number; moreIsBad?: boolean; moreIsGood?: boolean }) {
+  const change = a - b;
+  const color = change === 0 || (!moreIsBad && !moreIsGood) ? undefined : (change > 0) === !!moreIsBad ? t.danger : t.accent;
+  return <Tile t={t} label={label} value={money0(a)} color={color} sub={change === 0 ? `same as ${money0(b)}` : `${change > 0 ? '▲' : '▼'} ${money0(Math.abs(change))} vs ${money0(b)}`} />;
 }
 
 // ───────────────────────── Year (BUD-6) ─────────────────────────
@@ -637,7 +678,7 @@ function YearView(d: Data) {
               </View>
               {lines.map((l) => (
                 <View key={l.key} style={[styles.yRow, { borderColor: t.line }, l.group && { backgroundColor: t.bg }]}>
-                  <Text style={[styles.yLabel, { color: t.text, fontWeight: l.group ? '600' : '400', paddingLeft: l.group ? 8 : 18 }]} numberOfLines={1}>{l.label}</Text>
+                  <Text style={[styles.yLabel, { color: t.text, fontWeight: l.group ? '600' : '400', paddingLeft: l.group ? 8 : 18 }]} numberOfLines={1}>{l.key.startsWith('g:') ? groupIcon(l.label, d.groupIcons[l.label]) : (() => { const c = d.cats.find((x) => x.id === l.key.slice(2)); return c ? categoryIcon(c.name, c.icon) : '•'; })()}  {l.label}</Text>
                   {l.values.map((v, i) => {
                     const b = budgetFor(l.key, months[i]);
                     const over = b !== undefined && v > b;
@@ -677,6 +718,7 @@ const styles = StyleSheet.create({
   unb: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   child: { flexDirection: 'row', paddingVertical: 4, borderTopWidth: StyleSheet.hairlineWidth },
   input: { borderWidth: 1, borderRadius: 8, padding: 8, width: 120, textAlign: 'right' },
+  cmpHead: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   cmpRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, gap: 6 },
   cmpLabel: { flex: 1.4 },
   cmpNum: { flex: 1, textAlign: 'right', fontVariant: ['tabular-nums'] },

@@ -9,7 +9,7 @@ import { useWide, LIST } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
 import { useBackToClose } from '@/lib/useBackToClose';
 
-export interface PickItem { id: string; label: string; group?: string; detail?: string }
+export interface PickItem { id: string; label: string; group?: string; detail?: string; /** A small picture before the label (a bank or merchant logo). */ icon?: React.ReactNode }
 
 export function MultiPicker({ visible, title, items, selected, onChange, onClose }: {
   visible: boolean; title: string; items: PickItem[]; selected: string[]; onChange: (ids: string[]) => void; onClose: () => void;
@@ -51,6 +51,7 @@ export function MultiPicker({ visible, title, items, selected, onChange, onClose
             return (
               <Pressable onPress={() => toggle(item.id)} style={({ pressed }) => [styles.row, { borderColor: t.line, backgroundColor: pressed ? t.line : t.card }]}>
                 <Ionicons name={on ? 'checkbox' : 'square-outline'} size={22} color={on ? t.accent : t.muted} />
+                {item.icon}
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: t.text, fontSize: 15 }} numberOfLines={1}>{item.label}</Text>
                   {!!item.group && <Text style={{ color: t.muted, fontSize: 12 }}>{item.group}</Text>}
@@ -115,6 +116,7 @@ export function SinglePicker({ visible, title, placeholder, items, selected, sug
             ? <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>{item.head.toUpperCase()}</Text>
             : (
               <Pressable onPress={() => onPick(item.id)} style={({ pressed, hovered }: any) => [styles.row, { paddingVertical: 9, borderColor: t.line, backgroundColor: pressed || hovered ? t.line : t.card }]}>
+                {item.icon}
                 <Text style={{ color: t.text, fontSize: 15, flex: 1 }} numberOfLines={1}>{item.label}</Text>
                 {item.id === selected && <Ionicons name="checkmark" size={20} color={t.accent} />}
               </Pressable>

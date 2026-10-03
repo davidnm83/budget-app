@@ -13,7 +13,7 @@ import { signedBalance } from './types';
 
 const PREFIX = 'radar:';
 
-export async function loadRadar(settings: RadarSettings = {}): Promise<{ cards: RadarCard[]; hidden: number }> {
+export async function loadRadar(settings: RadarSettings = {}): Promise<{ cards: RadarCard[]; hidden: number; ids: string[] }> {
   const now = today();
   const month = monthOf(now);
   const week = mondayOf(now);
@@ -52,10 +52,14 @@ export async function loadRadar(settings: RadarSettings = {}): Promise<{ cards: 
   ];
   const dismissed = (prefs.dismissed_suggestions ?? []).filter((k) => k.startsWith(PREFIX)).map((k) => k.slice(PREFIX.length));
   const cards = rankRadar(all, dismissed);
-  return { cards, hidden: new Set(all.map((c) => c.id)).size - cards.length };
+  const ids = [...new Set(all.map((c) => c.id))];
+  return { cards, hidden: ids.length - cards.length, ids };
 }
 
-/** Hide a card until the facts behind it change. Dismissals for things no longer true are tidied away. */
+/**
+ * Hide a card until the facts behind it change. `stillTrue` is every card the checks produce right
+ * now, shown or already dismissed: earlier dismissals among them are kept, the rest are tidied away.
+ */
 export async function dismissRadar(id: string, stillTrue: string[]) {
   const prefs = await loadPrefs();
   const keep = new Set(stillTrue);

@@ -144,7 +144,7 @@ export default function Settings() {
             <View style={{ flex: 1 }}>
               <Text style={{ color: t.text, fontWeight: '600' }}>{it.institution_name}</Text>
               <Text style={{ color: it.status === 'ok' ? t.muted : t.danger, fontSize: 13 }}>
-                {STATUS[it.status]}{it.last_synced_at ? ` · last sync ${new Date(it.last_synced_at).toLocaleString()}` : ''}
+                {STATUS[it.status]}{it.status !== 'ok' && it.error_code ? ` (${it.error_code})` : ''}{it.last_synced_at ? ` · last sync ${new Date(it.last_synced_at).toLocaleString()}` : ''}
               </Text>
             </View>
             {it.status !== 'ok' && <PlaidLinkButton itemId={it.item_id} title="Fix" onDone={done} onError={setMsg} />}

@@ -42,19 +42,30 @@ const TAB_ITEMS: Item[] = [
   { icon: 'wallet-outline', label: 'Accounts', href: '/accounts' },
 ];
 
+// Your pages and their order, as last loaded. Kept in memory and on the device so the menu opens
+// already in your order, not in the built-in order for a moment while the saved one is fetched.
+let menuCache: { pages: Page[]; order: string[] } = (() => {
+  try { const c = JSON.parse(globalThis.localStorage?.getItem('budget.menu') ?? 'null'); if (Array.isArray(c?.pages) && Array.isArray(c?.order)) return c; } catch { /* nothing remembered */ }
+  return { pages: [], order: [] };
+})();
+function rememberMenu(pages: Page[], order: string[]) {
+  menuCache = { pages, order };
+  try { globalThis.localStorage?.setItem('budget.menu', JSON.stringify(menuCache)); } catch { /* lasts until reload */ }
+}
+
 /** What's inside the menu, shared by the phone drawer and the wide-screen sidebar. */
 function MenuBody({ go, tabs, active, fit }: { go: (href: string) => void; tabs?: boolean; active: boolean; fit?: boolean }) {
   const t = useTheme();
   const path = usePathname();
-  const [pages, setPages] = useState<Page[]>([]);
-  const [order, setOrder] = useState<string[]>([]);
+  const [pages, setPages] = useState<Page[]>(menuCache.pages);
+  const [order, setOrder] = useState<string[]>(menuCache.order);
   const [toReview, setToReview] = useState(0);
   const overdue = usePlannerBadge();
   useEffect(() => { if (tabs) refreshPlannerBadge(); }, [tabs]); // also when the app opens on a menu page
   const [sorting, setSorting] = useState(false);
   useEffect(() => { if (tabs) supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('reviewed', false).then((r) => setToReview(r.count ?? 0)); }, [tabs, path]);
   // Reload when shown and when the page changes (a custom page may have been added or renamed).
-  useEffect(() => { if (active) loadPrefs().then((p) => { setPages(p.pages ?? []); setOrder(p.menu_order ?? []); }).catch(() => {}); else setSorting(false); }, [active, path]);
+  useEffect(() => { if (active) loadPrefs().then((p) => { setPages(p.pages ?? []); setOrder(p.menu_order ?? []); rememberMenu(p.pages ?? [], p.menu_order ?? []); }).catch(() => {}); else setSorting(false); }, [active, path]);
 
   const all: Item[] = [...PAGES, ...pages.map((p) => ({ emoji: p.icon, label: p.name, href: `/page/${p.id}` }))];
   const rank = (h: string) => { const i = order.indexOf(h); return i < 0 ? 1000 + all.findIndex((x) => x.href === h) : i; };
@@ -64,7 +75,7 @@ function MenuBody({ go, tabs, active, fit }: { go: (href: string) => void; tabs?
     const i = list.indexOf(href), j = i + d;
     if (j < 0 || j >= list.length) return;
     [list[i], list[j]] = [list[j], list[i]];
-    setOrder(list);
+    setOrder(list); rememberMenu(pages, list);
     savePrefs({ menu_order: list }).catch(() => {});
   };
   const here = (href: string) => path === href;
@@ -193,12 +204,12 @@ export function Sidebar() {
 /** Your pages in menu order, and the to-review count. */
 function useMenuItems(active: boolean) {
   const path = usePathname();
-  const [pages, setPages] = useState<Page[]>([]);
-  const [order, setOrder] = useState<string[]>([]);
+  const [pages, setPages] = useState<Page[]>(menuCache.pages);
+  const [order, setOrder] = useState<string[]>(menuCache.order);
   const [toReview, setToReview] = useState(0);
   useEffect(() => {
     if (!active) return;
-    loadPrefs().then((p) => { setPages(p.pages ?? []); setOrder(p.menu_order ?? []); }).catch(() => {});
+    loadPrefs().then((p) => { setPages(p.pages ?? []); setOrder(p.menu_order ?? []); rememberMenu(p.pages ?? [], p.menu_order ?? []); }).catch(() => {});
     supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('reviewed', false).then((r) => setToReview(r.count ?? 0));
   }, [active, path]);
   const all: Item[] = [...PAGES, ...pages.map((p) => ({ emoji: p.icon, label: p.name, href: `/page/${p.id}` }))];

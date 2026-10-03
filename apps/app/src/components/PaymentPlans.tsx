@@ -2,7 +2,7 @@
 // schedule, and the form to add one (from a purchase, or one that already started).
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { addDays, categoryIcon, formatMoney, monthsAfter, parseMoney, planProgress, planSchedule, shortDate, toIsoDate } from '@budget-app/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useConfirm } from '@/components/Confirm';
 import { DateField } from '@/components/DateField';
@@ -115,6 +115,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
   // What the plan is for: one purchase in the app, or an amount of the card's balance.
   const [mode, setMode] = useState<'purchase' | 'balance'>(plan ? (plan.transactionId ? 'purchase' : 'balance') : seed?.transactionId ? 'purchase' : 'balance');
   const [offset, setOffset] = useState(plan ? plan.offsetStart : true);
+  const offsetTouched = useRef(!!plan); // once you set the switch yourself, picking a category leaves it alone
   const [categoryId, setCategoryId] = useState<string | null>(from.categoryId ?? null);
   const [costCat, setCostCat] = useState<string | null>(from.interestCategoryId ?? null);
   const [payFrom, setPayFrom] = useState<string | null>(from.payingAccountId ?? null);
@@ -159,7 +160,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
     if (!draft) { setError('Check the amount, months, fees, interest and date.'); return; }
     if (mode === 'balance' && !categoryId) { setError('Choose the budget category the instalments count under.'); return; }
     setBusy(true); setError('');
-    const input: PlanInput = { ...draft, description: description.trim(), accountId, transactionId: mode === 'purchase' ? txnId : null, offsetStart: mode === 'balance' && offset, categoryId, interestCategoryId: costCat, payingAccountId: payFrom,
+    const input: PlanInput = { ...draft, description: description.trim(), accountId, transactionId: mode === 'purchase' ? txnId : null, offsetStart: mode === 'balance' && offset && chosen?.kind !== 'transfer', categoryId, interestCategoryId: costCat, payingAccountId: payFrom,
       postCharges: post, postFee, countFrom: started && past === 'skip' ? (plan?.countFrom ?? addDays(now, 1)) : null, closedOn: plan?.closedOn ?? null };
     try { if (plan) await updatePlan(plan, input); else await createPlan(input); toast(plan ? 'Plan saved' : 'Plan added'); onSaved(); onClose(); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -175,6 +176,16 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
     </Field>
   );
   const spendCats = cats.filter((c) => c.kind === 'expense').map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }));
+  // A plan against the balance can also sit under a transfer category (it then never counts as spending, only tracks the debt).
+  const planCats = mode === 'balance' ? cats.filter((c) => c.kind !== 'income').map((c) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name })) : spendCats;
+  const chosen = cats.find((c) => c.id === categoryId);
+  const pickCategory = (id: string) => {
+    setCategoryId(id);
+    // A debt-payment category is a budget line for paying the card down: each instalment should simply count there,
+    // with nothing taken back out at the start. Any other category starts with the switch on.
+    const c = cats.find((x) => x.id === id);
+    if (mode === 'balance' && c && !offsetTouched.current) setOffset(!/debt|loan|payment/i.test(c.name));
+  };
 
   return (
     <Sheet title={plan ? 'Edit payment plan' : 'Payment plan'} onClose={() => { if (!busy) onClose(); }} footer={<Button title={plan ? 'Save' : 'Add plan'} onPress={save} busy={busy} />}>
@@ -241,13 +252,15 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
         </Pressable>
       </Field>
         </>
+      ) : chosen?.kind === 'transfer' ? (
+        <Text style={{ color: t.muted, fontSize: 13 }}>{chosen.name} is a transfer category, so this plan never counts as spending: it tracks what’s left, and the card’s statement amount. Only the fees and interest count, under their own category.</Text>
       ) : (
         <View style={styles.between}>
           <View style={{ flex: 1 }}>
             <Text style={{ color: t.text }}>Take this amount out of {catLabel(categoryId) || 'the category'} when the plan starts</Text>
             <Text style={{ color: t.muted, fontSize: 12 }}>It was already counted as spending when it was charged to the card. On: it comes out once on the first instalment date and the instalments put it back month by month, so nothing is counted twice. Off: the instalments are simply added.</Text>
           </View>
-          <Switch value={offset} onValueChange={setOffset} accessibilityLabel="Take this amount out of the category when the plan starts" />
+          <Switch value={offset} onValueChange={(v) => { offsetTouched.current = true; setOffset(v); }} accessibilityLabel="Take this amount out of the category when the plan starts" />
         </View>
       )}
       {started && pastCount > 0 && (
@@ -256,7 +269,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
         </Field>
       )}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-      <SinglePicker visible={pick === 'cat'} title="Category" selected={categoryId} onClose={() => setPick(null)} items={spendCats} onPick={(id) => { setCategoryId(id); setPick(null); }} />
+      <SinglePicker visible={pick === 'cat'} title="Category" selected={categoryId} onClose={() => setPick(null)} items={planCats} onPick={(id) => { pickCategory(id); setPick(null); }} />
       <SinglePicker visible={pick === 'cost'} title="Category" selected={costCat} onClose={() => setPick(null)} items={spendCats} onPick={(id) => { setCostCat(id); setPick(null); }} />
       <SinglePicker visible={pick === 'txn'} title="Purchase" placeholder="Search purchases" selected={txnId ?? 'none'} onClose={() => setPick(null)}
         items={[{ id: 'none', label: 'Not linked' }, ...found.map((x) => ({ id: x.id, label: `${shortDate(x.date)} · ${x.display_name}`, detail: formatMoney(x.amount) }))]}

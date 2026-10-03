@@ -8,7 +8,7 @@ import { PlanForm, type PlanSeed } from '@/components/PaymentPlans';
 import { loadAccounts } from '@/lib/plan';
 import type { Account } from '@/lib/types';
 import { merchantLogo, useLogoVersion } from '@/lib/logos';
-import { Logo } from '@/components/Logo';
+import { TxnLogo } from '@/components/Logo';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { peekCategories, peekTxn, storeCategories } from '@/lib/txnCache';
@@ -227,7 +227,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
       <Card style={{ gap: 4 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Logo size={40} name={txn.merchant || txn.name || '?'} uri={merchantLogo(merchant.trim() || txn.merchant || txn.name, lv)} />
+          <TxnLogo size={40} name={merchant.trim() || txn.merchant || txn.name || '?'} transfer={split ? false : cats.find((c: any) => c.id === categoryId)?.kind === 'transfer'} category={(cats.find((c: any) => c.id === categoryId) as any)?.name} />
           <Text style={{ color: t.text, fontSize: 28, fontWeight: '700' }}>{formatMoney(Number(txn.amount), txn.currency)}</Text>
         </View>
         <Text style={{ color: t.muted }}>{shortDate(txn.date)} · {txn.accounts?.name}</Text>
