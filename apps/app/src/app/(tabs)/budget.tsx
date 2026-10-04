@@ -21,7 +21,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Field, Sheet, useChanged } from '@/components/Forms';
-import { PeriodStrip, PeriodTitle, type Period } from '@/components/PeriodStrip';
+import { PeriodStrip, PeriodTitle, useBackToNow, type Period } from '@/components/PeriodStrip';
 import { SinglePicker } from '@/components/Picker';
 import { TopBar } from '@/components/TopBar';
 import { Button, Card, Chip, Empty, Segmented, Stepper } from '@/components/ui';
@@ -45,6 +45,11 @@ export default function BudgetTab() {
   const t = useTheme();
   const [view, setView] = useState<View_>('month');
   const [month, setMonth] = useState<Month>(thisMonth());
+  // Compare: what the open month is set against. In Compare the strip picks this baseline.
+  const [against, setAgainst] = useState<Against>('prev');
+  const [picked, setPicked] = useState<Month>(addMonths(thisMonth(), -2));
+  const [scope, setScope] = useState<'month' | 'ytd'>('month');
+  useBackToNow(() => { setMonth(thisMonth()); setAgainst('prev'); });
   // Opened at a month (from the monthly review): go there once.
   const asked = useLocalSearchParams<{ month?: string }>().month;
   useEffect(() => { if (asked && /^\d{4}-\d{2}-01$/.test(asked)) { setMonth(asked as Month); setView('month'); router.setParams({ month: undefined } as any); } }, [asked]);
@@ -97,18 +102,27 @@ export default function BudgetTab() {
     }
     return out;
   }, [budgets, summaries, cats, current]);
-  const data = { t, cats, groupIcons, widgets, setWidgets, refresh, showTxns, budgets, rows, summaries, month, setMonth, reload: load, setError, setView };
+  const base: Month = against === 'prev' ? addMonths(month, -1) : against === 'lastYear' ? addMonths(month, -12) : picked;
+  const compare = view === 'compare';
+  const pickBase = (m: Month) => {
+    if (m === month) return;
+    setScope('month');
+    if (m === addMonths(month, -1)) setAgainst('prev'); else if (m === addMonths(month, -12)) setAgainst('lastYear'); else { setPicked(m); setAgainst('pick'); }
+  };
+  const data = { t, cats, groupIcons, widgets, setWidgets, refresh, showTxns, budgets, rows, summaries, month, setMonth, reload: load, setError, setView,
+    against, setAgainst, picked, setPicked, scope, setScope, base };
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
     {/* Same header as the Planner: the open period and a way back to now, the view switch, then the strip of months. */}
     <TopBar>
-      <PeriodTitle t={t} title={view === 'year' ? 'Year by month' : monthName(month)} away={view !== 'year' && month !== current} hereText="This month" onHere={() => setMonth(current)}
-        sub={view === 'year' ? undefined : month === current ? 'This month' : month > current ? 'Planning ahead · spending shows once the month starts' : 'Past month'} />
+      <PeriodTitle t={t} title={view === 'year' ? 'Year by month' : compare && scope === 'month' ? `${monthName(month, false)} vs ${monthName(base, base.slice(0, 4) !== month.slice(0, 4))}` : monthName(month)} away={view !== 'year' && month !== current} hereText="This month" onHere={() => setMonth(current)}
+        sub={view === 'year' ? undefined : compare ? (scope === 'month' ? 'Tap a month below to compare against it' : `${monthName(month, false)} year to date against the year before`) : month === current ? 'This month' : month > current ? 'Planning ahead · spending shows once the month starts' : 'Past month'} />
     </TopBar>
     <View style={styles.viewSwitch}>
       <Segmented<View_> value={view} onChange={setView}
         options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
-      {view !== 'year' && <PeriodStrip t={t} items={strip} selected={month} current={current} onSelect={setMonth} />}
+      {view === 'month' && <PeriodStrip t={t} items={strip} selected={month} current={current} onSelect={setMonth} />}
+      {compare && <PeriodStrip t={t} items={strip.map((p) => (p.key === month ? { ...p, label: `${p.label} ★` } : p))} selected={scope === 'month' ? base : month} current={current} onSelect={(k) => pickBase(k as Month)} />}
       {view === 'month' && month < current && (
         <Pressable onPress={() => openReview(month)} hitSlop={6} accessibilityRole="button">
           <Text style={{ color: t.accent, fontSize: 13 }}>📋 {monthName(month, false)} in review ›</Text>
@@ -131,6 +145,7 @@ export default function BudgetTab() {
 interface Data {
   t: Theme; cats: Category[]; groupIcons: Record<string, string>; widgets: string[]; setWidgets: (w: string[]) => void; refresh: number; showTxns: (q: TxnQuery) => void; budgets: Budget[]; rows: CategoryMonth[]; summaries: MonthSummary[];
   month: Month; setMonth: (m: Month) => void; reload: () => void; setError: (e: string) => void; setView: (v: View_) => void;
+  against: Against; setAgainst: (a: Against) => void; picked: Month; setPicked: (m: Month) => void; scope: 'month' | 'ytd'; setScope: (s: 'month' | 'ytd') => void; base: Month;
 }
 
 /** What a budget line (category or group) added up to in a given month. */
@@ -671,12 +686,8 @@ function Archive({ d, months }: { d: Data; months: MonthSummary[] }) {
 // ───────────────────────── Compare (BUD-5) ─────────────────────────
 type Against = 'prev' | 'lastYear' | 'pick';
 function CompareView(d: Data) {
-  const { t, month } = d;
-  const [against, setAgainst] = useState<Against>('prev');
-  const [picked, setPicked] = useState<Month>(addMonths(month, -2));
-  const [scope, setScope] = useState<'month' | 'ytd'>('month');
-
-  const other = against === 'prev' ? addMonths(month, -1) : against === 'lastYear' ? addMonths(month, -12) : picked;
+  const { t, month, against, setAgainst, picked, setPicked, scope, setScope } = d;
+  const other = d.base;
   const span = (end: Month): Month[] => {
     if (scope === 'month') return [end];
     const out: Month[] = [];

@@ -22,7 +22,6 @@ import { afterClose } from '@/lib/useBackToClose';
 type Item = { icon?: keyof typeof Ionicons.glyphMap; emoji?: string; label: string; href: string };
 const PAGES: Item[] = [
   { icon: 'flag-outline', label: 'Goals', href: '/goals' },
-  { icon: 'receipt-outline', label: 'Receipts', href: '/receipts' },
   { icon: 'card-outline', label: 'Credit cards', href: '/credit' },
   { icon: 'car-outline', label: 'Car & loans', href: '/loans' },
   { icon: 'bar-chart-outline', label: 'Reports', href: '/reports' },
@@ -31,6 +30,8 @@ const SETUP: Item[] = [
   { icon: 'pricetags-outline', label: 'Categories', href: '/categories' },
   { icon: 'storefront-outline', label: 'Merchants', href: '/merchants' },
   { icon: 'funnel-outline', label: 'Rules', href: '/rules' },
+  // An inbox you visit now and then, like the setup pages, rather than a page you read.
+  { icon: 'receipt-outline', label: 'Receipts', href: '/receipts' },
   { icon: 'settings-outline', label: 'Settings', href: '/settings' },
 ];
 const TABS = ['/', '/transactions', '/planner', '/budget', '/accounts'];

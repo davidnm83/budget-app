@@ -22,7 +22,7 @@ import { IconButton, TopBar } from '@/components/TopBar';
 import { Card, Chip, Empty, Segmented, Fab } from '@/components/ui';
 import Bills from './bills';
 import { loadEntries, loadRecurring, loadWeek, today, type PlannerData } from '@/lib/plan';
-import { PeriodStrip, PeriodTitle, type Period } from '@/components/PeriodStrip';
+import { PeriodStrip, PeriodTitle, useBackToNow, type Period } from '@/components/PeriodStrip';
 import { useTheme, type Theme } from '@/lib/theme';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -39,6 +39,7 @@ export default function Planner() {
   const [txnOpen, setTxnOpen] = useState<string | null>(null);
   const [view, setView] = useState<'week' | 'month' | 'all'>('week');
   const [month, setMonth] = useState(monthOf(today()));
+  useBackToNow(() => { setWeek(mondayOf(today())); setMonth(monthOf(today())); });
   // One + in the same place for every view: a one-off in Week, a repeating bill in Month and All bills.
   const [newBill, setNewBill] = useState(false);
   const [cats, setCats] = useState<any[]>([]);
