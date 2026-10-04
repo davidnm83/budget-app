@@ -230,3 +230,77 @@ describe('import reminders', () => {
     expect([csvReminderOn('credit', false), csvReminderOn('loan', true)]).toEqual([false, true]);
   });
 });
+
+import { backupsToDelete, biggestChanges, goalProgress, nextRefillDate, payoffDateAtPace, radarGoals, radarSubscriptions, receiptMatches } from '../src/index.ts';
+describe('goals', () => {
+  it('measures a savings goal against an even pace', () => {
+    // $0 → $1,200 over Jan–Dec; on Jul 1 an even pace is about $595.
+    const g = goalProgress({ kind: 'save', target: 1200, targetDate: '2026-12-31', startDate: '2026-01-01', startValue: 0, current: 400 }, '2026-07-01');
+    expect(g.share).toBeCloseTo(1 / 3, 2);
+    expect(g.left).toBe(800);
+    expect(g.onPace).toBe(false);
+    expect(g.behind).toBeGreaterThan(190);
+    expect(g.perMonth).toBeCloseTo(800 / (183 / 30.44), 0);
+    expect(goalProgress({ kind: 'save', target: 1200, targetDate: '2026-12-31', startDate: '2026-01-01', startValue: 0, current: 700 }, '2026-07-01').onPace).toBe(true);
+    expect(goalProgress({ kind: 'save', target: 1200, targetDate: null, startDate: '2026-01-01', startValue: 0, current: 1250 }, '2026-07-01')).toMatchObject({ done: true, share: 1, onPace: null, perMonth: null });
+  });
+  it('measures a payoff goal from what was owed', () => {
+    const g = goalProgress({ kind: 'payoff', target: 0, targetDate: '2027-01-01', startDate: '2026-01-01', startValue: 10000, current: 4000 }, '2026-07-02');
+    expect(g.share).toBeCloseTo(0.6, 5);
+    expect(g.left).toBe(4000);
+    expect(g.onPace).toBe(true);
+    const late = goalProgress({ kind: 'payoff', target: 0, targetDate: '2027-01-01', startDate: '2026-01-01', startValue: 10000, current: 8000 }, '2026-07-02');
+    expect(late.onPace).toBe(false);
+    expect(late.behind).toBeCloseTo(3000, -2);
+  });
+  it('rolls a yearly fund to its next date and estimates a payoff at the current pace', () => {
+    expect(nextRefillDate('2025-03-15', '2026-10-04')).toBe('2027-03-15');
+    expect(nextRefillDate('2026-12-01', '2026-10-04')).toBe('2026-12-01');
+    expect(payoffDateAtPace(5000, 4000, 2, '2026-10-01')).toBe('2027-06-02'); // $500 a month: 8 months
+    expect(payoffDateAtPace(4000, 4000, 2, '2026-10-01')).toBeNull();
+  });
+  it('makes a Radar card only when well behind', () => {
+    expect(radarGoals([{ id: 'g', name: 'Trip', behind: 10, perMonth: 50, kind: 'save' }])).toEqual([]);
+    expect(radarGoals([{ id: 'g', name: 'Trip', behind: 120, perMonth: 150, kind: 'save' }])[0]).toMatchObject({ id: 'goal:g:2', check: 'goals' });
+  });
+});
+
+describe('receipts', () => {
+  const t = (id: string, date: string, amount: number, name: string) => ({ id, date, amount, name, merchant: null });
+  const txns = [t('a', '2026-10-02', -42.1, 'LOBLAWS #123'), t('b', '2026-10-03', -42.1, 'SHELL'), t('c', '2026-10-04', -61.5, 'PIZZA PIZZA'), t('d', '2026-09-20', -42.1, 'LOBLAWS')];
+  it('suggests same-amount transactions within the posting window, the same store first', () => {
+    const m = receiptMatches({ id: 'r', amount: 42.1, date: '2026-10-01', merchant: 'Loblaws' }, txns);
+    expect(m.map((x) => x.txnId)).toEqual(['a', 'b']);
+    expect(m[0]).toMatchObject({ sure: true, why: 'Same store and amount' });
+  });
+  it('allows a tip at the same store, skips taken ones, and matches by store without an amount', () => {
+    expect(receiptMatches({ id: 'r', amount: 52, date: '2026-10-03', merchant: 'Pizza Pizza' }, txns)[0]).toMatchObject({ txnId: 'c', sure: false });
+    expect(receiptMatches({ id: 'r', amount: 42.1, date: '2026-10-01', merchant: null }, txns, new Set(['a'])).map((x) => x.txnId)).toEqual(['b']);
+    expect(receiptMatches({ id: 'r', amount: null, date: '2026-10-01', merchant: 'Loblaws' }, txns).map((x) => x.txnId)).toEqual(['a']);
+  });
+});
+
+describe('monthly review, subscriptions and backups', () => {
+  it('lists the biggest changes by dollars', () => {
+    const cats = [{ id: 'g', name: 'Groceries' }, { id: 'r', name: 'Restaurants' }, { id: 'x', name: 'Gas' }];
+    const r = biggestChanges(cats, new Map([['g', 500], ['r', 90], ['x', 160]]), new Map([['g', 420], ['r', 300], ['x', 150]]));
+    expect(r.map((c) => [c.name, c.change])).toEqual([['Restaurants', -210], ['Groceries', 80]]);
+  });
+  const c = (id: string, date: string, amount: number, name: string) => ({ id, date, amount, name, merchant: null, account_id: 'card' });
+  it('spots a price rise, a double charge and a new subscription', () => {
+    const cards = radarSubscriptions([
+      c('1', '2026-06-05', -11.99, 'SPOTIFY'), c('2', '2026-07-05', -11.99, 'SPOTIFY'), c('3', '2026-08-05', -11.99, 'SPOTIFY'), c('4', '2026-09-05', -12.99, 'SPOTIFY'),
+      c('5', '2026-07-10', -9.99, 'NETFLIX'), c('6', '2026-08-10', -9.99, 'NETFLIX'), c('7', '2026-09-10', -9.99, 'NETFLIX'), c('8', '2026-09-14', -9.99, 'NETFLIX'),
+      c('9', '2026-08-20', -4.99, 'ICLOUD STORAGE'), c('10', '2026-09-20', -4.99, 'ICLOUD STORAGE'),
+      c('11', '2026-09-01', -54.2, 'LOBLAWS'), c('12', '2026-09-08', -61.0, 'LOBLAWS'),
+    ], '2026-10-01');
+    const kinds = cards.map((x) => x.id.split(':').slice(0, 2).join(':')).sort();
+    expect(kinds).toEqual(['sub-dup:netflix', 'sub-new:icloud storage', 'sub-up:spotify']);
+    expect(cards.find((x) => x.id.startsWith('sub-up'))!.title).toBe('SPOTIFY went up to $12.99');
+  });
+  it('keeps a week of nightly backups and the first of each month', () => {
+    const dates = ['2026-07-01', '2026-07-02', '2026-08-01', '2026-08-15', '2026-09-01', '2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'];
+    expect(backupsToDelete(dates, '2026-10-04')).toEqual(['2026-07-02', '2026-08-15', '2026-09-26', '2026-09-27']);
+    expect(backupsToDelete(dates, '2026-10-04', 7, 2)).toEqual(['2026-07-01', '2026-07-02', '2026-08-01', '2026-08-15', '2026-09-26', '2026-09-27']);
+  });
+});

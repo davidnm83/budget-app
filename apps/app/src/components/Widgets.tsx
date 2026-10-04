@@ -28,6 +28,9 @@ import { useTheme, type Theme } from '@/lib/theme';
 import { accountGroup, byAccountGroup, signedBalance, type Account } from '@/lib/types';
 import { loadWatch, type Watched } from '@/lib/watch';
 import { dismissRadar, loadRadar, restoreRadar } from '@/lib/radar';
+import { loadGoals } from '@/lib/goals';
+import { GoalCard } from '@/components/GoalCard';
+import { CreditScoreCard } from '@/components/CreditScore';
 import { toast } from '@/lib/toast';
 import { BarChart, Donut, LineChart, plotChrome, type PieLabels } from '@/components/Charts';
 import { cfgCategories, loadChart, NO_ACCOUNTS, pickAccounts, SOURCES, SPLITS, SPLIT_LABEL, VIEW_LABEL, type ChartCfg, type ChartData, type ChartView, type Source, type SplitBy } from '@/lib/widgetData';
@@ -89,6 +92,8 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'calendar', title: 'Bills calendar', about: 'This month’s bills and income on a calendar', home: true, budget: true, fits: true },
   { key: 'text', title: 'Text', about: 'A heading and a note of your own: what a page is for, a reminder, a goal', home: true, budget: true, config: 'text', fits: true },
   { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or an account, for the accounts and categories you choose', home: true, budget: true, config: 'chart', sizable: true },
+  { key: 'creditscore', title: 'Credit score', about: 'The scores you log, as a trend', home: true, budget: false, fits: true },
+  { key: 'goals', title: 'Goals', about: 'Your goals with their progress and whether they’re on pace', home: true, budget: true, fits: true },
   { key: 'tags', title: 'Tag totals', about: 'Everything under each tag added up: a trip, a move, a repair', home: true, budget: true, sizable: true },
 ];
 export const DEFAULT_HOME = ['radar', 'review', 'week', 'budget', 'networth'];
@@ -154,6 +159,8 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
     case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} anchor={anchor} range={range} />;
     case 'text': return <TextNote t={t} cfg={cfg} />;
     case 'tags': return <TagTotals t={t} refresh={refresh} h={cfg.h} />;
+    case 'goals': return <GoalsMini t={t} refresh={refresh} />;
+    case 'creditscore': return <CardShell t={t} title="Credit score" link="Credit cards" onPress={() => router.navigate('/credit' as any)}><CreditScoreCard refresh={refresh} inWidget /></CardShell>;
     case 'radar': return <Radar t={t} refresh={refresh} settings={cfg.radar} />;
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
@@ -694,3 +701,16 @@ const styles = StyleSheet.create({
   calBox: { minHeight: 38, paddingVertical: 2, borderWidth: 1, borderRadius: 6 },
   pick: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 10, padding: 10 },
 });
+
+/** Goals (GOAL-1): the open ones, those behind pace first. */
+function GoalsMini({ t, refresh }: { t: Theme; refresh: number }) {
+  const { data, error } = useLoad(() => loadGoals(), [refresh]);
+  const open = (data?.goals ?? []).filter((g) => !g.closed_on).sort((a, b) => Number(b.progress.onPace === false) - Number(a.progress.onPace === false));
+  return (
+    <CardShell t={t} title="Goals" link="Goals" onPress={() => router.navigate('/goals' as any)}>
+      {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+      {!data && !error ? <Skeleton color={t.track} /> : !open.length ? <Text style={{ color: t.muted }}>No goals yet. Add one on the Goals page.</Text>
+        : open.map((g) => <GoalCard key={g.id} t={t} g={g} compact />)}
+    </CardShell>
+  );
+}

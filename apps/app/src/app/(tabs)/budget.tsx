@@ -15,7 +15,8 @@ import {
   categoryIcon, groupIcon, instalmentsBetween, shortDate, suggestBudget, type BudgetLine, type Month,
 } from '@budget-app/core';
 import { loadPlans, setInstalment, type CardPlan } from '@/lib/paymentPlans';
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { openReview } from '@/components/MonthlyReview';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -44,6 +45,9 @@ export default function BudgetTab() {
   const t = useTheme();
   const [view, setView] = useState<View_>('month');
   const [month, setMonth] = useState<Month>(thisMonth());
+  // Opened at a month (from the monthly review): go there once.
+  const asked = useLocalSearchParams<{ month?: string }>().month;
+  useEffect(() => { if (asked && /^\d{4}-\d{2}-01$/.test(asked)) { setMonth(asked as Month); setView('month'); router.setParams({ month: undefined } as any); } }, [asked]);
   const [cats, setCats] = useState<Category[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [rows, setRows] = useState<CategoryMonth[]>([]);
@@ -105,6 +109,11 @@ export default function BudgetTab() {
       <Segmented<View_> value={view} onChange={setView}
         options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
       {view !== 'year' && <PeriodStrip t={t} items={strip} selected={month} current={current} onSelect={setMonth} />}
+      {view === 'month' && month < current && (
+        <Pressable onPress={() => openReview(month)} hitSlop={6} accessibilityRole="button">
+          <Text style={{ color: t.accent, fontSize: 13 }}>📋 {monthName(month, false)} in review ›</Text>
+        </Pressable>
+      )}
     </View>
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>

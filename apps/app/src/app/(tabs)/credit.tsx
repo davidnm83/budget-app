@@ -13,6 +13,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AccountSheet } from '@/components/AccountSheet';
 import { PageBoard } from '@/components/PageBoard';
 import { PlansCard } from '@/components/PaymentPlans';
+import { CreditScoreCard } from '@/components/CreditScore';
 import { loadPlans, syncPlans, type CardPlan } from '@/lib/paymentPlans';
 import { makeEntry } from '@/components/Widgets';
 import { Bar, Card } from '@/components/ui';
@@ -112,6 +113,7 @@ export default function Credit() {
         ) },
       ]} />
       <PlansCard t={t} plans={plans} accounts={accounts} onChanged={load} />
+      <CreditScoreCard refresh={refresh} />
       <AccountSheet account={open} accounts={accounts} onClose={() => setOpen(null)} onChanged={load} />
     </ScrollView>
   );

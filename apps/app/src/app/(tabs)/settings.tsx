@@ -15,6 +15,7 @@ import { toast } from '@/lib/toast';
 import { setPanel } from '@/lib/panels';
 import { LockSettings } from '@/components/LockSettings';
 import { canExport, exportEverything } from '@/lib/exportAll';
+import { NightlyBackups } from '@/components/NightlyBackups';
 import { accountIsEmpty, describeBackup, readBackup, restoreBackup, type Backup } from '@/lib/restore';
 import { pickJsonText } from '@/lib/pickFile';
 import { Sheet } from '@/components/Forms';
@@ -180,6 +181,7 @@ export default function Settings() {
         <Text style={{ color: t.muted }}>Restore replaces everything in this account with the contents of a backup file. Bank links are kept if they still exist here; they are never part of a backup.</Text>
         <Button title="Restore from a backup file" kind="plain" disabled={!canExport || session?.user.app_metadata?.demo === true} onPress={chooseBackup} />
         {restoreNotes.map((n) => <Text key={n} style={{ color: t.muted, fontSize: 12 }}>• {n}</Text>)}
+        {canExport && <NightlyBackups t={t} onRestore={async (b) => { setWord(''); setPending({ backup: b, empty: await accountIsEmpty() }); }} />}
       </Card>
       {pending && (() => {
         const d = describeBackup(pending.backup);

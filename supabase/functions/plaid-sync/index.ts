@@ -13,6 +13,7 @@ import { syncItem, type PlaidItemRow, type SyncResult } from '../_shared/sync.ts
 import { hourIn, syncDue, todayIn } from '../_shared/core/index.ts';
 import { processLoans, type LoanResult } from '../_shared/loans.ts';
 import { pairRecentTransfers } from '../_shared/transfers.ts';
+import { backupEveryone } from '../_shared/backup.ts';
 
 Deno.serve(async (req) => {
   const pre = preflight(req);
@@ -25,8 +26,10 @@ Deno.serve(async (req) => {
     if (isCronCall(req)) {
       const tz = Deno.env.get('APP_TIMEZONE') ?? 'UTC';
       if (body.scheduled && !body.force) {
-        // Who is due this hour. If the setting can't be read (the column isn't there yet), everyone is on once a day.
         const hour = hourIn(tz);
+        // Nightly backups (PLT-8) ride on this hourly run: at 3 AM, before any 5 AM sync.
+        if (hour === 3) { try { await backupEveryone(admin, todayIn(tz)); } catch { /* a failed backup must not stop syncing */ } }
+        // Who is due this hour. If the setting can't be read (the column isn't there yet), everyone is on once a day.
         const { data: prefs } = await admin.from('user_prefs').select('user_id, sync_every');
         const every = new Map((prefs ?? []).map((p: any) => [p.user_id as string, p.sync_every as number | null]));
         const { data: owners, error: ownersError } = await admin.from('plaid_items').select('user_id');

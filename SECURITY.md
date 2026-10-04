@@ -22,6 +22,9 @@ the SQL Editor and fill it in there. Do not save the filled-in copy back to the 
 - The functions that store, read and delete bank tokens can only be called with the secret key.
 - Edge Functions check the caller's sign-in token themselves; the daily sync also accepts the cron secret.
 - Demo accounts (`app_metadata.demo = true`) cannot link banks, in the app or by calling the functions directly. To make one: `update auth.users set raw_app_meta_data = raw_app_meta_data || '{"demo": true}' where email = '…';`
+- Receipt photos and nightly backups are kept in private storage buckets (`receipts`, `backups`), in a folder per
+  user; the bucket rules only let a signed-in user reach their own folder, and backups can only be written by the
+  Edge Function. Backups hold the same tables as Settings → Download everything, never bank tokens.
 - Sample data is created by a database function that runs as the signed-in user, so it can only touch that user's rows.
 
 ## Offline copy on the device

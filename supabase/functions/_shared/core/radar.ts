@@ -13,7 +13,7 @@ import type { BudgetLine } from './budget.ts';
 import type { WeekRow, WeekWarning } from './planner.ts';
 
 export type RadarSeverity = 'act' | 'heads' | 'info';
-export type RadarCheck = 'buffer' | 'bill' | 'pace' | 'unusual' | 'cards' | 'runway' | 'bank';
+export type RadarCheck = 'buffer' | 'bill' | 'pace' | 'unusual' | 'cards' | 'runway' | 'bank' | 'goals' | 'subs';
 export interface RadarCard { id: string; check: RadarCheck; severity: RadarSeverity; title: string; text: string; stake: number; href: string }
 
 /** The checks, in the order Settings lists them. */
@@ -25,6 +25,8 @@ export const RADAR_CHECKS: { key: RadarCheck; label: string; about: string }[] =
   { key: 'cards', label: 'Card use', about: 'A card is using a large share of its limit' },
   { key: 'runway', label: 'Cash runway', about: 'Cash covers only a few days of your usual spending' },
   { key: 'bank', label: 'Bank connection', about: 'A bank needs you to sign in again, or stopped syncing' },
+  { key: 'goals', label: 'Goals', about: 'A goal with a date is falling behind an even pace' },
+  { key: 'subs', label: 'Subscriptions', about: 'A subscription went up in price, charged twice, or just started' },
 ];
 /** What you can change per Radar widget: checks switched off, and the four thresholds. */
 export interface RadarSettings { off?: RadarCheck[]; unusualPct?: number; unusualMin?: number; cardPct?: number; runwayDays?: number }
@@ -169,4 +171,15 @@ export function rankRadar(cards: RadarCard[], dismissed: Iterable<string> = []):
   const gone = new Set(dismissed);
   const seen = new Set<string>();
   return cards.filter((c) => !gone.has(c.id) && !seen.has(c.id) && seen.add(c.id)).sort((a, b) => RANK[a.severity] - RANK[b.severity] || b.stake - a.stake);
+}
+
+/** Goals with a date that are behind an even pace (GOAL-1). The id moves in steps of $50 behind. */
+export function radarGoals(goals: { id: string; name: string; behind: number; perMonth: number | null; kind: 'save' | 'payoff' }[]): RadarCard[] {
+  return goals.filter((g) => g.behind >= 25).map((g) => ({
+    id: `goal:${g.id}:${Math.floor(g.behind / 50)}`, check: 'goals' as const, severity: 'info' as const, stake: g.behind, href: '/goals',
+    title: `${g.name} is ${money(g.behind)} behind`,
+    text: g.perMonth != null
+      ? `${g.kind === 'save' ? 'Saving' : 'Paying'} ${money(g.perMonth)} a month from now on still makes the date.`
+      : 'Its date has passed; set a new one or close it.',
+  }));
 }

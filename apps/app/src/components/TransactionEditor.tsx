@@ -18,6 +18,7 @@ import { SinglePicker } from '@/components/Picker';
 import { SuggestInput } from '@/components/SuggestInput';
 import { forgetKnown, knownMerchants, knownTags } from '@/lib/known';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { TxnReceipts } from '@/components/Receipts';
 import { Button, Card } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
@@ -337,6 +338,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
           <Switch value={backfill} onValueChange={setBackfill} />
         </View>
       )}
+
+      <TxnReceipts t={t} txn={{ id: txn.id, date: txn.date, amount: Number(txn.amount), name: txn.name, merchant: txn.merchant }} />
 
       <Text style={[styles.label, { color: t.muted }]}>Notes</Text>
       <TextInput style={[input, { minHeight: 60 }]} value={notes} onChangeText={setNotes} multiline />

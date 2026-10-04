@@ -6,7 +6,7 @@ import { supabase } from './supabase';
 const TABLES = ['accounts', 'categories', 'category_groups', 'category_rules', 'merchant_rules', 'merchant_sites', 'transactions',
   'transaction_splits', 'budgets', 'recurring', 'plan_entries', 'user_prefs', 'plaid_items', 'sync_runs'];
 /** Newer tables: an install that hasn't run their migration yet doesn't have them, so they are skipped when missing. */
-const LATER_TABLES = ['payment_plans'];
+const LATER_TABLES = ['payment_plans', 'goals', 'goal_entries', 'receipts', 'credit_scores'];
 /** Tables some installs have and others don't; skipped when missing. */
 const EXTRA_TABLES: string[] = [];
 
