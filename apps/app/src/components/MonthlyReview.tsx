@@ -61,6 +61,12 @@ export function MonthlyReview() {
   const offline = useOffline().offline;
   const month = useOpenMonth();
   useEffect(() => {
+    // Opened from the "review ready" notification: straight to last month's review.
+    if (typeof location !== 'undefined' && /[?&]review=1/.test(location.search)) {
+      history.replaceState(history.state, '', location.pathname);
+      setTimeout(() => openReview(addMonths(thisMonth(), -1)), 1200);
+      return;
+    }
     if (offline) return;
     const now = today(), last = addMonths(thisMonth(), -1);
     if (Number(now.slice(8, 10)) > 10) return;

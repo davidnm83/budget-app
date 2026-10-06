@@ -14,6 +14,7 @@ import { useConfirm } from '@/components/Confirm';
 import { toast } from '@/lib/toast';
 import { setPanel } from '@/lib/panels';
 import { LockSettings } from '@/components/LockSettings';
+import { NotificationSettings } from '@/components/NotificationSettings';
 import { canExport, exportEverything } from '@/lib/exportAll';
 import { NightlyBackups } from '@/components/NightlyBackups';
 import { accountIsEmpty, describeBackup, readBackup, restoreBackup, type Backup } from '@/lib/restore';
@@ -218,6 +219,8 @@ export default function Settings() {
 
       <Text style={[styles.h, { color: t.text }]}>Planner</Text>
       <PlannerSettings />
+
+      <NotificationSettings />
 
       <LockSettings />
 

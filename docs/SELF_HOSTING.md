@@ -140,6 +140,16 @@ npx expo run:android   # needs Android Studio
 
 Change `ios.bundleIdentifier` / `android.package` in `apps/app/app.json` from `com.example.budgetapp` to something of your own first.
 
+### Notifications
+
+Settings → Notifications → **Turn on** on each phone or computer that should get them (bills due, low balances, a bank
+that needs fixing, and more; **Choose what's sent** picks which). Nothing to set up: the hourly sync job sends them, and the
+server makes its own push signing key the first time. They go out in your `APP_TIMEZONE`, so set it (step 3). On an
+iPhone, notifications only work from the app added to the home screen (iOS 16.4 or later).
+
+To use a push key of your own instead, set `VAPID_PUBLIC_KEY` (base64url, uncompressed P-256) and `VAPID_PRIVATE_JWK`
+(the private key as JSON Web Key) as secrets, and optionally `VAPID_SUBJECT` (a `mailto:` or `https:` contact).
+
 ## Updating
 
 ```bash

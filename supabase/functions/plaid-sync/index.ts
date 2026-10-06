@@ -7,6 +7,7 @@
 //     or just one with {itemId}.
 // Afterwards, loan payments are copied and loan interest logged (see _shared/loans.ts), and
 // both sides of recent transfers between your accounts are paired (_shared/transfers.ts).
+// Every scheduled run then sends the notifications that are due (_shared/notify.ts).
 import { json, preflight } from '../_shared/cors.ts';
 import { adminClient, isCronCall, userIdFrom } from '../_shared/supabase.ts';
 import { syncItem, type PlaidItemRow, type SyncResult } from '../_shared/sync.ts';
@@ -14,6 +15,7 @@ import { hourIn, syncDue, todayIn } from '../_shared/core/index.ts';
 import { processLoans, type LoanResult } from '../_shared/loans.ts';
 import { pairRecentTransfers } from '../_shared/transfers.ts';
 import { backupEveryone } from '../_shared/backup.ts';
+import { runNotifications } from '../_shared/notify.ts';
 
 Deno.serve(async (req) => {
   const pre = preflight(req);
@@ -35,7 +37,10 @@ Deno.serve(async (req) => {
         const { data: owners, error: ownersError } = await admin.from('plaid_items').select('user_id');
         if (ownersError) throw new Error(ownersError.message);
         const due = [...new Set((owners ?? []).map((o: any) => o.user_id as string))].filter((u) => syncDue(hour, every.get(u)));
-        if (!due.length) return json({ skipped: `Nobody is due at hour ${hour} in ${tz}.` });
+        if (!due.length) {
+          const notified = await runNotifications(admin, hour, todayIn(tz)).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }));
+          return json({ skipped: `Nobody is due at hour ${hour} in ${tz}.`, notified });
+        }
         query = query.in('user_id', due);
       }
     } else {
@@ -58,7 +63,11 @@ Deno.serve(async (req) => {
       catch (e) { loans.push({ loan: '?', payments: 0, interest: null, status: e instanceof Error ? e.message : String(e) }); }
       try { await pairRecentTransfers(admin, userId, today); } catch { /* pairing is best-effort */ }
     }
-    return json({ added, results, loans });
+    // Scheduled runs: what's due now, with the new transactions and any connection that just failed.
+    const notified = isCronCall(req) && body.scheduled
+      ? await runNotifications(admin, hourIn(Deno.env.get('APP_TIMEZONE') ?? 'UTC'), today).catch((e) => ({ error: e instanceof Error ? e.message : String(e) }))
+      : undefined;
+    return json({ added, results, loans, notified });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
