@@ -40,6 +40,8 @@ export interface CardStatus {
   leftToPay: number;       // to pay in full by the due date
   spentThisCycle: number;  // charges since the statement closed
   interestIfUnpaid: number | null; // one cycle of interest on what's left, if APR is known
+  /** An estimate of the minimum still to pay: on the whole statement, balance transfers included, less payments since. */
+  minimumLeft?: number;
 }
 
 /** `owedNow` positive; txns in app sign (charges negative, payments positive). */
@@ -71,7 +73,8 @@ export function cardStatement(owedNow: number, txns: { id?: string; date: IsoDat
   const paidSince = round2(real.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0));
   const spentThisCycle = round2(real.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0));
   const leftToPay = round2(Math.max(0, statementOwed - paidSince));
-  return { statementOwed, paidSince, leftToPay, spentThisCycle, interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
+  const minimumLeft = round2(Math.max(0, minimumPayment(statementOwed + Math.max(0, transfers.held)) - paidSince));
+  return { statementOwed, paidSince, leftToPay, spentThisCycle, minimumLeft, interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
 }
 
 /** Money in and out per month for the last `months` months (oldest first). */

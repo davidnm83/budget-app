@@ -78,6 +78,10 @@ describe('statements with a balance transfer', () => {
     expect(tr.held).toBe(3090);
     const s = cardStatement(3590, txns, '2026-09-20', 30, null, [], tr);
     expect([s.statementOwed, s.leftToPay, s.spentThisCycle]).toEqual([400, 400, 100]);
+    expect(s.minimumLeft).toBe(104.7); // 3% of the whole statement, $3,490 with the transfer
+    // All of it on the transfer: nothing beyond the minimum.
+    const only = cardStatement(3090, txns.slice(0, 2), '2026-09-20', 30, null, [], transfersOnStatement([bt], 3090, '2026-09-20', '2026-10-06'));
+    expect([only.leftToPay, only.minimumLeft]).toEqual([0, 92.7]);
     // Made this cycle: not on the statement yet, and not counted as spending either.
     const late = { ...bt, date: '2026-09-25', inTxnId: 'in2' };
     const s2 = cardStatement(3590, [{ id: 'in2', date: '2026-09-25', amount: -3000 }], '2026-09-20', 30, null, [], transfersOnStatement([late], 3590, '2026-09-20', '2026-10-06'));

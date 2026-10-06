@@ -378,8 +378,19 @@ function radialLayout(parts: { label: string; value: number }[], total: number, 
       for (let a = 0; a < boxes.length; a++) for (let b = a + 1; b < boxes.length; b++) {
         const A = boxes[a], B = boxes[b];
         if (!hits(A, B)) continue;
-        const push = (Math.min(A.top + A.h, B.top + B.h) - Math.max(A.top, B.top)) / 2 + 1;
-        if (A.top <= B.top) { A.top -= push; B.top += push; } else { A.top += push; B.top -= push; }
+        // Apart, and away from the ring: two labels above it (or two below) move outward, the outer one
+        // further out, rather than one of them being pushed into the ring. Ones that share the top or
+        // bottom centre slide sideways first.
+        const overlap = Math.min(A.top + A.h, B.top + B.h) - Math.max(A.top, B.top) + 2;
+        const [hi, lo] = A.top <= B.top ? [A, B] : [B, A];
+        const above = (x: LabelBox) => x.top + x.h / 2 < cy, below = (x: LabelBox) => x.top + x.h / 2 > cy;
+        if ((A.align === 'center' || B.align === 'center') && Math.abs((A.left + A.w / 2) - (B.left + B.w / 2)) < Math.max(A.w, B.w)) {
+          const [l, r] = A.left + A.w / 2 <= B.left + B.w / 2 ? [A, B] : [B, A];
+          const side = (l.left + l.w + 4 - r.left) / 2;
+          if (side > 0) { l.left -= side; r.left += side; }
+        } else if (above(A) && above(B)) hi.top -= overlap;
+        else if (below(A) && below(B)) lo.top += overlap;
+        else { hi.top -= overlap / 2; lo.top += overlap / 2; }
         moved = true;
       }
       if (!moved) break;
@@ -486,3 +497,65 @@ const styles = StyleSheet.create({
   readout: { flexDirection: 'row', alignItems: 'center', columnGap: 10, height: 18, overflow: 'hidden' },
   sliceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, height: LEGEND_ROW },
 });
+
+export interface FlowNode { label: string; value: number; color?: string; onPress?: () => void }
+
+/**
+ * Money flow (RPT-4): where the money came from on the left, what it went to on the right, through
+ * one column in the middle. Band widths are the amounts. When more went out than came in, the
+ * difference comes from savings on the left; when less, what was kept shows on the right.
+ */
+export function FlowChart({ t, inputs, outputs, format, width, height }: { t: Theme; inputs: FlowNode[]; outputs: FlowNode[]; format: (n: number) => string; width: number; height: number }) {
+  const [sel, setSel] = useState<string | null>(null);
+  const total = Math.max(inputs.reduce((s, n) => s + n.value, 0), outputs.reduce((s, n) => s + n.value, 0));
+  if (!total || width < 120) return null;
+  const labelW = Math.min(140, Math.max(80, width * 0.3)), bar = 8, gap = 4;
+  const xL = labelW, xM = width / 2 - bar / 2, xR = width - labelW - bar;
+  const col = (list: FlowNode[]) => {
+    const room = height - gap * Math.max(0, list.length - 1);
+    let y = 0;
+    return list.map((n) => { const h = Math.max(2, (n.value / total) * room); const box = { ...n, y, h }; y += h + gap; return box; });
+  };
+  const L = col(inputs), R = col(outputs);
+  // Label positions: by each node's middle, spread so none overlaps the one above, kept inside the chart.
+  // A label takes two lines (name, then amount) beside a node tall enough, one line beside a small one.
+  const tall = (n: { h: number }) => n.h >= 30;
+  const spread = (list: { y: number; h: number }[]) => {
+    const lh = list.map((n) => (tall(n) ? 30 : 17)), at = list.map((n, i) => n.y + n.h / 2 - lh[i] / 2);
+    for (let i = 1; i < at.length; i++) at[i] = Math.max(at[i], at[i - 1] + lh[i - 1]);
+    for (let i = at.length - 1; i >= 0; i--) at[i] = Math.min(at[i], (i === at.length - 1 ? height : at[i + 1]) - lh[i]);
+    return at.map((y) => Math.max(0, y));
+  };
+  const posL = spread(L), posR = spread(R);
+  const pool = height - gap * Math.max(0, Math.max(inputs.length, outputs.length) - 1);
+  const band = (x1: number, y1: number, h1: number, x2: number, y2: number, h2: number) => {
+    const c = (x1 + x2) / 2;
+    return `M${x1},${y1} C${c},${y1} ${c},${y2} ${x2},${y2} L${x2},${y2 + h2} C${c},${y2 + h2} ${c},${y1 + h1} ${x1},${y1 + h1} Z`;
+  };
+  let inAt = (height - pool) / 2, outAt = (height - pool) / 2;
+  const colour = (n: FlowNode, i: number) => n.color ?? t.series[i % t.series.length];
+  const label = (n: FlowNode & { y: number; h: number }, side: 'l' | 'r', i: number) => (
+    <Pressable key={`${side}${i}`} onPress={n.onPress} disabled={!n.onPress} onHoverIn={() => setSel(`${side}${i}`)} onHoverOut={() => setSel(null)}
+      style={{ position: 'absolute', top: (side === 'l' ? posL : posR)[i], width: labelW - 6, ...(side === 'l' ? { left: 0, alignItems: 'flex-end' } : { right: 0, alignItems: 'flex-start' }) }}>
+      {tall(n) ? <>
+        <Text style={{ color: t.text, fontSize: 12, lineHeight: 15 }} numberOfLines={1}>{n.label}</Text>
+        <Text style={{ color: t.muted, fontSize: 11, lineHeight: 15, fontVariant: ['tabular-nums'] }} numberOfLines={1}>{format(n.value)}</Text>
+      </> : <Text style={{ color: t.text, fontSize: 12, lineHeight: 17 }} numberOfLines={1}>{n.label} <Text style={{ color: t.muted, fontVariant: ['tabular-nums'] }}>{format(n.value)}</Text></Text>}
+    </Pressable>
+  );
+  return (
+    <View style={{ width, height }}>
+      <Svg width={width} height={height}>
+        {L.map((n, i) => { const h = (n.value / total) * pool; const p = band(xL + bar, n.y, n.h, xM, inAt, h); inAt += h;
+          return <Path key={`bl${i}`} d={p} fill={colour(n, i)} fillOpacity={sel === `l${i}` ? 0.45 : 0.22} />; })}
+        {R.map((n, i) => { const h = (n.value / total) * pool; const p = band(xM + bar, outAt, h, xR, n.y, n.h); outAt += h;
+          return <Path key={`br${i}`} d={p} fill={colour(n, i + inputs.length)} fillOpacity={sel === `r${i}` ? 0.45 : 0.22} />; })}
+        {L.map((n, i) => <Path key={`nl${i}`} d={`M${xL},${n.y} h${bar} v${n.h} h${-bar} Z`} fill={colour(n, i)} />)}
+        <Path d={`M${xM},${(height - pool) / 2} h${bar} v${pool} h${-bar} Z`} fill={t.muted} />
+        {R.map((n, i) => <Path key={`nr${i}`} d={`M${xR},${n.y} h${bar} v${n.h} h${-bar} Z`} fill={colour(n, i + inputs.length)} />)}
+      </Svg>
+      {L.map((n, i) => label(n, 'l', i))}
+      {R.map((n, i) => label(n, 'r', i))}
+    </View>
+  );
+}

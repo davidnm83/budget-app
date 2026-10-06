@@ -31,7 +31,7 @@ import { dismissRadar, loadRadar, restoreRadar } from '@/lib/radar';
 import { loadGoals } from '@/lib/goals';
 import { GoalCard } from '@/components/GoalCard';
 import { toast } from '@/lib/toast';
-import { BarChart, Donut, LineChart, plotChrome, type PieLabels } from '@/components/Charts';
+import { BarChart, Donut, FlowChart, LineChart, plotChrome, type PieLabels } from '@/components/Charts';
 import { cfgCategories, loadChart, NO_ACCOUNTS, pickAccounts, SOURCES, SPLITS, SPLIT_LABEL, VIEW_LABEL, type ChartCfg, type ChartData, type ChartView, type Source, type SplitBy } from '@/lib/widgetData';
 
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
@@ -69,6 +69,7 @@ const LEGACY: Record<string, WidgetCfg> = {
   credit: { source: 'carddebt', view: 'tiles', months: 6, title: 'Credit cards' },
   account: { source: 'balance', view: 'line', months: 12, payoff: true },
   creditscore: { source: 'creditscore', view: 'line', months: 12, title: 'Credit score' },
+  tags: { source: 'tags', view: 'list', months: 24, title: 'Tag totals' },
 };
 export function parseEntry(e: string): [string, WidgetCfg] {
   const i = e.indexOf('::');
@@ -93,7 +94,6 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'text', title: 'Text', about: 'A heading and a note of your own: what a page is for, a reminder, a goal', home: true, budget: true, config: 'text', fits: true },
   { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or an account, for the accounts and categories you choose', home: true, budget: true, config: 'chart', sizable: true },
   { key: 'goals', title: 'Goals', about: 'Your goals with their progress and whether they’re on pace', home: true, budget: true, fits: true },
-  { key: 'tags', title: 'Tag totals', about: 'Everything under each tag added up: a trip, a move, a repair', home: true, budget: true, sizable: true },
 ];
 export const DEFAULT_HOME = ['radar', 'review', 'week', 'budget', 'networth'];
 export const DEFAULT_BUDGET: string[] = [];
@@ -157,7 +157,6 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
     case 'spend': return <ChartWidget t={t} refresh={refresh} cfg={{ source: 'spending', ...cfg }} anchor={anchor} range={range} />; // the older name for a spending chart
     case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} anchor={anchor} range={range} />;
     case 'text': return <TextNote t={t} cfg={cfg} />;
-    case 'tags': return <TagTotals t={t} refresh={refresh} h={cfg.h} />;
     case 'goals': return <GoalsMini t={t} refresh={refresh} />;
     case 'radar': return <Radar t={t} refresh={refresh} settings={cfg.radar} />;
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
@@ -218,7 +217,11 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
       <Sized h={cfg.h}>
         {data.empty ? <Text style={{ color: t.muted }}>{data.empty}</Text>
           : view === 'tiles' ? <><Fill>{() => <View style={styles.tiles}>{data.tiles.map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}</Fill>{period}</>
-          : view === 'pie' ? (
+          : view === 'flow' && data.flow ? (
+            <Fill>{(h, w) => <FlowChart t={t} format={fmt} width={w} height={h}
+              inputs={data.flow!.inputs.map((n) => ({ ...n, onPress: n.query ? () => showTxns({ title: `${n.label} · ${data.period}`, from: data.from, to: data.to, ...n.query }) : undefined }))}
+              outputs={data.flow!.outputs.map((n) => ({ ...n, onPress: n.query ? () => showTxns({ title: `${n.label} · ${data.period}`, from: data.from, to: data.to, ...n.query }) : undefined }))} />}</Fill>
+          ) : view === 'pie' ? (
             <Fill>{(h, w) => <Donut t={t} slices={data.breakdown.map((b) => ({ label: b.label, value: b.value, onPress: openPart(b) }))} format={fmt} note={data.period}
               width={w} height={h} labels={cfg.labels ?? (cfg.legend === false ? 'none' : 'auto')} />}</Fill>
           ) : view === 'list' ? (
@@ -372,46 +375,6 @@ function TextNote({ t, cfg }: { t: Theme; cfg: WidgetCfg }) {
 }
 
 // IDEA-14: each tag as a project total. Transfers between your accounts are left out.
-function TagTotals({ t, refresh, h }: { t: Theme; refresh: number; h?: WidgetCfg['h'] }) {
-  const [showTxns, txnSheet] = useTxnSheet();
-  const { data } = useLoad(async () => {
-    const by = new Map<string, { tag: string; n: number; total: number; first: string; last: string; ids: string[] }>();
-    for (let p = 0; p < 5; p++) {
-      const { data: rows, error } = await supabase.from('transactions').select('id, date, amount, tags, is_transfer').neq('tags', '{}').order('date', { ascending: false }).range(p * 1000, p * 1000 + 999);
-      if (error) throw new Error(error.message);
-      for (const r of (rows ?? []) as { id: string; date: string; amount: number; tags: string[]; is_transfer: boolean }[]) {
-        if (r.is_transfer) continue;
-        for (const tag of r.tags ?? []) {
-          const x = by.get(tag) ?? { tag, n: 0, total: 0, first: r.date, last: r.date, ids: [] };
-          x.n++; x.total += Number(r.amount); x.ids.push(r.id);
-          if (r.date < x.first) x.first = r.date;
-          if (r.date > x.last) x.last = r.date;
-          by.set(tag, x);
-        }
-      }
-      if (!rows || rows.length < 1000) break;
-    }
-    return [...by.values()].sort((a, b) => b.last.localeCompare(a.last));
-  }, [refresh]);
-  const list = data ?? [];
-  const span = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}${a.slice(0, 4) !== b.slice(0, 4) || b.slice(0, 4) !== today().slice(0, 4) ? ` ${b.slice(0, 4)}` : ''}`);
-  return (
-    <CardShell t={t} after={txnSheet} title="Tag totals">
-      <Sized h={h}>
-      {!data ? <Skeleton color={t.track} /> : !list.length ? <Text style={{ color: t.muted }}>Add a tag to a few transactions (a trip, a move, a repair) and its total shows up here.</Text> : <Fill>{(room) => list.slice(0, fit(room, 32)).map((x) => (
-        <Pressable key={x.tag} style={[styles.row, { height: 32 }]} onPress={() => showTxns({ title: `#${x.tag}`, from: x.first, to: x.last, ids: x.ids })}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: t.text, fontSize: 13 }} numberOfLines={1}>#{x.tag}</Text>
-            <Text style={{ color: t.muted, fontSize: 11 }} numberOfLines={1}>{x.n} {x.n === 1 ? 'transaction' : 'transactions'} · {span(x.first, x.last)}</Text>
-          </View>
-          <Text style={{ color: x.total > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'], fontWeight: '600' }}>{formatMoney(x.total)}</Text>
-        </Pressable>
-      ))}</Fill>}
-      </Sized>
-    </CardShell>
-  );
-}
-
 function WatchMini({ t, refresh, h }: { t: Theme; refresh: number; h?: WidgetCfg['h'] }) {
   const { data } = useLoad(() => loadWatch(today()), [refresh]);
   const [showTxns, txnSheet] = useTxnSheet();
@@ -506,6 +469,7 @@ export const PRESETS: { name: string; cfg: WidgetCfg }[] = [
   { name: 'Savings rate', cfg: { source: 'savings', view: 'bars', months: 12 } },
   { name: 'Card utilisation', cfg: { source: 'utilization', view: 'line', months: 12 } },
   { name: 'Credit score', cfg: { source: 'creditscore', view: 'line', months: 12 } },
+  { name: 'Tag totals', cfg: { source: 'tags', view: 'list', months: 24 } },
 ];
 
 /** Settings for one widget. Charts: what to show, for which accounts and categories, and how it's drawn. */

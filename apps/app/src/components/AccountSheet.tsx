@@ -247,7 +247,7 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
   // the minimum (on the whole statement, balance transfers included), less what's been paid since.
   const prevClose = cycle ? cardCycle(addDays(cycle.lastClose, -1), a.statement_day!, a.due_day!).lastClose : null;
   const onPlans = cycle ? instalmentsBetween(plans, addDays(prevClose!, 1), cycle.lastClose).reduce((s, x) => s + x.inst.total, 0) : 0;
-  const minLeft = st && tr ? Math.max(0, minimumPayment(st.statementOwed + tr.held) - st.paidSince) : 0;
+  const minLeft = st?.minimumLeft ?? 0;
   const offBalance = a.off_balance ?? 0;
   return (
     <>
@@ -275,7 +275,10 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
                   ? [`by ${shortDate(cycle.due)} (${cycle.daysToDue < 0 ? `${-cycle.daysToDue}d ago` : `in ${cycle.daysToDue}d`})`,
                       onPlans > 0.005 ? `incl. ${formatMoney(onPlans)} on payment plans` : '',
                       `minimum ≈ ${formatMoney(minLeft)}`].filter(Boolean).join('\n')
-                  : 'statement paid'} />
+                  : minLeft > 0
+                    // All of the statement is on a promo balance transfer (or a plan): only the minimum is due.
+                    ? `minimum ≈ ${formatMoney(minLeft)} by ${shortDate(cycle.due)}\nthe rest is on a balance transfer`
+                    : 'statement paid'} />
               <Tile t={t} label="Last statement" value={formatMoney(st.statementOwed)} sub={`closed ${shortDate(cycle.lastClose)} · paid ${money0(st.paidSince)}`} />
               <Tile t={t} label="This cycle" value={formatMoney(st.spentThisCycle)} sub={`closes ${shortDate(cycle.nextClose)}`} />
             </View>

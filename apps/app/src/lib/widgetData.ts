@@ -9,27 +9,28 @@ import { loadAccounts, today } from './plan';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from './reports';
 import { accountHistory, signedBalance, type Account } from './types';
 
-export type Source = 'spending' | 'income' | 'cashflow' | 'savings' | 'networth' | 'carddebt' | 'utilization' | 'balance' | 'creditscore';
+export type Source = 'spending' | 'income' | 'cashflow' | 'savings' | 'networth' | 'carddebt' | 'utilization' | 'balance' | 'creditscore' | 'tags';
 /** How a chart's total is split into parts (for the pie, the ranked list and the table). */
 export type SplitBy = 'category' | 'group' | 'account' | 'type';
-export type ChartView = 'bars' | 'line' | 'pie' | 'list' | 'table' | 'tiles';
-export const VIEW_LABEL: Record<ChartView, string> = { bars: 'Bars', line: 'Line', pie: 'Pie', list: 'Ranked list', table: 'Table', tiles: 'Numbers' };
+export type ChartView = 'bars' | 'line' | 'pie' | 'list' | 'table' | 'tiles' | 'flow';
+export const VIEW_LABEL: Record<ChartView, string> = { bars: 'Bars', line: 'Line', pie: 'Pie', list: 'Ranked list', table: 'Table', tiles: 'Numbers', flow: 'Flow' };
 export const SOURCES: Record<Source, { title: string; about: string; views: ChartView[] }> = {
   spending: { title: 'Spending', about: 'All spending or the categories you choose, by month and by category', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles'] },
   income: { title: 'Income', about: 'Money coming in, by month and by category', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles'] },
-  cashflow: { title: 'Money in and out', about: 'Income against spending each month', views: ['bars', 'line', 'table', 'tiles'] },
+  cashflow: { title: 'Money in and out', about: 'Income against spending each month, or as a flow from where it came from to where it went', views: ['bars', 'line', 'flow', 'table', 'tiles'] },
   savings: { title: 'Savings rate', about: 'The share of each month\'s income that wasn\'t spent', views: ['bars', 'line', 'table', 'tiles'] },
   networth: { title: 'Net worth', about: 'Everything you own minus everything you owe, over time, and by account or type', views: ['line', 'bars', 'list', 'table', 'tiles'] },
   carddebt: { title: 'Card debt', about: 'What you owe on credit cards over time, and by card', views: ['line', 'bars', 'pie', 'list', 'table', 'tiles'] },
   utilization: { title: 'Card utilisation', about: 'How much of your credit limits is in use, over time and by card', views: ['line', 'bars', 'list', 'table', 'tiles'] },
   balance: { title: 'Account balance', about: 'One account, or several added together, over time', views: ['line', 'bars', 'pie', 'list', 'table', 'tiles'] },
+  tags: { title: 'Tags', about: 'What each tag (a trip, a move, a repair) added up to, by tag and by month', views: ['list', 'pie', 'bars', 'table', 'tiles'] },
   creditscore: { title: 'Credit score', about: 'The scores you log on the Credit cards page, a line per bureau', views: ['line', 'table', 'tiles'] },
 };
 
 /** Which ways each source can be split. The first is the default. */
 export const SPLITS: Partial<Record<Source, SplitBy[]>> = { spending: ['category', 'group', 'account'], income: ['category', 'account'], cashflow: [], networth: ['account', 'type'], carddebt: ['account'], utilization: ['account'], balance: ['account'] };
 /** Sources that aren't about accounts, so the account picker is hidden for them. */
-export const NO_ACCOUNTS: Source[] = ['creditscore'];
+export const NO_ACCOUNTS: Source[] = ['creditscore', 'tags'];
 export const SPLIT_LABEL: Record<SplitBy, string> = { category: 'Category', group: 'Group', account: 'Account', type: 'Account type' };
 
 export interface ChartCfg {
@@ -49,6 +50,8 @@ export interface ChartCfg {
   pace?: boolean;
   /** One loan picked under Account balance: add its payoff date and interest to the numbers. */
   payoff?: boolean;
+  /** How it's drawn (some sources load differently for a view, like the money flow). */
+  view?: ChartView;
 }
 export interface ChartData {
   labels: string[];
@@ -64,6 +67,8 @@ export interface ChartData {
   percent?: boolean;
   /** Values are plain numbers (credit scores), not money. */
   plain?: boolean;
+  /** The Flow view: where the period's money came from and went (income categories → spending groups). */
+  flow?: { inputs: { label: string; value: number; query?: Omit<TxnQuery, 'title' | 'from' | 'to'> }[]; outputs: { label: string; value: number; query?: Omit<TxnQuery, 'title' | 'from' | 'to'> }[] };
   /** Where the last bar is heading (drawn as a dashed outline), and whether that beats the average. */
   outline?: { i: number; value: number; good: boolean };
   /** A sentence under the title ("Heading for …"). */
@@ -124,6 +129,41 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   /** Columns up to today (a week's days still to come have nothing yet). */
   const sofar = week ? months.filter((k) => k <= now).length : n;
   const source = cfg.source ?? 'spending';
+
+  if (source === 'tags') {
+    // Tagged spending in the period (transfers and pending left out): each tag's total, and the months.
+    const rows: { id: string; date: string; amount: number; tags: string[] }[] = [];
+    for (let p = 0; p < 10; p++) {
+      const { data, error } = await supabase.from('transactions').select('id, date, amount, tags').neq('tags', '{}').eq('is_transfer', false).eq('pending', false)
+        .gte('date', first).lte('date', endOf(lastKey)).order('date').range(p * 1000, p * 1000 + 999);
+      if (error) throw new Error(error.message);
+      rows.push(...((data ?? []) as any[]).map((r) => ({ ...r, amount: Number(r.amount) })));
+      if (!data || data.length < 1000) break;
+    }
+    const keyOf = (d: string) => (week ? d : monthOf(d));
+    const by = new Map<string, { total: number; ids: string[]; first: string; last: string }>();
+    for (const r of rows) for (const tag of r.tags ?? []) {
+      const x = by.get(tag) ?? { total: 0, ids: [], first: r.date, last: r.date };
+      x.total -= r.amount; x.ids.push(r.id); if (r.date < x.first) x.first = r.date; if (r.date > x.last) x.last = r.date;
+      by.set(tag, x);
+    }
+    const tags = [...by.entries()].sort((a, b) => b[1].total - a[1].total);
+    const perMonth = (pick: (r: (typeof rows)[number]) => boolean) => months.map((m) => Math.round(rows.filter((r) => keyOf(r.date) === m && pick(r)).reduce((x, r) => x - r.amount, 0)));
+    const values = perMonth(() => true);
+    const series = cfg.stack && tags.length > 1 ? tags.slice(0, 7).map(([tag]) => ({ name: `#${tag}`, values: perMonth((r) => r.tags.includes(tag)) })) : [{ name: 'Tagged spending', values }];
+    const sum = tags.reduce((x, [, v]) => x + v.total, 0);
+    const span = (a: string, b: string) => (a === b ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`);
+    return {
+      ...base, series, stacked: !!cfg.stack && tags.length > 1,
+      breakdown: tags.map(([tag, v]) => ({ label: `#${tag}`, value: Math.round(v.total * 100) / 100, query: { ids: v.ids } })),
+      tiles: [
+        { label: 'Tagged', value: money0(sum), sub: `${tags.length} tag${tags.length === 1 ? '' : 's'} · ${period}` },
+        ...tags.slice(0, 2).map(([tag, v]) => ({ label: `#${tag}`, value: money0(v.total), sub: `${v.ids.length} · ${span(v.first, v.last)}` })),
+      ],
+      drill: (i) => { const ids = rows.filter((r) => keyOf(r.date) === months[i]).map((r) => r.id); return ids.length ? { from: months[i], to: endOf(months[i]), ids } : null; },
+      empty: tags.length ? undefined : `No tagged transactions ${period}. Add a tag to a few (a trip, a move, a repair) and its total shows here.`,
+    };
+  }
 
   if (source === 'creditscore') {
     // By month whatever the period (a week of scores says nothing): the last 6 months for "this week".
@@ -233,6 +273,37 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
       breakdown: parts.map(([id, value]) => part(id, value)),
       refLine, outline, note, tiles, tilesAt,
       drill: (i) => ({ from: months[i], to: endOf(months[i]), ...kindQ, ...acc, noTransfers: true }),
+    };
+  }
+
+  if (source === 'cashflow' && cfg.view === 'flow') {
+    // The whole period as one flow: income by category on the left, spending by group on the right,
+    // with savings on whichever side balances it. The biggest few each, the rest added together.
+    const [cats, lines] = await Promise.all([loadCategories(), loadLines(first, endOf(lastKey), accIds, false)]);
+    const byId = new Map(cats.map((c) => [c.id, c]));
+    const acc = accIds.length ? { accountIds: accIds } : {};
+    const inc = new Map<string, number>(), out = new Map<string, number>();
+    for (const r of lines) {
+      if (r.kind === 'income') { const k = r.category_id ?? 'none'; inc.set(k, (inc.get(k) ?? 0) + r.total); }
+      else if (r.kind === 'expense') { const g = r.category_id ? byId.get(r.category_id)?.group ?? 'Other' : 'Uncategorised'; out.set(g, (out.get(g) ?? 0) - r.total); }
+    }
+    const top = <T,>(list: [string, number][], n: number, label: (k: string) => string, query: (k: string[]) => T) => {
+      const sorted = list.filter(([, v]) => v > 0.5).sort((a, b) => b[1] - a[1]);
+      const head = sorted.slice(0, n).map(([k, v]) => ({ label: label(k), value: Math.round(v), query: query([k]) }));
+      const rest = sorted.slice(n);
+      return rest.length ? [...head, { label: `${rest.length} more`, value: Math.round(rest.reduce((x, [, v]) => x + v, 0)), query: query(rest.map(([k]) => k)) }] : head;
+    };
+    const inputs = top([...inc.entries()], 5, (k) => (k === 'none' ? 'Other income' : byId.get(k)?.name ?? 'Income'),
+      (ks) => ({ categoryIds: ks.filter((k) => k !== 'none'), kind: 'income' as const, ...acc }));
+    const outputs = top([...out.entries()], 6, (g) => g,
+      (gs) => ({ categoryIds: cats.filter((c) => c.kind === 'expense' && gs.includes(c.group)).map((c) => c.id), ...acc, noTransfers: true }));
+    const tin = inputs.reduce((x, n) => x + n.value, 0), tout = outputs.reduce((x, n) => x + n.value, 0);
+    if (tin > tout + 0.5) outputs.push({ label: 'Kept', value: Math.round(tin - tout), query: undefined as any });
+    if (tout > tin + 0.5) inputs.push({ label: 'From savings', value: Math.round(tout - tin), query: undefined as any });
+    return {
+      ...base, series: [], breakdown: [], flow: { inputs, outputs },
+      tiles: [{ label: 'Money in', value: money0(tin), sub: period }, { label: 'Money out', value: money0(tout), sub: `${tin >= tout ? 'kept' : 'over'} ${money0(Math.abs(tin - tout))}` }],
+      empty: tin + tout ? undefined : `Nothing came in or went out ${period}.`,
     };
   }
 

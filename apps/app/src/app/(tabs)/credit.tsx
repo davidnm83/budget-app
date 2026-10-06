@@ -115,7 +115,9 @@ export default function Credit() {
               {!c.cycle ? 'Set the closing and due days on the card to see what’s due.'
                 : c.st!.leftToPay > 0
                   ? `${formatMoney(c.st!.leftToPay)} left on the statement, due ${shortDate(c.cycle.due)}${c.st!.interestIfUnpaid != null ? ` · ≈ ${formatMoney(c.st!.interestIfUnpaid)} interest if unpaid` : ''}`
-                  : `Statement paid · ${formatMoney(c.st!.spentThisCycle)} this cycle, closes ${shortDate(c.cycle.nextClose)}`}
+                  : c.st!.minimumLeft
+                    ? `Minimum ≈ ${formatMoney(c.st!.minimumLeft)} due ${shortDate(c.cycle.due)} (the statement is on a balance transfer) · ${formatMoney(c.st!.spentThisCycle)} this cycle`
+                    : `Statement paid · ${formatMoney(c.st!.spentThisCycle)} this cycle, closes ${shortDate(c.cycle.nextClose)}`}
             </Text>
           </Pressable>
         ))}

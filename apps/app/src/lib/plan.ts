@@ -56,7 +56,8 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
       const c = cardCycle(now, a.statement_day, a.due_day);
       const st = cardStatement(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ id: x.id, date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null, mine,
         transfersOnStatement(bts, owed, c.lastClose, now));
-      if (st.leftToPay > 0) amount = st.leftToPay;
+      // A statement that's all on a balance transfer still asks for its minimum.
+      if (st.leftToPay > 0 || st.minimumLeft) amount = Math.max(st.leftToPay, st.minimumLeft ?? 0);
     }
     due.set(a.id, round2(amount));
   }
