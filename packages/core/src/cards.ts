@@ -4,6 +4,7 @@
  */
 import { daysBetween, parseIso, toIso, type IsoDate } from './dates.ts';
 import { round2 } from './money.ts';
+import { planHeld, type PlanOnCard } from './plans.ts';
 
 function onDay(y: number, m: number, day: number): IsoDate {
   const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
@@ -48,6 +49,24 @@ export function cardStatus(owedNow: number, txns: { date: IsoDate; amount: numbe
   const paidSince = round2(after.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0));
   const spentThisCycle = round2(-after.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0));
   const statementOwed = round2(Math.max(0, owedNow + paidSince - spentThisCycle - Math.max(0, deferred)));
+  const leftToPay = round2(Math.max(0, statementOwed - paidSince));
+  return { statementOwed, paidSince, leftToPay, spentThisCycle, interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
+}
+
+/**
+ * The card's statement with payment plans in it (option B). The balance when the statement closed
+ * is worked back from today's; the part of it that was a plan not yet billed is left out, since a
+ * statement doesn't ask for that. The purchase and the bank's plan credit are plan movements: they
+ * count as neither spending nor payments, so a $1,800 plan credit no longer looks like a payment.
+ */
+export function cardStatement(owedNow: number, txns: { id?: string; date: IsoDate; amount: number }[], lastClose: IsoDate, cycleDays: number, apr: number | null, plans: PlanOnCard[] = []): CardStatus {
+  const moves = new Set(plans.flatMap((p) => [p.purchaseTxnId, p.creditTxnId]).filter(Boolean) as string[]);
+  const after = txns.filter((t) => t.date > lastClose);
+  const atClose = owedNow + after.reduce((s, t) => s + t.amount, 0);
+  const statementOwed = round2(Math.max(0, atClose - plans.reduce((s, p) => s + planHeld(p, lastClose), 0)));
+  const real = after.filter((t) => !(t.id && moves.has(t.id)));
+  const paidSince = round2(real.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0));
+  const spentThisCycle = round2(-real.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0));
   const leftToPay = round2(Math.max(0, statementOwed - paidSince));
   return { statementOwed, paidSince, leftToPay, spentThisCycle, interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
 }

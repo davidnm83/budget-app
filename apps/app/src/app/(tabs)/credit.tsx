@@ -6,7 +6,7 @@ import { usePullRefresh } from '@/lib/pullRefresh';
 import { bankLogo, customPicture, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { UNDER_BAR } from '@/lib/layout';
-import { plansDeferred, addDays, cardCycle, cardStatus, formatMoney, shortDate, utilization } from '@budget-app/core';
+import { plansOffBalance, addDays, cardCycle, cardStatement, formatMoney, shortDate, utilization } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -55,7 +55,9 @@ export default function Credit() {
   const now = today();
   const cards = accounts.filter((a) => a.type === 'credit');
   const owedOf = (a: Account) => Math.max(0, -signedBalance(a));
-  const totalOwed = cards.reduce((s, a) => s + owedOf(a), 0);
+  // What's owed in all: the balances, plus plans the bank has moved off them with a credit.
+  const onPlans = plansOffBalance(plans.filter((p) => cards.some((a) => a.id === p.accountId)), now);
+  const totalOwed = cards.reduce((s, a) => s + owedOf(a), 0) + onPlans;
   const withLimit = cards.filter((a) => a.credit_limit);
   const totalLimit = withLimit.reduce((s, a) => s + Number(a.credit_limit), 0);
   const util = totalLimit ? withLimit.reduce((s, a) => s + owedOf(a), 0) / totalLimit : null;
@@ -65,7 +67,7 @@ export default function Credit() {
     const owed = owedOf(a);
     const cycle = a.statement_day && a.due_day ? cardCycle(now, a.statement_day, a.due_day) : null;
     // The part of the balance on payment plans that isn't billed yet isn't part of what the statement asks for.
-    const st = cycle ? cardStatus(owed, mine, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plansDeferred(plans.filter((p) => p.accountId === a.id), cycle.lastClose)) : null;
+    const st = cycle ? cardStatement(owed, mine, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans.filter((p) => p.accountId === a.id)) : null;
     return { a, owed, u: utilization(owed, a.credit_limit), cycle, st };
   }).sort((x, y) => y.owed - x.owed), [cards, txns, now, plans]);
 
@@ -78,7 +80,7 @@ export default function Credit() {
       <PageBoard page="credit" refresh={refresh} defaults={CREDIT_DEFAULT} blocks={[
         { key: 'credit:tiles', title: 'Card totals', about: 'Total owing, utilisation, next due and interest', render: () => (
           <View style={styles.tiles}>
-        <Tile t={t} label="Total owing" value={money0(totalOwed)} sub={`${cards.length} cards`} />
+        <Tile t={t} label="Total owing" value={money0(totalOwed)} sub={onPlans > 0 ? `${cards.length} cards · ${money0(onPlans)} on plans` : `${cards.length} cards`} />
         <Tile t={t} label="Utilisation" value={util != null ? `${Math.round(util * 100)}%` : '–'} sub={totalLimit ? `of ${money0(totalLimit)} limit` : 'add limits'}
           color={util == null ? undefined : util > 0.7 ? t.danger : util > 0.3 ? t.series2 : t.accent} />
         <Tile t={t} label="Next due" value={nextDue ? formatMoney(nextDue.st!.leftToPay) : '–'} sub={nextDue ? `${nextDue.a.name} · ${shortDate(nextDue.cycle!.due)}` : 'nothing owing'} />

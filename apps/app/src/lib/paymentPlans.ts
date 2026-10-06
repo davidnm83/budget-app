@@ -16,18 +16,20 @@
 //    instalment), and the instalments then put it back month by month.
 // Generated transactions carry import_id "plan:<plan id>:…", which is how they are found again.
 import * as core from '@budget-app/core';
-import { planSchedule, type PaymentPlan } from '@budget-app/core';
+import { findPlanCredit, planSchedule, type PaymentPlan, type PlanOnCard } from '@budget-app/core';
 import { isOffline } from './offline';
 import { today } from './plan';
 import { supabase } from './supabase';
 
-export interface CardPlan extends PaymentPlan {
+export interface CardPlan extends PaymentPlan, PlanOnCard {
   accountId: string; transactionId: string | null; categoryId: string | null; interestCategoryId: string | null;
   payingAccountId: string | null;
   /** Add the interest / the one-time fee as transactions (off when the statement already lists it). */
   postCharges: boolean; postFee: boolean;
   /** Against the balance, not one purchase: take the amount out of the category when the plan starts. */
   offsetStart: boolean;
+  /** The bank's plan credit, for cards that move a plan off the balance with one (see PlanOnCard). */
+  creditTransactionId?: string | null;
 }
 export type PlanInput = Omit<CardPlan, 'id'>;
 const PLAN_CATEGORY = 'Payment plan';
@@ -36,13 +38,15 @@ const fromRow = (r: any): CardPlan => ({
   id: r.id, description: r.description, principal: Number(r.principal), months: Number(r.months), startDate: r.start_date, setupFee: Number(r.setup_fee), apr: Number(r.apr),
   countFrom: r.count_from, closedOn: r.closed_on, accountId: r.account_id, transactionId: r.transaction_id, categoryId: r.category_id,
   interestCategoryId: r.interest_category_id, payingAccountId: r.paying_account_id, postCharges: r.post_charges, postFee: r.post_fee ?? true, monthlyFee: Number(r.monthly_fee ?? 0), offsetStart: !!r.offset_start,
-  instalments: r.instalments ?? {},
+  instalments: r.instalments ?? {}, creditTransactionId: r.credit_transaction_id ?? null,
+  purchaseTxnId: r.transaction_id, creditTxnId: r.credit_transaction_id ?? null,
 });
 const toRow = (p: PlanInput) => ({
   description: p.description, principal: p.principal, months: p.months, start_date: p.startDate, setup_fee: p.setupFee, apr: p.apr, count_from: p.countFrom ?? null,
   closed_on: p.closedOn ?? null, account_id: p.accountId, transaction_id: p.transactionId, category_id: p.categoryId, interest_category_id: p.interestCategoryId,
   paying_account_id: p.payingAccountId, post_charges: p.postCharges, post_fee: p.postFee, monthly_fee: p.monthlyFee ?? 0, offset_start: p.offsetStart,
-  // Left out when absent, so an install that hasn't run the instalments migration can still save plans.
+  // Left out when absent, so an install that hasn't run the newer migrations can still save plans.
+  ...(p.creditTransactionId !== undefined && p.creditTransactionId !== null ? { credit_transaction_id: p.creditTransactionId } : {}),
   ...(p.instalments && Object.keys(p.instalments).length ? { instalments: p.instalments } : {}),
 });
 const fail = (e: { message: string } | null) => { if (e) throw new Error(e.message); };
@@ -52,7 +56,12 @@ const noTable = (e: any) => e?.code === 'PGRST205' || e?.code === '42P01';
 export async function loadPlans(): Promise<CardPlan[]> {
   const { data, error } = await supabase.from('payment_plans').select('*').order('start_date', { ascending: false });
   if (error) { if (noTable(error)) return []; throw new Error(error.message); }
-  return (data ?? []).map(fromRow);
+  const plans = (data ?? []).map(fromRow);
+  // When the purchase and the bank's plan credit hit the card: statements and what's owed depend on it.
+  const ids = plans.flatMap((p) => [p.transactionId, p.creditTransactionId]).filter(Boolean) as string[];
+  const { data: dates } = ids.length ? await supabase.from('transactions').select('id, date').in('id', ids) : { data: [] };
+  const at = new Map(((dates ?? []) as any[]).map((r) => [r.id, r.date as string]));
+  return plans.map((p) => ({ ...p, purchaseDate: p.transactionId ? at.get(p.transactionId) ?? null : null, creditDate: p.creditTransactionId ? at.get(p.creditTransactionId) ?? null : null }));
 }
 
 /** The transfer category the purchase and the balancing half of each instalment sit under. Made the first time it's needed. */
@@ -77,6 +86,7 @@ export async function syncPlans(plans?: CardPlan[]): Promise<number> {
   const list = plans ?? await loadPlans();
   if (!list.length) return 0;
   const now = today();
+  await linkPlanCredits(list);
   const { data: have, error } = await supabase.from('transactions').select('import_id').like('import_id', 'plan:%');
   fail(error);
   const done = new Set((have ?? []).map((r: any) => r.import_id as string));
@@ -186,4 +196,35 @@ export async function deletePlan(p: CardPlan) {
   await clearGenerated(p.id);
   await unmarkPurchase(p);
   fail((await supabase.from('payment_plans').delete().eq('id', p.id)).error);
+}
+
+/**
+ * Cards that move a plan off the balance with a credit ("INSTALLMENT PLAN FOR $1,800.00"): once that
+ * credit arrives it's linked to its plan and filed under "Payment plan", so it counts as neither a
+ * payment nor income. Plans whose bank keeps them in the balance never get one, and nothing changes.
+ */
+export async function linkPlanCredits(plans: CardPlan[]): Promise<void> {
+  const open = plans.filter((p) => !p.creditTransactionId && !p.closedOn);
+  if (!open.length) return;
+  const taken = new Set(plans.map((p) => p.creditTransactionId).filter(Boolean) as string[]);
+  const from = open.reduce((m, p) => { const d = p.purchaseDate ?? core.monthsAfter(p.startDate, -2); return d < m ? d : m; }, '9999-12-31');
+  const { data, error } = await supabase.from('transactions').select('id, account_id, date, amount, name').in('account_id', [...new Set(open.map((p) => p.accountId))])
+    .gt('amount', 0).gte('date', core.addDays(from, -3)).limit(500);
+  if (error || !data?.length) return;
+  const rows = (data as any[]).map((r) => ({ ...r, amount: Number(r.amount) }));
+  for (const p of open) {
+    const hit = findPlanCredit(p, rows.filter((r) => r.account_id === p.accountId), taken);
+    if (!hit) continue;
+    taken.add(hit.id);
+    const up = await supabase.from('payment_plans').update({ credit_transaction_id: hit.id }).eq('id', p.id);
+    if (up.error) return; // before the migration: nothing to store it in
+    await supabase.from('transactions').update({ category_id: await planCategory(), category_source: 'manual', is_transfer: true }).eq('id', hit.id);
+    p.creditTransactionId = hit.id; p.creditTxnId = hit.id; p.creditDate = hit.date;
+  }
+}
+
+/** Link the bank's plan credit by hand (or unlink it with null). A linked credit is filed under "Payment plan". */
+export async function setPlanCredit(p: CardPlan, txnId: string | null): Promise<void> {
+  fail((await supabase.from('payment_plans').update({ credit_transaction_id: txnId }).eq('id', p.id)).error);
+  if (txnId) fail((await supabase.from('transactions').update({ category_id: await planCategory(), category_source: 'manual', is_transfer: true }).eq('id', txnId)).error);
 }

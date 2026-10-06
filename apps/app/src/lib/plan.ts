@@ -1,7 +1,7 @@
 // Data for Bills and the Planner: recurring bills/income, one-off planned entries, the
 // accounts the plan covers, and posted transactions to match against.
 import {
-  addDays, balanceAt, buildWeek, cardCycle, cardStatus, plansDeferred, expandPlan, round2, todayIn, weekStart as mondayOf,
+  addDays, balanceAt, buildWeek, cardCycle, cardStatement, planHeld, expandPlan, round2, todayIn, weekStart as mondayOf,
   type PlanEntry, type PostedTxn, type Recurring, type WeekView,
 } from '@budget-app/core';
 import { supabase } from './supabase';
@@ -38,7 +38,7 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
   const now = today();
   const [{ data: accts }, { data: txns }] = await Promise.all([
     supabase.from('account_balances').select('id, type, balance, statement_day, due_day').in('id', cards),
-    supabase.from('transactions').select('account_id, date, amount').in('account_id', cards).gte('date', addDays(now, -70)),
+    supabase.from('transactions').select('id, account_id, date, amount').in('account_id', cards).gte('date', addDays(now, -70)),
   ]);
   // Payment plans on these cards: what isn't billed yet is left out of the amount to pay.
   const plans = await import('./paymentPlans').then((m) => m.loadPlans()).catch(() => []);
@@ -48,10 +48,10 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
     const mine = plans.filter((p) => p.accountId === a.id);
     // With nothing left on the statement (or no statement dates), it's what's owed now, less the payment
     // plan instalments not billed yet: those come due on later statements, not this payment.
-    let amount = Math.max(0, owed - plansDeferred(mine, now));
+    let amount = Math.max(0, owed - mine.reduce((s, p) => s + planHeld(p, now), 0));
     if (a.statement_day && a.due_day) {
       const c = cardCycle(now, a.statement_day, a.due_day);
-      const st = cardStatus(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null, plansDeferred(mine, c.lastClose));
+      const st = cardStatement(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ id: x.id, date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null, mine);
       if (st.leftToPay > 0) amount = st.leftToPay;
     }
     due.set(a.id, round2(amount));

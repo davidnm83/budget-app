@@ -9,7 +9,7 @@ import { DateField } from '@/components/DateField';
 import { Field, Sheet, useChanged } from '@/components/Forms';
 import { SinglePicker } from '@/components/Picker';
 import { Bar, Button, Card, Chip, Segmented } from '@/components/ui';
-import { closePlan, createPlan, deletePlan, setInstalment, updatePlan, type CardPlan, type PlanInput } from '@/lib/paymentPlans';
+import { closePlan, createPlan, deletePlan, setInstalment, setPlanCredit, updatePlan, type CardPlan, type PlanInput } from '@/lib/paymentPlans';
 import { today } from '@/lib/plan';
 import { afterClose } from '@/lib/useBackToClose';
 import { supabase } from '@/lib/supabase';
@@ -78,6 +78,7 @@ function PlanDetail({ t, plan: given, accounts, onClose, onChanged, onEdit }: { 
         {formatMoney(plan.principal)} on {name(plan.accountId)}, {plan.months} months{plan.apr ? ` at ${plan.apr}%` : ', no interest'}{plan.monthlyFee ? `, ${formatMoney(plan.monthlyFee)} fee a month` : ''}{plan.setupFee ? `, ${formatMoney(plan.setupFee)} one-time fee` : ''}.{!plan.transactionId ? ' Against the card’s balance.' : ''}
         {plan.payingAccountId ? ` Paid from ${name(plan.payingAccountId)}.` : ''}
       </Text>
+      <BankCredit t={t} plan={plan} onChanged={(p) => { setPlan(p); onChanged(); }} />
       <Text style={{ color: t.text }}>
         {g.finished ? 'Finished.' : `${formatMoney(g.left)} still to come${g.costLeft ? `, plus ${formatMoney(g.costLeft)} in ${plan.monthlyFee ? 'fees and interest' : 'interest'}` : ''}.`} Fees and interest so far: {formatMoney(g.costPaid)}.
       </Text>
@@ -103,6 +104,49 @@ function PlanDetail({ t, plan: given, accounts, onClose, onChanged, onEdit }: { 
       <Button title="Delete plan" kind="danger" disabled={busy} onPress={() => confirm({ title: 'Delete this plan?', message: `The instalments it added are removed${plan.transactionId ? ', and the purchase goes back to counting as spending in the month it was made' : ''}.`, action: 'Delete', run: () => run(() => deletePlan(plan), 'Plan deleted') })} />
       {confirmSheet}
     </Sheet>
+  );
+}
+
+/**
+ * The bank's plan credit: some cards (Amex) take the plan off the balance with a credit
+ * ("INSTALLMENT PLAN FOR $…") and then bill each instalment. Found by itself when it arrives;
+ * it can also be picked or unlinked here.
+ */
+function BankCredit({ t, plan, onChanged }: { t: Theme; plan: CardPlan; onChanged: (p: CardPlan) => void }) {
+  const [found, setFound] = useState<{ id: string; date: string; amount: number; display_name: string; name: string }[] | null>(null);
+  const [pick, setPick] = useState(false);
+  const [linked, setLinked] = useState<{ date: string; amount: number; name: string } | null>(null);
+  useEffect(() => {
+    if (!plan.creditTransactionId) { setLinked(null); return; }
+    supabase.from('transactions').select('date, amount, name').eq('id', plan.creditTransactionId).maybeSingle()
+      .then(({ data }) => setLinked(data ? { date: data.date, amount: Number(data.amount), name: data.name } : null));
+  }, [plan.creditTransactionId]);
+  const open = async () => {
+    const from = addDays(plan.purchaseDate ?? monthsAfter(plan.startDate, -2), -3);
+    const { data } = await supabase.from('transaction_list').select('id, date, amount, display_name, name').eq('account_id', plan.accountId).gt('amount', 0).gte('date', from).order('date').limit(200);
+    setFound(((data ?? []) as any[]).map((x) => ({ ...x, amount: Number(x.amount) }))); setPick(true);
+  };
+  const set = async (id: string | null) => {
+    setPick(false);
+    try { await setPlanCredit(plan, id); toast(id ? 'Plan credit linked' : 'Plan credit unlinked'); onChanged({ ...plan, creditTransactionId: id, creditTxnId: id, creditDate: id ? found?.find((x) => x.id === id)?.date ?? null : null }); }
+    catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); }
+  };
+  return (
+    <View style={{ gap: 4 }}>
+      <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>BANK’S PLAN CREDIT</Text>
+      {linked ? (
+        <Text style={{ color: t.text, fontSize: 13 }}>{shortDate(linked.date)} · {linked.name} · {formatMoney(linked.amount)}. The plan is off the card’s balance from then on, and still counts in what’s owed.</Text>
+      ) : (
+        <Text style={{ color: t.muted, fontSize: 13 }}>None. Some cards take a plan off the balance with a credit for its amount; when one arrives it’s linked by itself and isn’t counted as a payment.</Text>
+      )}
+      <View style={{ flexDirection: 'row', gap: 16 }}>
+        <Pressable onPress={open} hitSlop={6}><Text style={{ color: t.accent, fontSize: 13 }}>{linked ? 'Change' : 'Choose one'}</Text></Pressable>
+        {linked && <Pressable onPress={() => set(null)} hitSlop={6}><Text style={{ color: t.accent, fontSize: 13 }}>Unlink</Text></Pressable>}
+      </View>
+      <SinglePicker visible={pick} title="Plan credit" selected={plan.creditTransactionId ?? null} onClose={() => setPick(false)}
+        items={(found ?? []).map((x) => ({ id: x.id, label: `${shortDate(x.date)} · ${x.display_name}`, detail: formatMoney(x.amount), sub: x.name !== x.display_name ? x.name : undefined }))}
+        onPick={(id) => set(id)} />
+    </View>
   );
 }
 

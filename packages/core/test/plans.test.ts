@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardStatus, instalmentsBetween, monthsAfter, planProgress, planSchedule, plansDeferred, type PaymentPlan } from '../src/index.ts';
+import { cardStatement, cardStatus, findPlanCredit, planHeld, plansOffBalance, instalmentsBetween, monthsAfter, planProgress, planSchedule, plansDeferred, type PaymentPlan } from '../src/index.ts';
 
 const plan = (o: Partial<PaymentPlan> = {}): PaymentPlan => ({ id: 'p', description: 'Laptop', principal: 1200, months: 12, startDate: '2026-01-15', setupFee: 0, apr: 0, ...o });
 const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
@@ -96,5 +96,34 @@ describe('payment plans', () => {
     const g = planProgress(p, '2026-01-20');
     expect(g.done).toBe(2); expect(g.paid).toBe(200); expect(g.next!.n).toBe(3);
     expect(planSchedule(p)[1].paidBy).toBe('txn1');
+  });
+});
+
+describe('statements with payment plans (option B)', () => {
+  const base = { id: 'p', description: 'Laptop', months: 12, setupFee: 0, apr: 0 };
+  it('a plan the bank keeps in the balance: the unbilled part is left out of the statement', () => {
+    const p = { ...base, principal: 1200, startDate: '2026-11-15', purchaseDate: '2026-10-01', purchaseTxnId: 'buy' };
+    // Statement closed Oct 18 at $1,500 ($1,200 laptop + $300); $100 spent since.
+    const s = cardStatement(1600, [{ id: 'buy', date: '2026-10-01', amount: -1200 }, { id: 'x', date: '2026-10-20', amount: -100 }], '2026-10-18', 30, null, [p]);
+    expect([s.statementOwed, s.leftToPay, s.spentThisCycle]).toEqual([300, 300, 100]);
+  });
+  it('a plan the bank moves off the balance with a credit: the credit is not a payment', () => {
+    const p = { ...base, principal: 1800, startDate: '2026-11-10', purchaseDate: '2026-09-25', purchaseTxnId: 'buy', creditTxnId: 'cr', creditDate: '2026-10-03' };
+    const txns = [{ id: 'buy', date: '2026-09-25', amount: -1800 }, { id: 'o', date: '2026-09-28', amount: -302.06 }, { id: 'cr', date: '2026-10-03', amount: 1800 }];
+    const s = cardStatement(852.09, txns, '2026-09-20', 30, null, [p]);
+    expect([s.statementOwed, s.paidSince, s.leftToPay, s.spentThisCycle]).toEqual([550.03, 0, 550.03, 302.06]);
+    // Before the credit arrives the balance still holds the purchase; the statement is the same.
+    const before = cardStatement(2652.09, txns.slice(0, 2), '2026-09-20', 30, null, [{ ...p, creditTxnId: null, creditDate: null }]);
+    expect(before.leftToPay).toBe(550.03);
+    // What's owed in total keeps the plan in it once the bank has taken it off the balance.
+    expect(plansOffBalance([p], '2026-10-06')).toBe(1800);
+    expect(planHeld(p, '2026-10-01')).toBe(1800);
+    expect(planHeld(p, '2026-10-04')).toBe(0);
+  });
+  it('finds the bank’s plan credit', () => {
+    const p = { ...base, principal: 1800, startDate: '2026-11-10', purchaseDate: '2026-09-25', purchaseTxnId: 'buy' };
+    const txns = [{ id: 'pay', date: '2026-10-01', amount: 500, name: 'PAYMENT RECEIVED' }, { id: 'cr', date: '2026-10-03', amount: 1800, name: 'INSTALLMENT PLAN FOR $1,800.00' }];
+    expect(findPlanCredit(p, txns)?.id).toBe('cr');
+    expect(findPlanCredit(p, txns, new Set(['cr']))).toBeNull();
   });
 });

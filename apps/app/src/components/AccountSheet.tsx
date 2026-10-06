@@ -19,7 +19,7 @@ export { Tile } from '@/components/Tile';
 import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  accountIcon, addDays, balanceHistory, cardCycle, cardStatus, plansDeferred, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, plansOffBalance, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
   monthlyFlow, shortDate, utilization,
   csvReminderOn,
 } from '@budget-app/core';
@@ -232,8 +232,9 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
   const cycle = set ? cardCycle(today(), a.statement_day!, a.due_day!) : null;
   const [plans, setPlans] = useState<CardPlan[]>([]);
   useEffect(() => { loadPlans().then((ps) => setPlans(ps.filter((p) => p.accountId === a.id))).catch(() => {}); }, [a.id]);
-  const deferred = cycle ? plansDeferred(plans, cycle.lastClose) : 0;
-  const st = cycle ? cardStatus(owed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, deferred) : null;
+  const st = cycle ? cardStatement(owed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans) : null;
+  // Plans the bank has taken off the balance with a credit are still owed.
+  const offBalance = plansOffBalance(plans, today());
   return (
     <>
       <Section t={t} title="Utilisation">
@@ -248,6 +249,7 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
           </>
         )}
       </Section>
+      {offBalance > 0 && <Text style={{ color: t.muted, fontSize: 13 }}>Plus {formatMoney(offBalance)} still to come on payment plans the bank has moved off the balance: {formatMoney(owed + offBalance)} owed in all.</Text>}
       <Section t={t} title="Statement">
         {!cycle || !st ? (
           <Pressable onPress={onSetUp}><Text style={{ color: t.accent }}>Set the statement closing day, due day and interest rate in Details to see what's due and what interest would cost.</Text></Pressable>

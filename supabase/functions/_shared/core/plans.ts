@@ -117,6 +117,43 @@ export function plansDeferred(plans: PaymentPlan[], date: IsoDate): number {
   return round2(plans.reduce((s, p) => s + planSchedule(p).filter((x) => x.date > date).reduce((a, x) => a + x.principal, 0), 0));
 }
 
+/**
+ * Where a plan's money sits on the card, for statements and what's owed (option B).
+ *  • purchaseDate: when the purchase hit the card (none: a plan against the balance, there all along).
+ *  • creditDate: when the bank moved it off the balance with a credit ("INSTALLMENT PLAN FOR $…"),
+ *    if it does that. From then on each instalment comes as its own charge, and the rest of the plan
+ *    is owed but not in the bank's balance.
+ * `purchaseTxnId`/`creditTxnId`: those two transactions, which are plan movements, not spending or payments.
+ */
+export interface PlanOnCard extends PaymentPlan { purchaseDate?: IsoDate | null; purchaseTxnId?: string | null; creditTxnId?: string | null; creditDate?: IsoDate | null }
+
+/** The purchase on the plan not billed by `date` (instalments after it). */
+export const planUnbilled = (p: PaymentPlan, date: IsoDate) => round2(planSchedule(p).filter((x) => x.date > date).reduce((a, x) => a + x.principal, 0));
+
+/** How much of the plan is inside the bank's balance on `date`: the unbilled part, between the purchase and the bank's plan credit. */
+export function planHeld(p: PlanOnCard, date: IsoDate): number {
+  if (p.purchaseDate && p.purchaseDate > date) return 0;
+  if (p.creditDate && p.creditDate <= date) return 0;
+  return planUnbilled(p, date);
+}
+
+/** Owed on plans the bank has moved off the balance: add it to the balance for what's owed in total. */
+export function plansOffBalance(plans: PlanOnCard[], date: IsoDate): number {
+  return round2(plans.reduce((s, p) => s + (p.creditDate && p.creditDate <= date ? planUnbilled(p, date) : 0), 0));
+}
+
+/**
+ * The bank's plan credit for a plan, among a card's transactions: money in close to the plan's amount
+ * (within 1%), from a few days before the purchase to the first instalment, preferring one whose text
+ * says it's a plan. Null when there's none.
+ */
+export function findPlanCredit<T extends { id: string; date: IsoDate; amount: number; name: string }>(p: PlanOnCard, txns: T[], taken: Set<string> = new Set()): T | null {
+  const from = p.purchaseDate ?? monthsAfter(p.startDate, -2);
+  const near = (t: T) => t.amount > 0 && Math.abs(t.amount - p.principal) <= Math.max(0.01, p.principal * 0.01) && t.date >= from && t.date <= p.startDate && !taken.has(t.id) && t.id !== p.purchaseTxnId;
+  const list = txns.filter(near);
+  return list.find((t) => /instal+ment|plan|equal pay|pay over time/i.test(t.name)) ?? (list.length === 1 ? list[0] : null);
+}
+
 /** Instalments of these plans dated in a range (for the planner and the bills calendar). */
 export function instalmentsBetween<T extends PaymentPlan>(plans: T[], from: IsoDate, to: IsoDate): { plan: T; inst: Instalment; count: number }[] {
   return plans.flatMap((plan) => { const s = planSchedule(plan); return s.filter((x) => x.date >= from && x.date <= to).map((inst) => ({ plan, inst, count: s.length })); })
