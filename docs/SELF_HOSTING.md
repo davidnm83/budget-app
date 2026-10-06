@@ -88,7 +88,7 @@ To try everything with fake banks first, use `PLAID_ENV=sandbox` with your Sandb
 npx supabase functions deploy
 ```
 
-This deploys `plaid-link-token`, `plaid-exchange`, `plaid-sync` and `plaid-remove`.
+This deploys `plaid-link-token`, `plaid-exchange`, `plaid-sync`, `plaid-remove`, `backup` and `notify`.
 
 ## 5. Turn on the daily 5 AM sync
 
