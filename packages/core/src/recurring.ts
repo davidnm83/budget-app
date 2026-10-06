@@ -21,6 +21,8 @@ export interface Recurring {
   category_id: string | null;
   match_text: string | null;
   active: boolean;
+  /** Shown in the planner this many days before each due date (a card paid ahead of its due day). */
+  lead_days?: number | null;
 }
 
 function lastDayOfMonth(y: number, m: number): number {

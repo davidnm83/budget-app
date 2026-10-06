@@ -1,6 +1,7 @@
 // What a chart widget can show. Each source turns the account's data into the same shape, so
 // any view (bars, line, pie, list, table, tiles) can draw it and a tap can open what's behind it.
 import { addDays, addMonths, weekStart, balanceHistory, daysBetween, loanSummary, monthName, monthOf, categoryIcon, formatMoney, monthEnd, shortDate } from '@budget-app/core';
+import { loadScores, scoreLines } from './creditScores';
 import { supabase } from './supabase';
 import type { TxnQuery } from '@/components/TxnSheet';
 import { loadTxnsFor } from './accountTxns';
@@ -8,7 +9,7 @@ import { loadAccounts, today } from './plan';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from './reports';
 import { signedBalance, type Account } from './types';
 
-export type Source = 'spending' | 'income' | 'cashflow' | 'savings' | 'networth' | 'carddebt' | 'utilization' | 'balance';
+export type Source = 'spending' | 'income' | 'cashflow' | 'savings' | 'networth' | 'carddebt' | 'utilization' | 'balance' | 'creditscore';
 /** How a chart's total is split into parts (for the pie, the ranked list and the table). */
 export type SplitBy = 'category' | 'group' | 'account' | 'type';
 export type ChartView = 'bars' | 'line' | 'pie' | 'list' | 'table' | 'tiles';
@@ -22,12 +23,13 @@ export const SOURCES: Record<Source, { title: string; about: string; views: Char
   carddebt: { title: 'Card debt', about: 'What you owe on credit cards over time, and by card', views: ['line', 'bars', 'pie', 'list', 'table', 'tiles'] },
   utilization: { title: 'Card utilisation', about: 'How much of your credit limits is in use, over time and by card', views: ['line', 'bars', 'list', 'table', 'tiles'] },
   balance: { title: 'Account balance', about: 'One account, or several added together, over time', views: ['line', 'bars', 'pie', 'list', 'table', 'tiles'] },
+  creditscore: { title: 'Credit score', about: 'The scores you log on the Credit cards page, a line per bureau', views: ['line', 'table', 'tiles'] },
 };
 
 /** Which ways each source can be split. The first is the default. */
 export const SPLITS: Partial<Record<Source, SplitBy[]>> = { spending: ['category', 'group', 'account'], income: ['category', 'account'], cashflow: [], networth: ['account', 'type'], carddebt: ['account'], utilization: ['account'], balance: ['account'] };
 /** Sources that aren't about accounts, so the account picker is hidden for them. */
-export const NO_ACCOUNTS: Source[] = [];
+export const NO_ACCOUNTS: Source[] = ['creditscore'];
 export const SPLIT_LABEL: Record<SplitBy, string> = { category: 'Category', group: 'Group', account: 'Account', type: 'Account type' };
 
 export interface ChartCfg {
@@ -58,6 +60,8 @@ export interface ChartData {
   stacked?: boolean;
   /** Values are percentages, not money. */
   percent?: boolean;
+  /** Values are plain numbers (credit scores), not money. */
+  plain?: boolean;
   /** Where the last bar is heading (drawn as a dashed outline), and whether that beats the average. */
   outline?: { i: number; value: number; good: boolean };
   /** A sentence under the title ("Heading for …"). */
@@ -118,6 +122,25 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   /** Columns up to today (a week's days still to come have nothing yet). */
   const sofar = week ? months.filter((k) => k <= now).length : n;
   const source = cfg.source ?? 'spending';
+
+  if (source === 'creditscore') {
+    // By month whatever the period (a week of scores says nothing): the last 6 months for "this week".
+    const cols: string[] = week ? Array.from({ length: 6 }, (_, i) => addMonths(thisMonth(), i - 5)) : [...months];
+    const { scores, error } = await loadScores();
+    if (error) throw new Error(error);
+    let lines = scoreLines(scores, cols);
+    // Start at the first month with a score, so the months before the log began aren't blank space.
+    const lead = Math.min(cols.length - 2, ...lines.map((l) => l.values.findIndex(Number.isFinite)).filter((i) => i >= 0));
+    if (lead > 0) { cols.splice(0, lead); lines = lines.map((l) => ({ ...l, values: l.values.slice(lead) })); }
+    const latest = (b: string) => [...scores].reverse().find((s) => s.bureau === b);
+    return {
+      labels: cols.map(monthShort), period: week ? 'last 6 months' : period, from: cols[0], to: monthEnd(cols[cols.length - 1]), plain: true,
+      series: lines, breakdown: [],
+      tiles: lines.map((l) => { const s = latest(l.name)!; const prev = [...scores].reverse().find((x) => x.bureau === l.name && x.id !== s.id);
+        return { label: l.name, value: String(s.score), sub: prev ? `${s.score >= prev.score ? '▲' : '▼'} ${Math.abs(s.score - prev.score)} · ${shortDate(s.date)}` : shortDate(s.date) }; }),
+      empty: lines.length ? undefined : 'No scores yet. Log them on the Credit cards page.',
+    };
+  }
 
   const allAccounts = (await loadAccounts()).filter((a) => !a.is_hidden);
   const chosen = pickAccounts(cfg, allAccounts);

@@ -63,7 +63,7 @@ function Readout({ t, labels, series, sel, format, hint, col, stacked }: { t: Th
       {list.map((p) => (
         <View key={p.name} style={styles.legendItem}>
           {series.length > 1 && <View style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: col(p.i), opacity: sel == null ? 0.6 : 1 }} />}
-          <Text numberOfLines={1} style={{ color: tone, fontSize: 12, fontVariant: ['tabular-nums'] }}>{series.length > 1 ? `${p.name} ` : ''}{format(p.v)}</Text>
+          <Text numberOfLines={1} style={{ color: tone, fontSize: 12, fontVariant: ['tabular-nums'] }}>{series.length > 1 ? `${p.name} ` : ''}{Number.isFinite(p.v) ? format(p.v) : '–'}</Text>
         </View>
       ))}
       {!!hint && <Text numberOfLines={1} style={{ color: t.muted, fontSize: 12 }}>{hint}</Text>}
@@ -79,7 +79,7 @@ function Frame({ t, labels, series, height = 140, format, onPick, free, colors, 
   const [w, setW] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
   const wide = useWide(); // with a mouse, hovering reads a point out and one click opens it; on a phone the first tap reads it out
-  const all = [...(stacked ? labels.map((_, i) => series.reduce((x, s) => x + (s.values[i] ?? 0), 0)) : series.flatMap((s) => s.values)), ...(refLine != null ? [refLine] : []), ...also];
+  const all = [...(stacked ? labels.map((_, i) => series.reduce((x, s) => x + (s.values[i] ?? 0), 0)) : series.flatMap((s) => s.values)), ...(refLine != null ? [refLine] : []), ...also].filter(Number.isFinite);
   const col = (i: number) => colors?.[i] ?? t.series[i];
   const lo = Math.min(0, ...all), hi = Math.max(0, ...all);
   let max = hi > 0 || lo >= 0 ? niceMax(hi) : 0, min = lo < 0 ? -niceMax(-lo) : 0;
@@ -168,14 +168,16 @@ export function LineChart(props: PlotProps) {
             <Grid t={t} w={w} h={h} min={min} max={max} />
             {sel != null && <Line x1={x(sel)} x2={x(sel)} y1={0} y2={h} stroke={t.muted} strokeWidth={1} />}
             {series.map((s, k) => {
-              const d = s.values.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-              const last = s.values.length - 1;
-              const at = sel ?? last;
+              // A value that isn't a number is a gap: the line stops there and starts again after it.
+              const d = s.values.map((v, i) => (Number.isFinite(v) ? `${i && Number.isFinite(s.values[i - 1]) ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}` : '')).filter(Boolean).join(' ');
+              let last = s.values.length - 1;
+              while (last > 0 && !Number.isFinite(s.values[last])) last--;
+              const at = sel != null && Number.isFinite(s.values[sel]) ? sel : last;
               return (
                 [
                   series.length === 1 && n > 1 && zero ? <Path key={`${s.name}-a`} d={`${d} L${x(last).toFixed(1)},${y(0).toFixed(1)} L${x(0).toFixed(1)},${y(0).toFixed(1)} Z`} fill={c(k)} fillOpacity={0.12} /> : null,
                   <Path key={`${s.name}-l`} d={d} stroke={c(k)} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" fill="none" />,
-                  <Circle key={`${s.name}-c`} cx={x(at)} cy={y(s.values[at] ?? 0)} r={4} fill={c(k)} stroke={t.card} strokeWidth={2} />,
+                  <Circle key={`${s.name}-c`} cx={x(at)} cy={y(Number.isFinite(s.values[at]) ? s.values[at] : 0)} r={Number.isFinite(s.values[at]) ? 4 : 0} fill={c(k)} stroke={t.card} strokeWidth={2} />,
                 ]
               );
             })}

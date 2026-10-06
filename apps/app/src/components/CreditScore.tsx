@@ -1,28 +1,21 @@
 // Credit score log (VIEW-11): scores you note down from Borrowell (Equifax) or your bank's app
-// (TransUnion), as a trend beside card utilisation. Bureaus only open their APIs to lenders, so
-// there's no automatic feed. On the Credit cards page and as a Home widget.
+// (TransUnion), as a line per bureau beside card utilisation. Bureaus only open their APIs to
+// lenders, so there's no automatic feed. On the Credit cards page; any chart widget can show it too
+// (the "Credit score" source).
 import { addMonths, shortDate, toIsoDate } from '@budget-app/core';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { LineChart } from '@/components/Charts';
 import { DateField } from '@/components/DateField';
 import { Field, Sheet, useChanged } from '@/components/Forms';
 import { Button, Card, Chip } from '@/components/ui';
 import { today } from '@/lib/plan';
 import { thisMonth } from '@/lib/reports';
+import { BUREAUS, loadScores, scoreLines, type Score } from '@/lib/creditScores';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 import { deleteWithUndo, toast } from '@/lib/toast';
 import { loadChart } from '@/lib/widgetData';
-
-export interface Score { id: string; date: string; score: number; bureau: 'Equifax' | 'TransUnion' | 'Other'; note: string | null }
-const BUREAUS: Score['bureau'][] = ['Equifax', 'TransUnion', 'Other'];
-
-async function loadScores(): Promise<{ scores: Score[]; error: string }> {
-  const { data, error } = await supabase.from('credit_scores').select('id, date, score, bureau, note').order('date');
-  if (error) return { scores: [], error: /credit_scores/.test(error.message) ? 'The credit score log needs the newest database update (supabase db push).' : error.message };
-  return { scores: (data ?? []) as Score[], error: '' };
-}
 
 /** The last 12 months of card utilisation, by month (for the table beside the scores). */
 async function loadUtil(): Promise<Map<string, number>> {
@@ -34,20 +27,26 @@ async function loadUtil(): Promise<Map<string, number>> {
   } catch { return new Map(); }
 }
 
-export function CreditScoreCard({ refresh = 0, inWidget }: { refresh?: number; inWidget?: boolean }) {
+export function CreditScoreCard({ refresh = 0 }: { refresh?: number }) {
   const t = useTheme();
   const [scores, setScores] = useState<Score[] | null>(null);
   const [util, setUtil] = useState<Map<string, number>>(new Map());
   const [error, setError] = useState('');
   const [logging, setLogging] = useState(false);
   const [n, setN] = useState(0);
+  const [only, setOnly] = useState<Score['bureau'] | null>(null);
   useEffect(() => { loadScores().then((r) => { setScores(r.scores); setError(r.error); }); loadUtil().then(setUtil); }, [refresh, n]);
   if (scores == null) return null;
   const last = scores[scores.length - 1];
   const prev = [...scores].reverse().find((s) => last && s.bureau === last.bureau && s.id !== last.id);
-  const recent = scores.slice(-12);
-  // One row per month: the last score noted that month and the utilisation for it.
-  const months = [...new Map(scores.map((s) => [s.date.slice(0, 7), s])).values()].slice(-6).reverse();
+  // The last 12 months, a line per bureau (or just the one picked).
+  const axis = Array.from({ length: 12 }, (_, i) => addMonths(thisMonth(), i - 11));
+  const lines = scoreLines(scores, axis, only ? [only] : undefined);
+  const firstCol = Math.max(0, Math.min(...lines.map((l) => l.values.findIndex(Number.isFinite)).filter((i) => i >= 0)));
+  const used = BUREAUS.filter((b) => scores.some((s) => s.bureau === b));
+  // One row per month: each bureau's last score that month, and the utilisation for it.
+  const months = [...new Set(scores.map((s) => s.date.slice(0, 7)))].slice(-6).reverse()
+    .map((m) => ({ m, list: used.map((b) => [...scores].reverse().find((s) => s.bureau === b && s.date.startsWith(m))).filter(Boolean) as Score[] }));
   const body = (
     <View style={{ gap: 10 }}>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
@@ -60,24 +59,33 @@ export function CreditScoreCard({ refresh = 0, inWidget }: { refresh?: number; i
           {prev && <Text style={{ color: last.score >= prev.score ? t.positive : t.danger, fontWeight: '700' }}>{last.score >= prev.score ? '▲' : '▼'} {Math.abs(last.score - prev.score)} since {shortDate(prev.date)}</Text>}
         </View>
       ) : !error && <Text style={{ color: t.muted }}>No scores yet. Note your score from Borrowell or your bank's app once a month to see the trend.</Text>}
-      {recent.length >= 2 && <LineChart t={t} labels={recent.map((s) => shortDate(s.date))} series={[{ name: 'Score', values: recent.map((s) => s.score) }]} height={inWidget ? 120 : 160} format={(v) => String(Math.round(v))} legend={false} />}
-      {months.length > 0 && !inWidget && (
+      {used.length > 1 && (
+        <View style={styles.chips}>
+          <Chip label="All sources" on={!only} onPress={() => setOnly(null)} />
+          {used.map((b) => <Chip key={b} label={b} on={only === b} onPress={() => setOnly(b)} />)}
+        </View>
+      )}
+      {scores.length >= 2 && lines.length > 0 && (
+        <LineChart t={t} labels={axis.slice(firstCol).map((m) => shortDate(m).split(' ')[0])} series={lines.map((l) => ({ ...l, values: l.values.slice(firstCol) }))}
+          height={160} format={(v) => String(Math.round(v))} legend={lines.length > 1} />
+      )}
+      {months.length > 0 && (
         <View style={{ gap: 4 }}>
           <View style={styles.between}><Text style={[styles.th, { color: t.muted }]}>Month</Text><Text style={[styles.th, { color: t.muted }]}>Score</Text><Text style={[styles.th, { color: t.muted }]}>Card use</Text></View>
-          {months.map((s) => (
-            <View key={s.id} style={styles.between}>
-              <Text style={[styles.td, { color: t.text }]}>{shortDate(s.date).split(' ')[0]} {s.date.slice(0, 4)}</Text>
-              <Text style={[styles.td, { color: t.text }]}>{s.score}</Text>
-              <Text style={[styles.td, { color: t.muted }]}>{util.has(s.date.slice(0, 7)) ? `${Math.round(util.get(s.date.slice(0, 7))!)}%` : '–'}</Text>
+          {months.map(({ m, list }) => (
+            <View key={m} style={styles.between}>
+              <Text style={[styles.td, { color: t.text }]}>{shortDate(`${m}-01`).split(' ')[0]} {m.slice(0, 4)}</Text>
+              <Text style={[styles.td, { color: t.text }]}>{list.map((s) => (used.length > 1 ? `${s.score} ${s.bureau[0]}` : String(s.score))).join(' · ')}</Text>
+              <Text style={[styles.td, { color: t.muted }]}>{util.has(m) ? `${Math.round(util.get(m)!)}%` : '–'}</Text>
             </View>
           ))}
         </View>
       )}
-      {!inWidget && <Button title="Log a score" kind="plain" onPress={() => setLogging(true)} />}
+      <Button title="Log a score" kind="plain" onPress={() => setLogging(true)} />
       {logging && <ScoreSheet scores={scores} onClose={() => setLogging(false)} onSaved={() => setN((x) => x + 1)} />}
     </View>
   );
-  return inWidget ? body : <Card style={{ gap: 8 }}><Text style={[styles.h, { color: t.muted }]}>CREDIT SCORE</Text>{body}</Card>;
+  return <Card style={{ gap: 8 }}><Text style={[styles.h, { color: t.muted }]}>CREDIT SCORE</Text>{body}</Card>;
 }
 
 function ScoreSheet({ scores, onClose, onSaved }: { scores: Score[]; onClose: () => void; onSaved: () => void }) {
@@ -109,13 +117,15 @@ function ScoreSheet({ scores, onClose, onSaved }: { scores: Score[]; onClose: ()
       </Field>
       <Field t={t} label="Note (optional)"><TextInput value={note} onChangeText={setNote} placeholder="e.g. after paying off the Visa" placeholderTextColor={t.muted} style={input} /></Field>
       {scores.length > 0 && (
-        <Field t={t} label="Logged">
-          {[...scores].reverse().slice(0, 8).map((s) => (
+        <Field t={t} label={`Logged · ${scores.length}`}>
+          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled contentContainerStyle={{ gap: 8 }}>
+          {[...scores].reverse().map((s) => (
             <View key={s.id} style={styles.between}>
               <Text style={{ color: t.text, fontSize: 13 }}>{shortDate(s.date)} {s.date.slice(0, 4)} · {s.score} · {s.bureau}</Text>
               <Pressable onPress={() => remove(s.id)} hitSlop={8} accessibilityLabel="Delete score"><Text style={{ color: t.danger }}>Delete</Text></Pressable>
             </View>
           ))}
+          </ScrollView>
         </Field>
       )}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}

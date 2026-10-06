@@ -6,7 +6,7 @@
 // the page shows how many recent transactions each rule actually decides instead.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { categoryIcon, formatMoney, guessMerchant, matchRule, merchantFor, normalizeDescription, parseMoney, type CategoryRule } from '@budget-app/core';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useConfirm } from '@/components/Confirm';
@@ -20,12 +20,14 @@ import { usePullRefresh } from '@/lib/pullRefresh';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 import { toast } from '@/lib/toast';
+import { useTxnSheet } from '@/components/TxnSheet';
+import { afterClose } from '@/lib/useBackToClose';
 
 interface CatRule { id: string; match_text: string; category_id: string; account_id: string | null; min_amount: number | null; max_amount: number | null }
 interface NameRule { id: string; match: string; merchant: string; source: 'manual' | 'learned' }
 interface Cat { id: string; name: string; group_name: string; icon: string | null; kind: string }
 interface Acct { id: string; name: string; mask: string | null; type: string | null }
-interface Recent { name: string; merchant: string | null; amount: number; account_id: string }
+interface Recent { id: string; date: string; name: string; merchant: string | null; amount: number; account_id: string }
 type Tab = 'category' | 'merchant';
 const RECENT = 1000; // how many of the latest transactions the "decides" counts look at
 
@@ -52,7 +54,7 @@ export default function Rules() {
       supabase.from('merchant_rules').select('id, match, merchant, source').order('merchant').order('match'),
       supabase.from('categories').select('id, name, group_name, icon, kind').eq('is_hidden', false).order('group_name').order('name'),
       supabase.from('accounts').select('id, name, mask, type').order('name'),
-      supabase.from('transactions').select('name, merchant, amount, account_id').order('date', { ascending: false }).limit(RECENT),
+      supabase.from('transactions').select('id, date, name, merchant, amount, account_id').order('date', { ascending: false }).limit(RECENT),
     ]);
     const err = a.error ?? b.error ?? c.error ?? d.error ?? e.error;
     setError(err?.message ?? '');
@@ -191,11 +193,23 @@ function Line({ t, label, value, note, onPress }: { t: Theme; label: string; val
   );
 }
 
-function Matches({ t, list }: { t: Theme; list: Recent[] }) {
+/** What a rule matches among the recent transactions, with ways to see them all: in a pop-up here, or as a search on the Transactions tab. */
+function Matches({ t, list, text, onClose }: { t: Theme; list: Recent[]; text: string; onClose: () => void }) {
+  const [showTxns, txnSheet] = useTxnSheet();
+  const dates = list.map((x) => x.date).sort();
+  const popup = () => showTxns({ title: `Matching “${text.trim()}”`, from: dates[0], to: dates[dates.length - 1], ids: list.map((x) => x.id) });
+  const filtered = () => { onClose(); afterClose(() => router.navigate({ pathname: '/transactions', params: { mode: 'all', q: text.trim() } } as any)); };
   return (
     <View style={{ gap: 4 }}>
       <Text style={{ color: t.muted, fontSize: 12 }}>{list.length ? `Matches ${list.length} of your recent transactions, for example:` : 'Matches none of your recent transactions.'}</Text>
       {[...new Set(list.map((x) => x.name))].slice(0, 4).map((n) => <Text key={n} style={{ color: t.text, fontSize: 12 }} numberOfLines={1}>{n}</Text>)}
+      {list.length > 0 && (
+        <View style={{ flexDirection: 'row', gap: 16, marginTop: 4 }}>
+          <Pressable onPress={popup} hitSlop={6}><Text style={{ color: t.accent, fontSize: 13 }}>See them here</Text></Pressable>
+          <Pressable onPress={filtered} hitSlop={6}><Text style={{ color: t.accent, fontSize: 13 }}>Open in Transactions</Text></Pressable>
+        </View>
+      )}
+      {txnSheet}
     </View>
   );
 }
@@ -260,7 +274,7 @@ function CatRuleEditor({ t, initial, cats, accounts, recent, acctLabel, catLabel
           <TextInput value={max} onChangeText={setMax} style={[input, { flex: 1 }]} keyboardType="decimal-pad" placeholder="at most" placeholderTextColor={t.muted} />
         </View>
       </Field>
-      <Matches t={t} list={list} />
+      <Matches t={t} list={list} text={text} onClose={onClose} />
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <Button title={initial.id ? 'Save' : 'Add rule'} onPress={save} busy={busy} style={{ marginTop: 8 }} />
       {!!initial.id && <Button title="Delete rule" kind="danger" onPress={remove} />}
@@ -309,7 +323,7 @@ function NameRuleEditor({ t, initial, recent, onClose, onSaved }: { t: Theme; in
         <TextInput value={merchant} onChangeText={setMerchant} style={input} placeholder="e.g. Corner Market" placeholderTextColor={t.muted} />
       </Field>
       {initial.source === 'learned' && !!initial.id && <Text style={{ color: t.muted, fontSize: 12 }}>This rule was learned from names you used. Saving it makes it one of your own.</Text>}
-      <Matches t={t} list={list} />
+      <Matches t={t} list={list} text={match} onClose={onClose} />
       <Text style={{ color: t.muted, fontSize: 12 }}>Applies to new transactions as they arrive. To rename ones you already have, use the Merchants page.</Text>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <Button title={initial.id ? 'Save' : 'Add rule'} onPress={save} busy={busy} style={{ marginTop: 8 }} />

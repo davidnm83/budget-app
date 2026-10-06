@@ -105,8 +105,9 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
   const [matchText, setMatchText] = useState(initial.match_text ?? '');
   const [cardId, setCardId] = useState<string | null>((initial as any).card_account_id ?? null);
   const [cardRule, setCardRule] = useState<'statement' | 'minimum' | 'custom'>((initial as any).card_rule ?? 'statement');
+  const [lead, setLead] = useState((initial as any).lead_days ? String((initial as any).lead_days) : '');
   const [pickCat, setPickCat] = useState(false);
-  const changed = useChanged([kind, name, amount, estimated, frequency, start, end, accountId, categoryId, matchText, cardId, cardRule]);
+  const changed = useChanged([kind, name, amount, estimated, frequency, start, end, accountId, categoryId, matchText, cardId, cardRule, lead]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
@@ -132,6 +133,7 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
       name: name.trim(), kind, amount: round2(kind === 'bill' ? -Math.abs(a) : Math.abs(a)), estimated, frequency: frequency as Frequency,
       start_date: s, end_date: e, account_id: accountId, category_id: categoryId, match_text: matchText.trim() || null, active: true,
       card_account_id: card ? cardId : null, card_rule: card ? cardRule : null,
+      ...(card || (initial as any).lead_days ? { lead_days: card ? Math.max(0, Math.min(28, Math.round(Number(lead) || 0))) || null : null } : {}),
     };
     const { error } = initial.id ? await supabase.from('recurring').update(row).eq('id', initial.id) : await supabase.from('recurring').insert(row);
     setBusy(false);
@@ -173,6 +175,11 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
               ))}
             </View>
           )}
+        </Field>
+      )}
+      {kind === 'bill' && cardId && (
+        <Field t={t} label="Pay it early (days before the due date)" hint="The planner shows the payment this many days before each due date, so it lands in time. Empty or 0: on the due date.">
+          <TextInput value={lead} onChangeText={(v) => setLead(v.replace(/\D/g, '').slice(0, 2))} keyboardType="number-pad" placeholder="0" placeholderTextColor={t.muted} style={[input, { width: 80 }]} />
         </Field>
       )}
       {!(kind === 'bill' && cardId && cardRule !== 'custom') && <Field t={t} label="Amount">

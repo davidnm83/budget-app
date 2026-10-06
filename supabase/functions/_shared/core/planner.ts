@@ -52,7 +52,7 @@ export function expandPlan(recurring: Recurring[], entries: PlanEntry[], from: I
     for (const d of occurrences(r, addDays(from, -31), addDays(to, 31))) {
       const o = overrides.get(`${r.id}|${d}`);
       if (o?.skipped) continue;
-      const date = o?.date ?? d;
+      const date = o?.date ?? (r.lead_days ? addDays(d, -r.lead_days) : d);
       if (date < from || date > to) continue;
       out.push({
         key: `r:${r.id}:${d}`, date, description: o?.description ?? r.name, amount: o ? Number(o.amount) : r.amount,

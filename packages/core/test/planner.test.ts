@@ -58,6 +58,10 @@ describe('weekly planner', () => {
       ['2026-09-16', 'Move to savings', 100, 'sav'], ['2026-09-18', 'Paycheque', 600, 'chq'],
     ]);
   });
+  it('plans a bill some days before its due date when asked', () => {
+    const early = expandPlan([r({ start_date: '2026-09-15', frequency: 'monthly', name: 'Visa', amount: -200, lead_days: 3 })], [], '2026-09-01', '2026-10-31');
+    expect(early.map((p) => [p.date, p.occurrenceDate])).toEqual([['2026-09-12', '2026-09-15'], ['2026-10-12', '2026-10-15']]);
+  });
   it('builds the week: actual replaces planned, unplanned counts, warning names the cause', () => {
     const w = buildWeek({
       weekStart: '2026-09-14', today: '2026-09-17',

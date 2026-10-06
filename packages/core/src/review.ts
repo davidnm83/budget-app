@@ -64,7 +64,7 @@ export function radarSubscriptions(charges: Charge[], today: IsoDate): RadarCard
     if (steady && daysBetween(last.date, today) <= 45) {
       const was = earlier[earlier.length - 1], now = amt(last);
       if (now - was >= Math.max(0.5, was * 0.02)) {
-        out.push({ id: `sub-up:${key}:${now}`, check: 'subs', severity: 'heads', stake: (now - was) * (monthly ? 12 : 1), href: '/transactions',
+        out.push({ id: `sub-up:${key}:${now}`, check: 'subs', severity: 'heads', stake: (now - was) * (monthly ? 12 : 1), href: `/transaction/${last.id}`,
           title: `${name} went up to ${money(now)}`,
           text: `It was ${money(was)} ${monthly ? 'a month' : 'a year'}; ${money(now - was)} more on ${shortDate(last.date)}, about ${money((now - was) * (monthly ? 12 : 1))} a year.` });
       }
@@ -76,7 +76,7 @@ export function radarSubscriptions(charges: Charge[], today: IsoDate): RadarCard
         const a = rows[i - 1], b = rows[i];
         if (daysBetween(b.date, today) > 40 || daysBetween(a.date, b.date) > 7) continue;
         if (Math.abs(amt(a) - usual) <= 0.02 && Math.abs(amt(b) - usual) <= 0.02) {
-          out.push({ id: `sub-dup:${key}:${b.date}`, check: 'subs', severity: 'act', stake: usual, href: '/transactions',
+          out.push({ id: `sub-dup:${key}:${b.date}`, check: 'subs', severity: 'act', stake: usual, href: `/transaction/${b.id}`,
             title: `${name} charged twice`,
             text: `${money(usual)} on ${shortDate(a.date)} and again on ${shortDate(b.date)}. If that’s a mistake, ask them for a refund.` });
         }
@@ -84,7 +84,7 @@ export function radarSubscriptions(charges: Charge[], today: IsoDate): RadarCard
     }
     // New: first seen in the last ~70 days, with no earlier charge from it in the past year.
     if (monthly && daysBetween(rows[0].date, today) <= 70 && spaced.length >= 2) {
-      out.push({ id: `sub-new:${key}`, check: 'subs', severity: 'info', stake: amt(last) * 12, href: '/transactions',
+      out.push({ id: `sub-new:${key}`, check: 'subs', severity: 'info', stake: amt(last) * 12, href: `/transaction/${last.id}`,
         title: `New subscription: ${name}`,
         text: `${money(amt(last))} a month since ${shortDate(rows[0].date)}, about ${money(amt(last) * 12)} a year.` });
     }
