@@ -255,7 +255,7 @@ export function Panels() {
   }
   if (panel !== 'more' && panel !== 'search') return null;
   return (
-    <SheetFrame onClose={close} title={wide ? 'Search' : 'More'}>
+    <SheetFrame onClose={close} title={wide ? 'Search' : 'More'} top={wide}>
       <SearchBox pages={pages} onGo={go} autoFocus={wide}
         empty={wide ? <Text style={{ color: t.muted, padding: 16 }}>Type to search pages, categories, merchants and transactions.</Text>
           : <View style={{ flexShrink: 1, paddingBottom: insets.bottom + 8 }}><MenuBody active go={go} fit /></View>} />
@@ -263,8 +263,8 @@ export function Panels() {
   );
 }
 
-function SheetFrame({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return <Sheet title={title} onClose={onClose} scroll={false} fit><View style={{ flexShrink: 1, paddingTop: 10 }}>{children}</View></Sheet>;
+function SheetFrame({ title, onClose, children, top }: { title: string; onClose: () => void; children: React.ReactNode; top?: boolean }) {
+  return <Sheet title={title} onClose={onClose} scroll={false} fit top={top}><View style={{ flexShrink: 1, paddingTop: 10 }}>{children}</View></Sheet>;
 }
 
 const styles = StyleSheet.create({

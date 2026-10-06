@@ -155,7 +155,7 @@ function WeekCard({ t, data, now }: { t: Theme; data: PlannerData; now: string }
   const w = v.warnings[0];
   const name = (id: string) => data.accounts.find((a) => a.id === id)?.name ?? '';
   return (
-    <CardShell t={t} title="This week" link="Planner" onPress={() => router.navigate('/planner')}>
+    <CardShell t={t} title="This week" link="Planner" onPress={() => router.navigate('/planner')} head={<>
       <View style={styles.tiles}>
         <Mini t={t} label="Cash now" value={money0(cash)} sub={plan.length > 1 ? `${plan.length} accounts` : plan[0].name} />
         <Mini t={t} label={`By ${shortDate(addDays(mondayOf(now), 6))}`} value={money0(v.endBalance)} sub="projected" color={w ? t.danger : undefined} />
@@ -166,6 +166,7 @@ function WeekCard({ t, data, now }: { t: Theme; data: PlannerData; now: string }
           <Text style={{ color: t.danger, fontSize: 13, flex: 1 }}>{name(w.accountId)} drops to {formatMoney(w.balance)} on {shortDate(w.date)} after “{w.cause}”.</Text>
         </View>
       )}
+    </>}>
       {next.length ? next.map((r) => (
         <View key={r.key} style={styles.row}>
           <Text style={{ color: t.muted, width: 48, fontSize: 13 }}>{r.date === now ? 'Today' : shortDate(r.date)}</Text>
@@ -188,7 +189,7 @@ function BudgetCard({ t, b }: { t: Theme; b: HomeData['budget'] }) {
   const expected = b.budgeted * b.pace;
   const diff = b.spent - expected;
   return (
-    <CardShell t={t} title={`Budget · ${monthName(thisMonth(), false)}`} link="Budget" onPress={() => router.navigate('/budget')}>
+    <CardShell t={t} title={`Budget · ${monthName(thisMonth(), false)}`} link="Budget" onPress={() => router.navigate('/budget')} head={<>
       <View style={styles.between}>
         <Text style={{ color: t.text }}><Text style={{ fontSize: 20, fontWeight: '700' }}>{money0(b.spent)}</Text><Text style={{ color: t.muted }}> of {money0(b.budgeted)}</Text></Text>
         <Text style={{ color: diff > 0 ? t.danger : t.positive, fontSize: 13, fontWeight: '600' }}>
@@ -200,6 +201,7 @@ function BudgetCard({ t, b }: { t: Theme; b: HomeData['budget'] }) {
         <View style={{ position: 'absolute', left: `${Math.min(1, b.pace) * 100}%`, top: -3, bottom: -3, width: 2, backgroundColor: t.text, opacity: 0.5 }} />
       </View>
       <Text style={{ color: t.muted, fontSize: 12 }}>{Math.round(b.pace * 100)}% of the month gone · the tick shows where spending would be at an even pace</Text>
+    </>}>
       {b.ahead.length > 0 && (
         <View style={{ gap: 4 }}>
           {b.ahead.map((l) => (

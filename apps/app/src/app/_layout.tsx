@@ -86,6 +86,8 @@ function useNoAutofill() {
       // Closing a pop-up with Esc hands focus back to the row or button behind it, and the browser then drew its
       // blue ring round it. Rows and buttons already show selection and hover in their own way; fields keep theirs.
       + '[tabindex="0"]:focus,[role="button"]:focus,[role="tab"]:focus,[role="link"]:focus{outline:none}'
+      // Touch screens: a long press on a menu item, row or button doesn't select its text or flash a highlight.
+      + '*{-webkit-tap-highlight-color:transparent}@media (hover:none){[tabindex="0"],[role="button"],[role="tab"],[role="link"],[role="menuitem"]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}}'
       + '@media (hover:hover){[data-emoji]:hover{background-color:rgba(128,128,128,.22)}}'
       + '@media (hover:hover){*{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,.35) transparent}}'
       + '@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}input[type=search]{-webkit-appearance:none;appearance:none}input[type=search]::-webkit-search-cancel-button,input[type=search]::-webkit-search-decoration{-webkit-appearance:none;display:none}';

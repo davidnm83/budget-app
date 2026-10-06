@@ -107,15 +107,22 @@ const HOVER: any = { transform: [{ translateY: -2 }], boxShadow: '0 6px 18px rgb
  */
 export const FitHeight = createContext<WidgetCfg['h'] | undefined>(undefined);
 /** A fixed-height body that scrolls, for FitHeight. */
-function Scrolled({ h, children }: { h?: WidgetCfg['h']; children: ReactNode }) {
-  if (!h) return <>{children}</>;
-  return <ScrollView style={{ height: BODY[h], flexGrow: 0 }} contentContainerStyle={{ gap: 10 }} nestedScrollEnabled showsVerticalScrollIndicator>{children}</ScrollView>;
+/** `head` (figures, a warning) stays put; only what's under it scrolls. */
+function Scrolled({ h, head, children }: { h?: WidgetCfg['h']; head?: ReactNode; children: ReactNode }) {
+  if (!h) return <>{head}{children}</>;
+  if (!head) return <ScrollView style={{ height: BODY[h], flexGrow: 0 }} contentContainerStyle={{ gap: 10 }} nestedScrollEnabled showsVerticalScrollIndicator>{children}</ScrollView>;
+  return (
+    <View style={{ height: BODY[h], gap: 10 }}>
+      {head}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ gap: 10 }} nestedScrollEnabled showsVerticalScrollIndicator>{children}</ScrollView>
+    </View>
+  );
 }
 
 /** A title you gave a widget in its settings; the card shows it in place of its own. */
 export const TitleOverride = createContext<string | undefined>(undefined);
 
-export function CardShell({ t, title: own, link, onPress, children, after }: { t: Theme; title: string; link?: string; onPress?: () => void; children: ReactNode; after?: ReactNode }) {
+export function CardShell({ t, title: own, link, onPress, children, after, head }: { t: Theme; title: string; link?: string; onPress?: () => void; children: ReactNode; after?: ReactNode; head?: ReactNode }) {
   const title = useContext(TitleOverride) ?? own;
   const h = useContext(FitHeight);
   return (
@@ -125,7 +132,7 @@ export function CardShell({ t, title: own, link, onPress, children, after }: { t
         <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{title.toUpperCase()}</Text>
         {link && <Text style={{ color: t.accent, fontSize: 12 }}>{link} ›</Text>}
       </View>
-      <Scrolled h={h}>{children}</Scrolled>
+      <Scrolled h={h} head={head}>{children}</Scrolled>
     </Pressable>
     {after}
     </>

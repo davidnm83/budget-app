@@ -170,7 +170,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     const err = await deleteWithUndo('transactions', txn.id, 'Transaction deleted', { table: 'transaction_splits', key: 'transaction_id' });
     if (err) setError(err); else onDone();
   };
-  const save = async () => {
+  // Saving marks it reviewed; "Mark as not reviewed" (on one already reviewed) saves and puts it back in the list to review.
+  const save = async (markReviewed = true) => {
     setBusy(true);
     setError('');
     const cat = cats.find((c) => c.id === categoryId);
@@ -206,8 +207,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
         : { category_id: categoryId, category_source: changedCategory || hadSplit ? 'manual' : txn.category_source, is_transfer: cat?.kind === 'transfer' }),
       notes: notes.trim() || null,
       tags: [...new Set(tags.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean))],
-      reviewed: true,
-      reviewed_at: new Date().toISOString(),
+      reviewed: markReviewed,
+      reviewed_at: markReviewed ? new Date().toISOString() : null,
     }).eq('id', txn.id);
     if (!error && makeRule && categoryId && !split) {
       await supabase.from('category_rules').insert({ match_text: ruleText, category_id: categoryId });
@@ -358,7 +359,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       <SuggestInput multi style={input} value={tags} onChange={setTags} options={known.tags} placeholder="e.g. trip, reimbursable" />
 
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-      <Button title="Save and mark reviewed" onPress={save} busy={busy || !ready} style={{ marginTop: 16 }} />
+      <Button title={txn.reviewed ? 'Save' : 'Save and mark reviewed'} onPress={() => save()} busy={busy || !ready} style={{ marginTop: 16 }} />
+      {txn.reviewed && <Button title="Mark as not reviewed" kind="plain" onPress={() => save(false)} disabled={busy || !ready} />}
       {(txn as any)?.accounts?.type === 'credit' && txn!.amount < 0 && !String((txn as any).import_id ?? '').startsWith('plan:') && (
         <Button title="Put on a payment plan" kind="plain" disabled={busy || !ready} onPress={startPlan} />
       )}

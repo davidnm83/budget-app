@@ -16,6 +16,9 @@ export async function clearThisDevice() {
   if (typeof location !== 'undefined') location.reload();
 }
 
+// Above everything, pop-ups included (they sit in their own layer on the page), so nothing shows around it.
+const ON_TOP = { position: 'fixed', zIndex: 2147483000 } as any;
+
 export function LockScreen() {
   const t = useTheme();
   const lock = useLock();
@@ -33,7 +36,8 @@ export function LockScreen() {
   };
   // Offer the fingerprint as soon as the screen appears; the button is there if the browser wants a tap first.
   useEffect(() => { if (lock.locked && finger && !asked.current) { asked.current = true; byFinger(); } if (!lock.locked) { asked.current = false; setPin(''); setError(''); setForgot(false); } }, [lock.locked, finger]);
-  if (!lock.locked) return null;
+  // In the background (or just back from it): a plain cover over everything until it's decided whether to lock.
+  if (!lock.locked) return lock.covered ? <View style={[StyleSheet.absoluteFill, ON_TOP, { backgroundColor: t.bg }]} /> : null;
 
   const byPin = async () => {
     if (!pin) return;
@@ -42,7 +46,7 @@ export function LockScreen() {
   };
   const wait = pinWait();
   return (
-    <View style={[StyleSheet.absoluteFill, styles.wrap, { backgroundColor: t.bg }]} accessibilityViewIsModal aria-modal>
+    <View style={[StyleSheet.absoluteFill, ON_TOP, styles.wrap, { backgroundColor: t.bg }]} accessibilityViewIsModal aria-modal>
       <View style={styles.box}>
         <Ionicons name="lock-closed" size={34} color={t.accent} />
         <Text style={{ color: t.text, fontSize: 22, fontWeight: '800' }}>Budget is locked</Text>

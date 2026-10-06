@@ -28,7 +28,7 @@ export function useUnsaved(dirty: boolean) {
 }
 
 /** `scroll={false}` hands the body to the caller (a list of its own); add `fit` to size the sheet to that body, not the screen. */
-export function Sheet({ title, onClose, children, footer, scroll = true, fit, dirty }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; scroll?: boolean; fit?: boolean; dirty?: boolean }) {
+export function Sheet({ title, onClose, children, footer, scroll = true, fit, dirty, top }: { title: string; onClose: () => void; children: React.ReactNode; footer?: React.ReactNode; scroll?: boolean; fit?: boolean; dirty?: boolean; top?: boolean }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [asking, setAsking] = useState(false);
@@ -45,7 +45,7 @@ export function Sheet({ title, onClose, children, footer, scroll = true, fit, di
   useBackToClose(true, tryClose);
   return (
     <UnsavedContext.Provider value={report}>
-    <ModalFrame onClose={tryClose} fit={scroll || fit}>
+    <ModalFrame onClose={tryClose} fit={scroll || fit} top={top}>
       <>
         <View style={[styles.head, { borderColor: t.line }]}>
           <Text style={{ color: t.text, fontSize: 17, fontWeight: '700', flex: 1 }}>{title}</Text>

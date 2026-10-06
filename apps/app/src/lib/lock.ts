@@ -40,12 +40,14 @@ let K: CryptoKey | null = null;
 let waiting: (() => void)[] = [];
 
 // ---- state for the screens -----------------------------------------------------------------
-export interface LockState { enabled: boolean; locked: boolean; mode: LockMode | null }
-const snap = (): LockState => ({ enabled: !!cfg, locked: !!cfg && !K, mode: cfg?.mode ?? null });
+/** `covered`: the app is in the background with the lock on, so it's hidden (app switcher, the moment it comes back). */
+export interface LockState { enabled: boolean; locked: boolean; mode: LockMode | null; covered: boolean }
+let covered = false;
+const snap = (): LockState => ({ enabled: !!cfg, locked: !!cfg && !K, mode: cfg?.mode ?? null, covered: !!cfg && covered });
 let state = snap();
 const subs = new Set<() => void>();
 const emit = () => { state = snap(); subs.forEach((f) => f()); };
-const OFF: LockState = { enabled: false, locked: false, mode: null };
+const OFF: LockState = { enabled: false, locked: false, mode: null, covered: false };
 export function useLock(): LockState { return useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => state, () => OFF); }
 export const lockEnabled = () => !!cfg;
 export const isLocked = () => !!cfg && !K;
@@ -204,10 +206,13 @@ export async function unprotectStored(k: string) { const v = localStorage.getIte
 let hiddenAt = 0;
 export function installAutoLock(): () => void {
   if (!can || typeof document === 'undefined') return () => {};
+  // Covered the moment it's hidden, so neither the app switcher nor the return shows it; locked on the way
+  // back once it has been away long enough (the cover comes off only after that's decided).
   const check = () => {
-    if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+    if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); if (cfg && !covered) { covered = true; emit(); } return; }
     if (hiddenAt && Date.now() - hiddenAt >= LOCK_AFTER_MIN * 60000) lockNow();
     hiddenAt = 0;
+    if (covered) { covered = false; emit(); }
   };
   document.addEventListener('visibilitychange', check);
   return () => document.removeEventListener('visibilitychange', check);

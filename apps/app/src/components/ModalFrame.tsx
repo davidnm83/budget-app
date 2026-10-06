@@ -8,9 +8,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWide } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
 
-export function ModalFrame({ visible = true, onClose, children, fit, width = 560 }: {
+export function ModalFrame({ visible = true, onClose, children, fit, width = 560, top }: {
   /** May return false to stay open (unsaved changes: the form asks first). */
   visible?: boolean; onClose: () => void | boolean; children: ReactNode; fit?: boolean; width?: number;
+  /** Wide screens: near the top, centred across (search), so it doesn't jump about as results come and go. */
+  top?: boolean;
 }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -24,9 +26,9 @@ export function ModalFrame({ visible = true, onClose, children, fit, width = 560
   }
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <Pressable style={styles.scrim} onPress={onClose}>
+      <Pressable style={[styles.scrim, top && { justifyContent: 'flex-start', paddingTop: 64 }]} onPress={onClose}>
         <View ref={dimW} style={[StyleSheet.absoluteFill, styles.dim, FADE]} pointerEvents="none" />
-        <Pressable ref={panel} onPress={() => {}} style={[styles.panel, POP, { backgroundColor: t.bg, borderColor: t.line, maxWidth: width }, fit ? { maxHeight: '90%' } : { height: '90%' }]}>
+        <Pressable ref={panel} onPress={() => {}} style={[styles.panel, POP, { backgroundColor: t.bg, borderColor: t.line, maxWidth: width }, fit ? { maxHeight: top ? '80%' : '90%' } : { height: '90%' }]}>
           {children}
         </Pressable>
       </Pressable>

@@ -71,7 +71,7 @@ export function LockSettings() {
         )}
       </Card>
       {open && (
-        <Sheet title="Turn on the app lock" onClose={() => { if (!busy) setOpen(false); }} fit>
+        <Sheet title="Turn on the app lock" onClose={() => { if (!busy) setOpen(false); }} fit dirty={!busy && (pin.length > 0 || again.length > 0)}>
           <Text style={{ color: t.muted }}>Choose a PIN of 6 to 12 digits. {finger ? 'Next, your device asks for your fingerprint so it can unlock the app; the PIN is the fallback.' : 'This device has no fingerprint check the browser can use, so the PIN is how you unlock.'}</Text>
           <Field t={t} label="PIN"><TextInput value={pin} onChangeText={digits(setPin)} secureTextEntry keyboardType="number-pad" inputMode="numeric" autoComplete="off" accessibilityLabel="New PIN" style={input} /></Field>
           <Field t={t} label="PIN again"><TextInput value={again} onChangeText={digits(setAgain)} secureTextEntry keyboardType="number-pad" inputMode="numeric" autoComplete="off" accessibilityLabel="New PIN again" onSubmitEditing={turnOn} style={input} /></Field>
