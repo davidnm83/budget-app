@@ -14,6 +14,11 @@ import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, V
 import { BalanceChart } from '@/components/AccountSheet';
 import { compact, MonthGrid, type DayCell } from '@/components/MonthGrid';
 import { loadOwed } from '@/lib/iou';
+import { PlansCard } from '@/components/PaymentPlans';
+import { TransfersCard } from '@/components/BalanceTransfers';
+import { CreditScoreCard } from '@/components/CreditScore';
+import { loadPlans } from '@/lib/paymentPlans';
+import { loadTransfers } from '@/lib/balanceTransfers';
 import { Skeleton } from '@/components/Columns';
 import { Field, Sheet, useChanged } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
@@ -73,6 +78,9 @@ const LEGACY: Record<string, WidgetCfg> = {
   creditscore: { source: 'creditscore', view: 'line', months: 12, title: 'Credit score' },
   tags: { source: 'tags', view: 'list', months: 24, title: 'Tag totals' },
   calendar: { source: 'bills', view: 'calendar', title: 'Bills calendar', h: 'l' },
+  networth: { source: 'networth', view: 'tiles', months: 1, title: 'Net worth' },
+  cash: { source: 'cash', view: 'tiles', title: 'Cash position' },
+  runway: { source: 'cash', view: 'tiles', title: 'Cash runway' },
 };
 export function parseEntry(e: string): [string, WidgetCfg] {
   const i = e.indexOf('::');
@@ -89,13 +97,13 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'review', title: 'To review', about: 'New transactions waiting to be checked', home: true, budget: false, fits: true },
   { key: 'week', title: 'This week', about: 'Cash now, projected end of week, what’s next', home: true, budget: false, fits: true },
   { key: 'budget', title: 'Budget pace', about: 'This month’s spending against an even pace', home: true, budget: false, fits: true },
-  { key: 'networth', title: 'Net worth', about: 'Assets minus debts, and the change this month', home: true, budget: false, fits: true },
-  { key: 'cash', title: 'Cash position', about: 'Cash, card debt, and what’s left after paying the cards', home: true, budget: true, fits: true },
-  { key: 'runway', title: 'Cash runway', about: 'How many days your cash lasts at your usual daily spending', home: true, budget: true, fits: true },
   { key: 'watch', title: 'Spending watch', about: 'Your watch-list categories against their average', home: true, budget: true, sizable: true },
   { key: 'text', title: 'Text', about: 'A heading and a note of your own: what a page is for, a reminder, a goal', home: true, budget: true, config: 'text', fits: true },
   { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or an account, for the accounts and categories you choose', home: true, budget: true, config: 'chart', sizable: true },
   { key: 'owed', title: 'Money owed', about: 'What each person owes you, or you owe them, from transactions marked with their name', home: true, budget: true, fits: true },
+  { key: 'plans', title: 'Payment plans', about: 'Purchases paid off in monthly instalments on a card, with their progress', home: true, budget: true },
+  { key: 'transfers', title: 'Balance transfers', about: 'Money moved between cards at a promo rate, and what to pay to clear it in time', home: true, budget: true },
+  { key: 'scorelog', title: 'Credit score log', about: 'Log a score and see the latest from each bureau (a Credit score chart shows the trend)', home: true, budget: true },
   { key: 'goals', title: 'Goals', about: 'Your goals with their progress and whether they’re on pace', home: true, budget: true, fits: true },
 ];
 export const DEFAULT_HOME = ['radar', 'review', 'week', 'budget', 'networth'];
@@ -170,8 +178,9 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
     case 'goals': return <GoalsMini t={t} refresh={refresh} />;
     case 'owed': return <OwedCard t={t} refresh={refresh} />;
     case 'radar': return <Radar t={t} refresh={refresh} settings={cfg.radar} />;
-    case 'cash': return <CashPosition t={t} refresh={refresh} />;
-    case 'runway': return <Runway t={t} refresh={refresh} />;
+    case 'plans': return <PlansWidget t={t} refresh={refresh} />;
+    case 'transfers': return <TransfersWidget t={t} refresh={refresh} />;
+    case 'scorelog': return <CreditScoreCard refresh={refresh} />;
     case 'watch': return <WatchMini t={t} refresh={refresh} h={cfg.h} />;
     default: return null;
   }
@@ -222,6 +231,15 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
   const tone = data.outline ? (data.outline.good ? t.accent : t.series2) : undefined;
   const legend = !data.stacked || data.series.length <= 4;
   const period = <Text style={{ color: t.muted, fontSize: 12, lineHeight: 16 }} numberOfLines={1}>{data.period}</Text>;
+  // Figures only, with no size chosen: the card is as tall as the figures (like the widgets these replaced).
+  if (view === 'tiles' && !cfg.h) {
+    return (
+      <CardShell t={t} after={txnSheet} title={title}>
+        {data.empty ? <Text style={{ color: t.muted }}>{data.empty}</Text> : <View style={styles.tiles}>{data.tiles.map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}
+        {source !== 'cash' && period}
+      </CardShell>
+    );
+  }
   return (
     <CardShell t={t} after={txnSheet} title={title}>
       <Sized h={cfg.h}>
@@ -387,42 +405,19 @@ function Radar({ t, refresh, settings }: { t: Theme; refresh: number; settings?:
   );
 }
 
-function CashPosition({ t, refresh }: { t: Theme; refresh: number }) {
-  const { data } = useLoad(loadAccounts, [refresh]);
-  if (!data) return <CardShell t={t} title="Cash position"><Skeleton color={t.track} /></CardShell>;
-  const cash = data.filter(isCash).reduce((s, a) => s + signedBalance(a), 0);
-  const cards = data.filter((a) => a.type === 'credit' && !a.is_hidden).reduce((s, a) => s + owed(a), 0);
-  const left = cash - cards;
-  return (
-    <CardShell t={t} title="Cash position" link="Accounts" onPress={() => router.navigate('/accounts')}>
-      <View style={styles.tiles}>
-        <Mini t={t} label="Cash" value={money0(cash)} sub="checking + savings" />
-        <Mini t={t} label="Card debt" value={money0(cards)} />
-        <Mini t={t} label="After cards" value={`${left < 0 ? '−' : ''}${money0(Math.abs(left))}`} color={left < 0 ? t.danger : t.accent} />
-      </View>
-    </CardShell>
-  );
+/** Card payment plans, as on the Credit cards page. */
+function PlansWidget({ t, refresh }: { t: Theme; refresh: number }) {
+  const [again, setAgain] = useState(0);
+  const { data } = useLoad(() => Promise.all([loadPlans(), loadAccounts()]), [refresh, again]);
+  if (!data) return <CardShell t={t} title="Payment plans"><Skeleton color={t.track} /></CardShell>;
+  return <PlansCard t={t} plans={data[0]} accounts={data[1]} onChanged={() => setAgain((n) => n + 1)} />;
 }
-
-function Runway({ t, refresh }: { t: Theme; refresh: number }) {
-  const { data } = useLoad(async () => {
-    const [accts, months] = await Promise.all([loadAccounts(), loadMonthSummaries(addMonths(thisMonth(), -3), addDays(thisMonth(), -1))]);
-    const days = months.reduce((s, m) => s + Number(monthEnd(m.month).slice(8, 10)), 0);
-    const spend = months.reduce((s, m) => s + Math.abs(m.spending), 0);
-    return { cash: accts.filter(isCash).reduce((s, a) => s + signedBalance(a), 0), daily: days ? spend / days : 0 };
-  }, [refresh]);
-  if (!data) return <CardShell t={t} title="Cash runway"><Skeleton color={t.track} /></CardShell>;
-  const runway = data.daily > 0 ? data.cash / data.daily : null;
-  const color = runway == null ? t.muted : runway < 14 ? t.danger : runway < 30 ? t.series2 : t.accent;
-  return (
-    <CardShell t={t} title="Cash runway">
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-        <Text style={{ color, fontSize: 26, fontWeight: '700' }}>{runway == null ? '–' : runway < 1 ? '< 1' : Math.floor(runway)}</Text>
-        <Text style={{ color: t.muted }}>days of cash at {money0(data.daily)}/day</Text>
-      </View>
-      <Text style={{ color: t.muted, fontSize: 12 }}>{money0(data.cash)} in checking and savings ÷ your average daily spending over the last 3 months. Income isn’t counted.</Text>
-    </CardShell>
-  );
+/** Balance transfers between cards, as on the Credit cards page. */
+function TransfersWidget({ t, refresh }: { t: Theme; refresh: number }) {
+  const [again, setAgain] = useState(0);
+  const { data } = useLoad(() => Promise.all([loadTransfers(), loadAccounts()]), [refresh, again]);
+  if (!data) return <CardShell t={t} title="Balance transfers"><Skeleton color={t.track} /></CardShell>;
+  return <TransfersCard t={t} transfers={data[0]} accounts={data[1]} onChanged={() => setAgain((n) => n + 1)} />;
 }
 
 /** Your own words on a page. Lines starting with "- " become a list; a blank line starts a new paragraph. */
@@ -480,6 +475,8 @@ export function entryLabel(e: string): string {
 /** Ready-made charts: each fills in the settings below, which can then be changed. */
 export const PRESETS: { name: string; cfg: WidgetCfg }[] = [
   { name: 'Spending', cfg: { source: 'spending', view: 'bars', months: 6 } },
+  { name: 'Net worth (numbers)', cfg: { source: 'networth', view: 'tiles', months: 1, title: 'Net worth' } },
+  { name: 'Cash position and runway', cfg: { source: 'cash', view: 'tiles', title: 'Cash' } },
   { name: 'Spending by category', cfg: { source: 'spending', view: 'pie', months: 1 } },
   { name: 'Spending by group', cfg: { source: 'spending', by: 'group', view: 'list', months: 1 } },
   { name: 'Spending by day', cfg: { source: 'spending', view: 'calendar', months: 1, h: 'l' } },

@@ -9,7 +9,7 @@ import { loadAccounts, loadMonth, loadSnapshots, today } from './plan';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from './reports';
 import { accountHistory, followsSnapshots, signedBalance, type Account } from './types';
 
-export type Source = 'spending' | 'income' | 'cashflow' | 'savings' | 'networth' | 'carddebt' | 'utilization' | 'balance' | 'creditscore' | 'tags' | 'bills';
+export type Source = 'spending' | 'income' | 'cashflow' | 'savings' | 'networth' | 'carddebt' | 'utilization' | 'balance' | 'creditscore' | 'tags' | 'bills' | 'cash';
 /** How a chart's total is split into parts (for the pie, the ranked list and the table). */
 export type SplitBy = 'category' | 'group' | 'account' | 'type';
 export type ChartView = 'bars' | 'line' | 'pie' | 'list' | 'table' | 'tiles' | 'flow' | 'calendar';
@@ -18,6 +18,7 @@ export const SOURCES: Record<Source, { title: string; about: string; views: Char
   spending: { title: 'Spending', about: 'All spending or the categories you choose, by month, by category or day by day', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles', 'calendar'] },
   income: { title: 'Income', about: 'Money coming in, by month and by category', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles', 'calendar'] },
   cashflow: { title: 'Money in and out', about: 'Income against spending each month, as a flow from where it came from to where it went, or day by day', views: ['bars', 'line', 'flow', 'table', 'tiles', 'calendar'] },
+  cash: { title: 'Cash', about: 'Cash in checking and savings, card debt, what’s left after paying the cards, and how long the cash lasts', views: ['tiles'] },
   bills: { title: 'Bills & income', about: 'What the Planner expects each day (bills, income, one-offs), what has been paid, and the balance', views: ['calendar'] },
   savings: { title: 'Savings rate', about: 'The share of each month\'s income that wasn\'t spent', views: ['bars', 'line', 'table', 'tiles'] },
   networth: { title: 'Net worth', about: 'Everything you own minus everything you owe, over time, and by account or type', views: ['line', 'bars', 'list', 'table', 'tiles'] },
@@ -31,7 +32,7 @@ export const SOURCES: Record<Source, { title: string; about: string; views: Char
 /** Which ways each source can be split. The first is the default. */
 export const SPLITS: Partial<Record<Source, SplitBy[]>> = { spending: ['category', 'group', 'account'], income: ['category', 'account'], cashflow: [], networth: ['account', 'type'], carddebt: ['account'], utilization: ['account'], balance: ['account'] };
 /** Sources that aren't about accounts, so the account picker is hidden for them. */
-export const NO_ACCOUNTS: Source[] = ['creditscore', 'tags', 'bills'];
+export const NO_ACCOUNTS: Source[] = ['creditscore', 'tags', 'bills', 'cash'];
 export const SPLIT_LABEL: Record<SplitBy, string> = { category: 'Category', group: 'Group', account: 'Account', type: 'Account type' };
 
 export interface ChartCfg {
@@ -196,6 +197,26 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   const chosen = pickAccounts(cfg, allAccounts);
   const accIds = chosen.map((a) => a.id);
   if (cfg.view === 'calendar' && SOURCES[source].views.includes('calendar')) return loadCalendar(cfg, source, cur, accIds);
+  if (source === 'cash') {
+    // Cash now against the cards, and how many days it lasts at the last 3 months' average daily spending.
+    const months = await loadMonthSummaries(addMonths(thisMonth(), -3), addDays(thisMonth(), -1));
+    const cashAccts = allAccounts.filter((a) => a.type === 'depository');
+    const cash = cashAccts.reduce((x, a) => x + signedBalance(a), 0);
+    const cards = allAccounts.filter((a) => a.type === 'credit').reduce((x, a) => x + Math.max(0, -signedBalance(a)), 0);
+    const days = months.reduce((x, m) => x + Number(monthEnd(m.month).slice(8, 10)), 0);
+    const daily = days ? months.reduce((x, m) => x + Math.abs(m.spending), 0) / days : 0;
+    const lasts = daily > 0 ? cash / daily : null;
+    const left = cash - cards;
+    return {
+      ...base, series: [], breakdown: [],
+      tiles: [
+        { label: 'Cash', value: money0(cash), sub: 'checking + savings' },
+        { label: 'Card debt', value: money0(cards), sub: `${left < 0 ? '−' : ''}${money0(Math.abs(left))} after the cards` },
+        { label: 'Lasts', value: lasts == null ? '–' : lasts < 1 ? '< 1 day' : `${Math.floor(lasts)} days`, sub: daily > 0 ? `at ${money0(daily)} a day` : 'no spending yet' },
+      ],
+      empty: cashAccts.length ? undefined : 'No checking or savings accounts yet.',
+    };
+  }
   const by: SplitBy | undefined = cfg.by && (SPLITS[source] ?? []).includes(cfg.by) ? cfg.by : (SPLITS[source] ?? [])[0];
   const mean = (values: number[]) => (cfg.avg && values.length > 1 ? avg(values) : undefined);
 
@@ -405,6 +426,10 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
     { label: past ? shortDate(dates[dates.length - 1] ?? end) : pct ? 'In use' : owedView ? 'Owing' : source === 'balance' ? 'Balance' : 'Now', value: show(last), sub: pct ? `of ${money0(limit)}` : accounts.length > 1 && source !== 'networth' ? `${accounts.length} accounts` : undefined },
     { label: week ? 'Change · this week' : `Change · ${n} mo`, value: pct ? `${last - firstV < 0 ? '−' : '+'}${Math.abs(last - firstV)} pts` : `${last - firstV < 0 ? '−' : '+'}${money0(Math.abs(last - firstV))}`, sub: `from ${show(firstV)}` },
   ];
+  if (source === 'networth' && !past && !week) {
+    const assets = accounts.reduce((x, a) => x + Math.max(0, signedBalance(a)), 0), debts = accounts.reduce((x, a) => x + Math.max(0, -signedBalance(a)), 0);
+    tiles.push({ label: 'Assets', value: money0(assets), sub: `debts ${money0(debts)}` });
+  }
   if (source === 'carddebt') {
     const lim = accounts.filter((a) => a.credit_limit);
     const limit = lim.reduce((x, a) => x + Number(a.credit_limit), 0);

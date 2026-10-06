@@ -11,6 +11,7 @@ import { EmptyState, PageSkeleton } from '@/components/States';
 import { GoalCard } from '@/components/GoalCard';
 import { Bar, Button, Card, Chip, Fab, Segmented } from '@/components/ui';
 import { useFocusLoad } from '@/lib/focusLoad';
+import { PageBoard } from '@/components/PageBoard';
 import { addGoalEntry, loadGoals, owedOn, type Goal } from '@/lib/goals';
 import { PAGE_MAX, UNDER_BAR } from '@/lib/layout';
 import { today } from '@/lib/plan';
@@ -30,7 +31,9 @@ export default function Goals() {
   const [editing, setEditing] = useState<Partial<Goal> | null>(null);
   const [moving, setMoving] = useState<{ goal: Goal; dir: 1 | -1 } | null>(null);
   const [showDone, setShowDone] = useState(false);
+  const [refresh, setRefresh] = useState(0);
   const load = useCallback(async () => {
+    setRefresh((r) => r + 1);
     try { const r = await loadGoals(); setGoals(r.goals); setAccounts(r.accounts); setError(''); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); setGoals([]); }
   }, []);
@@ -55,6 +58,8 @@ export default function Goals() {
           </Pressable>
         )}
         {showDone && done.map((g) => <GoalCard key={g.id} t={t} g={g} onPress={() => setEditing(g)} />)}
+        {/* Widgets of your own under the goals (a savings account's chart, money owed…); none to start with. */}
+        {goals != null && <PageBoard page="goals" refresh={refresh} defaults={[]} blocks={[]} quiet />}
       </ScrollView>
       <Fab label="New goal" onPress={() => setEditing({})} />
       {editing && <GoalSheet initial={editing} accounts={accounts} onClose={() => setEditing(null)} onSaved={load} />}

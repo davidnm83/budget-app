@@ -2,7 +2,6 @@
 //   1. To review: how many new transactions are waiting
 //   2. This week: cash in the bill-paying accounts, projected end of week, any warning, what's next
 //   3. Budget pace: spent vs where you'd expect to be by today, and the categories running ahead
-//   4. Net worth: today and the change since the 1st
 // Plus any widgets you add (Customize at the bottom); the order and choice are kept per user.
 import { openTransactions } from '@/lib/txnLinks';
 import { useFocusLoad } from '@/lib/focusLoad';
@@ -37,7 +36,6 @@ interface HomeData {
   toReview: number;
   week: PlannerData;
   budget: { spent: number; budgeted: number; pace: number; ahead: (BudgetLine & { gap: number })[]; hasBudget: boolean };
-  net: { now: number; change: number; assets: number; debts: number };
 }
 
 export default function Home() {
@@ -68,26 +66,10 @@ export default function Home() {
         .map((l) => ({ ...l, gap: l.actual - l.available * pace }))
         .filter((l) => l.gap > 1).sort((a, b) => b.gap - a.gap).slice(0, 3);
 
-      // Net worth now, and on the 1st (today's balances minus what posted since).
-      const visible = week.accounts.filter((a) => !a.is_hidden);
-      const ids = visible.map((a) => a.id);
-      const since: { account_id: string; amount: number }[] = [];
-      for (let p = 0; ; p += 1000) {
-        const { data } = await supabase.from('transactions').select('account_id, amount').in('account_id', ids).gte('date', month).eq('pending', false).range(p, p + 999);
-        since.push(...(data ?? []).map((r) => ({ account_id: r.account_id, amount: Number(r.amount) })));
-        if (!data || data.length < 1000) break;
-      }
-      const nowTotal = visible.reduce((s, a) => s + signedBalance(a), 0);
-      const changed = since.reduce((s, r) => s + r.amount, 0);
       setData({
         toReview: review.count ?? 0,
         week,
         budget: { spent: view.totals.actualExpenses, budgeted: view.totals.budgetedExpenses, pace, ahead, hasBudget: view.expenses.length > 0 },
-        net: {
-          now: nowTotal, change: changed,
-          assets: visible.filter((a) => signedBalance(a) > 0).reduce((s, a) => s + signedBalance(a), 0),
-          debts: visible.filter((a) => signedBalance(a) < 0).reduce((s, a) => s - signedBalance(a), 0),
-        },
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -115,7 +97,7 @@ export default function Home() {
           <WidgetBoard place="home" entries={widgets} refresh={refresh} editing={editing} onEditing={setEditing}
             onChange={(next) => { setWidgets(next); savePrefs({ home_widgets: next }).catch((e: unknown) => setError(e instanceof Error ? e.message : String(e))); }}
             special={(k) => (k === 'review' ? <ReviewCard t={t} n={data.toReview} /> : k === 'week' ? <WeekCard t={t} data={data.week} now={now} />
-              : k === 'budget' ? <BudgetCard t={t} b={data.budget} /> : k === 'networth' ? <NetWorthCard t={t} n={data.net} /> : undefined)} />
+              : k === 'budget' ? <BudgetCard t={t} b={data.budget} /> : undefined)} />
         )}
       </ScrollView>
     </View>
@@ -218,19 +200,6 @@ function BudgetCard({ t, b }: { t: Theme; b: HomeData['budget'] }) {
   );
 }
 
-function NetWorthCard({ t, n }: { t: Theme; n: HomeData['net'] }) {
-  return (
-    <CardShell t={t} title="Net worth" link="Accounts" onPress={() => router.navigate('/accounts')}>
-      <View style={styles.between}>
-        <Text style={{ color: n.now < 0 ? t.danger : t.text, fontSize: 20, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{formatMoney(n.now)}</Text>
-        <Text style={{ color: n.change < 0 ? t.danger : t.positive, fontSize: 13, fontWeight: '600' }}>
-          {n.change < 0 ? '▼' : '▲'} {money0(Math.abs(n.change))} this month
-        </Text>
-      </View>
-      <Text style={{ color: t.muted, fontSize: 12 }}>Assets {money0(n.assets)} · Debts {money0(n.debts)}</Text>
-    </CardShell>
-  );
-}
 
 const styles = StyleSheet.create({
   page: { paddingHorizontal: 12, paddingTop: 4, paddingBottom: UNDER_BAR, gap: 10, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },

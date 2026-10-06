@@ -27,7 +27,7 @@ import { useTheme } from '@/lib/theme';
 import { bankBalance, signedBalance, type Account } from '@/lib/types';
 
 // Card debt and utilisation over time are Chart widgets now (Card debt; Card utilisation), added from Edit layout.
-const CREDIT_DEFAULT = [makeEntry('credit:tiles', { w: 'full' }), makeEntry('credit:cards', { w: 'full' })];
+const CREDIT_DEFAULT = [makeEntry('credit:tiles', { w: 'full' }), makeEntry('credit:cards', { w: 'full' }), makeEntry('plans', { w: 'full' }), makeEntry('transfers', { w: 'full' }), makeEntry('scorelog', { w: 'full' })];
 const money0 = (n: number) => formatMoney(n).replace(/\.\d\d$/, '');
 
 export default function Credit() {
@@ -89,7 +89,7 @@ export default function Credit() {
   return (
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-      <PageBoard page="credit" refresh={refresh} defaults={CREDIT_DEFAULT} blocks={[
+      <PageBoard page="credit" refresh={refresh} defaults={CREDIT_DEFAULT} added={['plans', 'transfers', 'scorelog']} blocks={[
         { key: 'credit:tiles', title: 'Card totals', about: 'Total owing, utilisation, next due and interest', render: () => (
           <View style={styles.tiles}>
         <Tile t={t} label="Total owing" value={money0(totalOwed)} sub={onPlans > 0 ? `${cards.length} cards · ${money0(onPlans)} on plans` : `${cards.length} cards`} />
@@ -127,10 +127,11 @@ export default function Credit() {
         {!cards.length && <EmptyState icon="card-outline" title="No credit cards yet" text="Cards you link or add show their balance, limit and statement here." />}
       </Card>
         ) },
+        // The same widgets as anywhere else, drawn here from what the page already loaded.
+        { key: 'plans', title: 'Payment plans', about: 'Purchases paid off in monthly instalments on a card', render: () => <PlansCard t={t} plans={plans} accounts={accounts} onChanged={load} /> },
+        { key: 'transfers', title: 'Balance transfers', about: 'Money moved between cards at a promo rate', render: () => <TransfersCard t={t} transfers={transfers} accounts={accounts} onChanged={load} /> },
+        { key: 'scorelog', title: 'Credit score log', about: 'Log a score; the latest from each bureau', render: () => <CreditScoreCard refresh={refresh} /> },
       ]} />
-      <PlansCard t={t} plans={plans} accounts={accounts} onChanged={load} />
-      <TransfersCard t={t} transfers={transfers} accounts={accounts} onChanged={load} />
-      <CreditScoreCard refresh={refresh} />
       <AccountSheet account={open} accounts={accounts} onClose={() => setOpen(null)} onChanged={load} />
     </ScrollView>
   );

@@ -14,9 +14,9 @@ import { useWide } from '@/lib/layout';
 import { useTheme, type Theme } from '@/lib/theme';
 import { afterClose } from '@/lib/useBackToClose';
 
-const HOME_ONLY = ['review', 'week', 'budget', 'networth'];
+const HOME_ONLY = ['review', 'week', 'budget'];
 
-export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, editing, onEditing, special, extra, blocks = [] }: {
+export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, editing, onEditing, special, extra, blocks = [], quiet }: {
   entries: string[]; onChange: (next: string[]) => void; place: 'home' | 'page' | 'budget' | 'report'; refresh: number;
   /** The month the page is showing, for widgets that follow it. */
   anchor?: string;
@@ -29,6 +29,8 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, 
   extra?: ReactNode;
   /** Blocks that belong to this page only (drawn through `special`). */
   blocks?: WidgetDef[];
+  /** Widgets are an extra under the page's own content: when there are none, just the small "Add widgets" link. */
+  quiet?: boolean;
 }) {
   const t = useTheme();
   const wide = useWide();
@@ -38,7 +40,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, 
   const [over, setOver] = useState<number | null>(null);
   const defs = [...blocks, ...WIDGETS];
   const labelOf = (e: string) => blocks.find((b) => b.key === parseEntry(e)[0])?.title ?? entryLabel(e);
-  const avail = [...blocks, ...WIDGETS.filter((w) => (place === 'home' ? w.home : place === 'budget' ? w.budget : !HOME_ONLY.includes(w.key)))];
+  const avail = [...blocks, ...WIDGETS.filter((w) => !blocks.some((b) => b.key === w.key) && (place === 'home' ? w.home : place === 'budget' ? w.budget : !HOME_ONLY.includes(w.key)))];
   const known = entries.map((e, i) => ({ e, i })).filter(({ e }) => defs.some((w) => w.key === keyOf(e)));
 
   const move = (from: number, to: number) => {
@@ -123,7 +125,7 @@ export function WidgetBoard({ entries, onChange, place, refresh, anchor, range, 
             <View style={styles.column}>{row.filter((_, n) => n % 2 === 1).map((x) => cell(x, true))}</View>
           </View>
         )))}
-      </View>       {!known.length && place !== 'budget' && !editing && <EmptyState icon="grid-outline" title="No widgets here yet" text="Add charts and summaries and arrange them the way you like." action="Add widgets" onAction={() => onEditing(true)} />}
+      </View>       {!known.length && place !== 'budget' && !editing && !quiet && <EmptyState icon="grid-outline" title="No widgets here yet" text="Add charts and summaries and arrange them the way you like." action="Add widgets" onAction={() => onEditing(true)} />}
       {bar}
       {adding && (
         <Sheet title="Add a widget" onClose={() => setAdding(false)}>

@@ -1,6 +1,7 @@
 // Accounts tab: every account grouped by type, with net worth at the top. Tap one for its
 // details (name, balance, history, planner settings, merge) in a pop-up.
 import { useFocusLoad } from '@/lib/focusLoad';
+import { PageBoard } from '@/components/PageBoard';
 import { accountIcon, formatMoney } from '@budget-app/core';
 import { ROW, LIST } from '@/lib/layout';
 import { EmptyState, RowsSkeleton } from '@/components/States';
@@ -33,8 +34,9 @@ export default function Accounts() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
 
+  const [refresh, setRefresh] = useState(0);
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setRefresh((r) => r + 1);
     // account_balances = accounts with manual balances worked out (start balance + transactions).
     const { data, error } = await supabase.from('account_balances').select('*').order('name');
     setLoading(false);
@@ -109,11 +111,15 @@ export default function Accounts() {
             </Text>
           </Pressable>
         )}
-        ListFooterComponent={hiddenCount ? (
-          <Pressable onPress={() => setShowHidden(!showHidden)} style={{ padding: 16, alignItems: 'center' }}>
-            <Text style={{ color: t.accent }}>{showHidden ? 'Hide' : 'Show'} {hiddenCount} hidden account{hiddenCount === 1 ? '' : 's'}</Text>
-          </Pressable>
-        ) : null}
+        ListFooterComponent={<>
+          {hiddenCount > 0 && (
+            <Pressable onPress={() => setShowHidden(!showHidden)} style={{ padding: 16, alignItems: 'center' }}>
+              <Text style={{ color: t.accent }}>{showHidden ? 'Hide' : 'Show'} {hiddenCount} hidden account{hiddenCount === 1 ? '' : 's'}</Text>
+            </Pressable>
+          )}
+          {/* Widgets of your own under the list (net worth, cash, card debt…); none to start with. */}
+          {accounts.length > 0 && <View style={{ paddingHorizontal: 12, paddingTop: 12, gap: 10 }}><PageBoard page="accounts" refresh={refresh} defaults={[]} blocks={[]} quiet /></View>}
+        </>}
       />
       <AccountSheet account={open} accounts={accounts} onClose={() => setOpenId(null)} onChanged={load} />
     </View>
