@@ -119,7 +119,7 @@ async function pullChanges(token: string, startCursor: string | null) {
         cursor = res.next_cursor;
         hasMore = res.has_more;
       }
-      return { posted: [...byId.values()].filter((t) => !t.pending), removed, cursor };
+      return { posted: [...byId.values()], removed, cursor };
     } catch (e) {
       if (e instanceof PlaidError && e.code === 'TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION') continue;
       throw e;
@@ -170,10 +170,34 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
   try {
     const token = await accessToken(admin, item.access_token_secret_id);
     const accounts = await upsertAccounts(admin, item, token); // also refreshes balances
-    const { posted, removed, cursor } = await pullChanges(token, item.cursor);
+    const { posted, removed: gone, cursor } = await pullChanges(token, item.cursor);
+    let removed = gone;
+
+    // Pending transactions are kept (greyed in lists, left out of totals). When the bank posts one, the
+    // posted version names the pending one it replaces: that row is updated in place, so a category,
+    // note or plan link you gave it carries over, and the pending id isn't deleted.
+    const replaces = posted.filter((t) => !t.pending && t.pending_transaction_id);
+    const swapped = new Set<string>();
+    for (let i = 0; i < replaces.length; i += LOOKUP_BATCH) {
+      const batch = replaces.slice(i, i + LOOKUP_BATCH);
+      const { data } = await admin.from('transactions').select('id, plaid_transaction_id, category_source')
+        .in('plaid_transaction_id', batch.map((t) => t.pending_transaction_id));
+      for (const row of (data ?? []) as any[]) {
+        const t = batch.find((x) => x.pending_transaction_id === row.plaid_transaction_id)!;
+        const { error } = await admin.from('transactions').update({
+          plaid_transaction_id: t.transaction_id, pending: false, date: t.date, authorized_date: t.authorized_date, amount: fromPlaidAmount(t.amount),
+          // Posted: it joins the transactions to review, unless you already filed it yourself.
+          ...(row.category_source === 'manual' ? {} : { reviewed: false }),
+        }).eq('id', row.id);
+        if (error) throw new Error('Replacing a pending transaction failed: ' + error.message);
+        swapped.add(t.transaction_id); swapped.add(row.plaid_transaction_id);
+        result.updated++;
+      }
+    }
+    removed = removed.filter((id) => !swapped.has(id));
 
     // Which of these do we already have? (and did you edit their date or amount?)
-    const ids = posted.map((t) => t.transaction_id);
+    const ids = posted.filter((t) => !swapped.has(t.transaction_id)).map((t) => t.transaction_id);
     const existing = new Map<string, { original_date: string | null; original_amount: number | null }>();
     // In small batches: the ids travel in the request's address, and a few hundred of them make it too
     // long for the server to accept. That lookup used to fail without a word, every transaction then
@@ -185,21 +209,22 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
     }
 
     const rules = await loadUserRules(admin, item.user_id);
-    let fresh = posted.filter((t) => !existing.has(t.transaction_id) && accounts.has(t.account_id));
+    let fresh = posted.filter((t) => !swapped.has(t.transaction_id) && !existing.has(t.transaction_id) && accounts.has(t.account_id));
 
     // Already in the app from a CSV or Fina import? Link it instead of adding a second copy.
     // Imported split parts (same date and description) that add up to one bank transaction
     // become that transaction's splits.
-    if (fresh.length) {
-      const dates = fresh.map((t) => t.date).sort();
+    const settled = fresh.filter((t) => !t.pending);
+    if (settled.length) {
+      const dates = settled.map((t) => t.date).sort();
       const { data: unlinked } = await admin.from('transactions').select('id, account_id, date, amount, name, category_id, notes, import_id')
         .eq('user_id', item.user_id).is('plaid_transaction_id', null)
-        .in('account_id', [...new Set(fresh.map((t) => accounts.get(t.account_id)!))])
+        .in('account_id', [...new Set(settled.map((t) => accounts.get(t.account_id)!))])
         .gte('date', addDays(dates[0], -3)).lte('date', addDays(dates[dates.length - 1], 3));
       const claimed = new Set<string>();
       for (const accountId of new Set((unlinked ?? []).map((u: any) => u.account_id as string))) {
         const mine = (unlinked ?? []).filter((u: any) => u.account_id === accountId);
-        const theirs = fresh.filter((t) => accounts.get(t.account_id) === accountId);
+        const theirs = settled.filter((t) => accounts.get(t.account_id) === accountId);
         const plan = planMerge(
           mine.map((u: any) => ({ id: u.id, date: u.date, amount: Number(u.amount), name: u.name ?? '' })),
           theirs.map((t) => ({ id: t.transaction_id, date: t.date, amount: fromPlaidAmount(t.amount), name: t.original_description || t.name || '' })),
@@ -271,7 +296,9 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
         plaid_category: pfc.detailed ?? null,
         // With a category, that category decides; the bank's own transfer hint only counts without one.
         is_transfer: s.categoryId ? rules.kindById.get(s.categoryId) === 'transfer' : isTransferCategory(pfc.primary, pfc.detailed),
-        reviewed: false,
+        // Pending ones wait out of the review list until they post.
+        pending: !!t.pending,
+        reviewed: !!t.pending,
       };
     });
     // A transaction that is somehow already here is skipped rather than stopping the sync: one stray
@@ -289,7 +316,7 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
     for (const t of posted.filter((x) => existing.has(x.transaction_id))) {
       const mine = existing.get(t.transaction_id)!;
       await admin.from('transactions').update({
-        authorized_date: t.authorized_date,
+        authorized_date: t.authorized_date, pending: !!t.pending,
         ...(mine.original_date ? { original_date: t.date } : { date: t.date }),
         ...(mine.original_amount != null ? { original_amount: fromPlaidAmount(t.amount) } : { amount: fromPlaidAmount(t.amount) }),
       }).eq('plaid_transaction_id', t.transaction_id);
@@ -300,6 +327,8 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
       if (error) throw new Error('Removing transactions the bank withdrew failed: ' + error.message);
     }
     result.removed = removed.length;
+
+    await trackBalanceGaps(admin, [...new Set(accounts.values())]);
 
     await admin.from('plaid_items').update({
       cursor, status: 'ok', error_code: null, last_synced_at: new Date().toISOString(),
@@ -315,4 +344,36 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
     message: `${item.institution_name}: ${result.status}${result.error ? ' – ' + result.error : ''}`,
   });
   return result;
+}
+
+/** Days a balance gap may stay open before the balance is taken as it is (the bank never listed it). */
+const GAP_DAYS = 10;
+
+/**
+ * How far each account's balance has moved beyond its transactions. The balance when it last agreed
+ * with them is the anchor; everything added since (pending included) should explain the change. What
+ * doesn't is the gap: money the bank has counted but not listed yet. The anchor moves on once the
+ * gap closes, or after GAP_DAYS.
+ */
+export async function trackBalanceGaps(admin: Admin, accountIds: string[]): Promise<void> {
+  if (!accountIds.length) return;
+  const { data: rows, error } = await admin.from('accounts').select('id, type, current_balance, balance_anchor, balance_anchor_at').in('id', accountIds);
+  if (error) return; // before the migration
+  const nowIso = new Date().toISOString();
+  for (const a of (rows ?? []) as any[]) {
+    if (a.current_balance == null) continue;
+    const signed = (a.type === 'credit' || a.type === 'loan' ? -1 : 1) * Number(a.current_balance);
+    let gap = 0;
+    if (a.balance_anchor != null && a.balance_anchor_at) {
+      const { data: since } = await admin.from('transactions').select('amount').eq('account_id', a.id).gt('created_at', a.balance_anchor_at).limit(5000);
+      const moved = ((since ?? []) as any[]).reduce((x, r) => x + Number(r.amount), 0);
+      gap = Math.round((signed - (Number(a.balance_anchor) + moved)) * 100) / 100;
+    }
+    const stale = a.balance_anchor_at && Date.now() - Date.parse(a.balance_anchor_at) > GAP_DAYS * 86_400_000;
+    if (a.balance_anchor == null || Math.abs(gap) < 0.01 || stale) {
+      await admin.from('accounts').update({ balance_anchor: signed, balance_anchor_at: nowIso, balance_gap: 0 }).eq('id', a.id);
+    } else {
+      await admin.from('accounts').update({ balance_gap: gap }).eq('id', a.id);
+    }
+  }
 }

@@ -23,15 +23,16 @@ export async function processLoans(admin: Admin, userId: string, today: string):
 
   for (const loan of loans as any[]) {
     const r: LoanResult = { loan: loan.name, payments: 0, interest: null, status: '' };
-    const { data: onLoan } = await admin.from('transactions').select('id, date, amount, name').eq('account_id', loan.id).gte('date', addDays(today, -120));
-    const loanRows = (onLoan ?? []).map((x: any) => ({ ...x, amount: Number(x.amount) }));
+    const { data: onLoan } = await admin.from('transactions').select('id, date, amount, name, pending').eq('account_id', loan.id).gte('date', addDays(today, -120));
+    const loanRows = (onLoan ?? []).filter((x: any) => !x.pending).map((x: any) => ({ ...x, amount: Number(x.amount) }));
 
     // 1) Payments copied from the paying account(s).
     if (loan.loan_payment_match) {
       const needle = normalizeDescription(loan.loan_payment_match);
-      const { data: debits } = await admin.from('transactions').select('id, account_id, date, amount, name, merchant')
+      const { data: debits } = await admin.from('transactions').select('id, account_id, date, amount, name, merchant, pending')
         .eq('user_id', userId).gte('date', addDays(today, -60)).lt('amount', 0);
-      const candidates = (debits ?? [])
+      // Pending debits wait until they post, so a payment isn't copied from one the bank later changes.
+      const candidates = (debits ?? []).filter((x: any) => !x.pending)
         .filter((d: any) => d.account_id !== loan.id && (!loan.loan_paying_account_id || d.account_id === loan.loan_paying_account_id))
         .filter((d: any) => normalizeDescription(`${d.merchant ?? ''} ${d.name}`).includes(needle));
       // Skip ones already on the loan (copied before, or imported from Fina): same amount within 3 days.

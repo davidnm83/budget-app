@@ -72,7 +72,7 @@ export default function Home() {
       const ids = visible.map((a) => a.id);
       const since: { account_id: string; amount: number }[] = [];
       for (let p = 0; ; p += 1000) {
-        const { data } = await supabase.from('transactions').select('account_id, amount').in('account_id', ids).gte('date', month).range(p, p + 999);
+        const { data } = await supabase.from('transactions').select('account_id, amount').in('account_id', ids).gte('date', month).eq('pending', false).range(p, p + 999);
         since.push(...(data ?? []).map((r) => ({ account_id: r.account_id, amount: Number(r.amount) })));
         if (!data || data.length < 1000) break;
       }

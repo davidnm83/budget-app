@@ -133,6 +133,7 @@ export default function Planner() {
           </ScrollView>
         )}
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+        {planAccounts.length > 0 && week === thisWeek && <NotListedYet t={t} accounts={planAccounts.filter((a) => !only || a.id === only)} refresh={data} />}
         {data && !planAccounts.length && (
           <Card><Text style={{ color: t.text }}>Choose the accounts that pay your bills: tap one on the Accounts tab (or Settings → Planner) and turn on “Plan bills from this account”.</Text></Card>
         )}
@@ -279,3 +280,39 @@ const styles = StyleSheet.create({
   day: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 16, paddingRight: 12, paddingVertical: 9 },
 });
+
+/**
+ * What the balances already include but the week's list doesn't count yet: pending transactions,
+ * and money the bank has moved without listing it (the balance gap the sync keeps track of).
+ */
+function NotListedYet({ t, accounts, refresh }: { t: Theme; accounts: { id: string; name: string }[]; refresh: unknown }) {
+  const [lines, setLines] = useState<{ name: string; pending: number; count: number; gap: number }[]>([]);
+  const ids = accounts.map((a) => a.id).join(',');
+  useEffect(() => {
+    if (!accounts.length) return;
+    let live = true;
+    Promise.all([
+      supabase.from('transaction_list').select('account_id, amount').in('account_id', accounts.map((a) => a.id)).eq('pending', true).limit(500),
+      supabase.from('accounts').select('id, balance_gap').in('id', accounts.map((a) => a.id)),
+    ]).then(([p, g]) => {
+      if (!live || p.error || g.error) return; // before the newest database update: nothing to say
+      setLines(accounts.map((a) => {
+        const mine = ((p.data ?? []) as any[]).filter((r) => r.account_id === a.id);
+        const gap = Number(((g.data ?? []) as any[]).find((r) => r.id === a.id)?.balance_gap ?? 0);
+        return { name: a.name, pending: mine.reduce((x, r) => x + Number(r.amount), 0), count: mine.length, gap };
+      }).filter((l) => l.count > 0 || Math.abs(l.gap) >= 1));
+    });
+    return () => { live = false; };
+  }, [ids, refresh]);
+  if (!lines.length) return null;
+  const signed = (n: number) => `${n < 0 ? '−' : '+'}${formatMoney(Math.abs(n))}`;
+  return (
+    <View style={{ gap: 2, paddingHorizontal: 4 }}>
+      {lines.map((l) => (
+        <Text key={l.name} style={{ color: t.muted, fontSize: 12 }}>
+          ⏳ {l.name}: {[l.count ? `${signed(l.pending)} pending (${l.count})` : '', Math.abs(l.gap) >= 1 ? `${signed(l.gap)} the bank has counted but not listed yet` : ''].filter(Boolean).join(' · ')}. Not in this week’s list until it posts.
+        </Text>
+      ))}
+    </View>
+  );
+}

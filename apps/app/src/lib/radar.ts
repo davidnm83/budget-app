@@ -36,7 +36,7 @@ export async function loadRadar(settings: RadarSettings = {}): Promise<{ cards: 
   // Goals and subscriptions: their own queries, and quietly nothing when the tables aren't there yet.
   const [goals, charges] = await Promise.all([
     on('goals') ? loadGoals().then((r) => r.goals).catch(() => []) : skip([]),
-    on('subs') ? supabase.from('transactions').select('id, date, amount, name, merchant, account_id').lt('amount', 0).gte('date', addDays(now, -200)).order('date').limit(5000)
+    on('subs') ? supabase.from('transactions').select('id, date, amount, name, merchant, account_id').lt('amount', 0).eq('pending', false).gte('date', addDays(now, -200)).order('date').limit(5000)
       .then(({ data }) => (data ?? []).map((r: any) => ({ ...r, amount: Number(r.amount) }))) : skip([]),
   ]);
   const name = (id: string) => thisWeek?.accounts.find((a) => a.id === id)?.name ?? 'An account';

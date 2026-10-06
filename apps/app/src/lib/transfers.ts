@@ -7,7 +7,7 @@ export async function pairAllTransfers(): Promise<number> {
   const rows: any[] = [];
   for (let p = 0; ; p += 1000) {
     const { data, error } = await supabase.from('transactions').select('id, account_id, date, amount, is_transfer, category_id')
-      .is('transfer_pair_id', null).order('id').range(p, p + 999);
+      .is('transfer_pair_id', null).eq('pending', false).order('id').range(p, p + 999);
     if (error) throw new Error(error.message);
     rows.push(...(data ?? []));
     if (!data || data.length < 1000) break;

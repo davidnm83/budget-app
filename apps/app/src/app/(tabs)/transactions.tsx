@@ -42,7 +42,7 @@ type Sort = 'newest' | 'oldest' | 'largest' | 'smallest' | 'merchant';
 interface Row {
   id: string; date: string; amount: number; currency: string; display_name: string; category_name: string | null; category_icon: string | null;
   category_source: string | null; account_name: string; account_mask: string | null; reviewed: boolean;
-  split_count: number; is_transfer: boolean; notes: string | null; tags: string[];
+  split_count: number; is_transfer: boolean; notes: string | null; tags: string[]; pending?: boolean;
 }
 interface Filters {
   range: Range; direction: Direction; min: string; max: string;
@@ -105,7 +105,7 @@ export default function Transactions() {
     const id = ++request.current;
     setLoading(true);
     const q = filtered(supabase.from('transaction_list')
-      .select('id, date, amount, currency, name, merchant, category_id, account_id, display_name, category_name, category_icon, category_source, account_name, account_mask, reviewed, split_count, is_transfer, notes, tags', { count: page === 0 ? 'exact' : undefined }),
+      .select('id, date, amount, currency, name, merchant, category_id, account_id, display_name, category_name, category_icon, category_source, account_name, account_mask, reviewed, split_count, is_transfer, notes, tags, pending', { count: page === 0 ? 'exact' : undefined }),
       mode, filters, query);
     const { data, error, count } = await q.range(page * PAGE, page * PAGE + PAGE - 1);
     if (id !== request.current) return; // a newer request replaced this one
@@ -161,7 +161,8 @@ export default function Transactions() {
   // the old one meant it held on to the old view's scroll position and row measurements, and could
   // show an empty stretch under the date heading until it caught up.
   const listKey = useMemo(() => JSON.stringify([mode, filters, query]), [mode, filters, query]);
-  const sections = useMemo(() => (byDate ? groupByDay(rows) : []), [rows, byDate]);
+  // A day's total leaves out what's still pending, like every other total.
+  const sections = useMemo(() => (byDate ? groupByDay(rows).map((g) => (g.data.some((r) => r.pending) ? { ...g, total: Math.round(g.data.reduce((x, r) => x + (r.pending ? 0 : Number(r.amount)), 0) * 100) / 100 } : g)) : []), [rows, byDate]);
   const nFilters = activeCount(filters);
   const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
 
@@ -309,7 +310,7 @@ async function exportCsv(mode: Mode, filters: Filters, query: string): Promise<n
   const rows: any[] = [];
   for (let p = 0; p < 50; p++) {
     const { data, error } = await filtered(supabase.from('transaction_list')
-      .select('date, display_name, name, category_name, category_group, account_name, amount, currency, notes, tags, reviewed, split_count'), mode, filters, query)
+      .select('date, display_name, name, category_name, category_group, account_name, amount, currency, notes, tags, reviewed, split_count').eq('pending', false), mode, filters, query)
       .range(p * 1000, p * 1000 + 999);
     if (error) throw new Error(error.message);
     rows.push(...(data ?? []));
@@ -357,15 +358,19 @@ const TxnRow = memo(function TxnRow({ t, item, showDate, onToggle, onOpen }: { t
   const category = item.split_count ? `✂️ Split · ${item.split_count} parts` : item.category_name ? `${categoryIcon(item.category_name, item.category_icon)} ${item.category_name}` : null;
   return (
     <Pressable onPress={() => onOpen(item)}
-      style={({ pressed, hovered }: any) => [styles.row, { backgroundColor: pressed || selected ? t.line : hovered ? t.bg : t.card }]}>
-      <Pressable accessibilityLabel={item.reviewed ? 'Mark not reviewed' : 'Mark reviewed'} hitSlop={10} onPress={() => onToggle(item)} style={styles.check}>
-        <Ionicons name={item.reviewed ? 'checkmark-circle' : 'ellipse-outline'} size={24} color={item.reviewed ? t.accent : t.muted} />
-      </Pressable>
+      style={({ pressed, hovered }: any) => [styles.row, { backgroundColor: pressed || selected ? t.line : hovered ? t.bg : t.card }, item.pending && { opacity: 0.6 }]}>
+      {/* Pending at the bank: not counted in totals yet, and nothing to review until it posts. */}
+      {item.pending ? <View style={styles.check}><Ionicons name="time-outline" size={22} color={t.muted} /></View> : (
+        <Pressable accessibilityLabel={item.reviewed ? 'Mark not reviewed' : 'Mark reviewed'} hitSlop={10} onPress={() => onToggle(item)} style={styles.check}>
+          <Ionicons name={item.reviewed ? 'checkmark-circle' : 'ellipse-outline'} size={24} color={item.reviewed ? t.accent : t.muted} />
+        </Pressable>
+      )}
       {logos && <View style={{ marginRight: 10 }}><TxnLogo size={34} name={item.display_name} transfer={item.is_transfer} category={item.category_name} /></View>}
       <View style={{ flex: 1, gap: 2 }}>
         <Text numberOfLines={1} style={[ROW.title, { color: t.text }]}>{item.display_name}</Text>
         <Text numberOfLines={1} style={[ROW.sub, { color: category ? t.text : t.danger }]}>
           {showDate ? <Text style={{ color: t.muted }}>{`${shortDate(item.date)} ${item.date.slice(0, 4)}  ·  `}</Text> : null}
+          {item.pending ? <Text style={{ color: t.muted, fontWeight: '700' }}>{'Pending  ·  '}</Text> : null}
           {category ?? 'Uncategorised'}
           {!item.split_count && item.category_source && !item.reviewed ? <Text style={{ color: t.muted }}>{` (${SOURCE_LABEL[item.category_source]})`}</Text> : null}
           <Text style={{ color: t.muted }}>{`  ·  ${item.account_name}${item.account_mask ? ` ••${item.account_mask}` : ''}`}</Text>
@@ -479,7 +484,7 @@ function FilterSummary({ t, mode, filters, query, stamp }: { t: Theme; mode: Mod
     (async () => {
       const all: { amount: number; category_name: string | null; is_transfer: boolean }[] = [];
       for (let p = 0; p < 10; p++) {
-        const { data } = await filtered(supabase.from('transaction_list').select('amount, category_name, is_transfer'), mode, filters, query).range(p * 1000, p * 1000 + 999);
+        const { data } = await filtered(supabase.from('transaction_list').select('amount, category_name, is_transfer').eq('pending', false), mode, filters, query).range(p * 1000, p * 1000 + 999);
         all.push(...((data ?? []) as any[]));
         if (!data || data.length < 1000) break;
       }

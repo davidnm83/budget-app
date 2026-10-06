@@ -3,11 +3,11 @@ import type { Admin } from './supabase.ts';
 import { addDays, pairTransfers } from './core/index.ts';
 
 export async function pairRecentTransfers(admin: Admin, userId: string, today: string, days = 60): Promise<number> {
-  const { data: rows } = await admin.from('transactions').select('id, account_id, date, amount, is_transfer, category_id, transfer_pair_id')
+  const { data: rows } = await admin.from('transactions').select('id, account_id, date, amount, is_transfer, category_id, transfer_pair_id, pending')
     .eq('user_id', userId).gte('date', addDays(today, -days)).is('transfer_pair_id', null);
   const { data: cats } = await admin.from('categories').select('id, kind').eq('user_id', userId);
   const transferCats = new Set((cats ?? []).filter((c: any) => c.kind === 'transfer').map((c: any) => c.id));
-  const list = (rows ?? []) as any[];
+  const list = ((rows ?? []) as any[]).filter((r) => !r.pending); // pending rows are replaced when they post: never paired
   const pairs = pairTransfers(list
     // A row in a spending or income category isn't a transfer, whatever the bank hinted; it never pairs.
     .filter((r) => !r.category_id || transferCats.has(r.category_id))

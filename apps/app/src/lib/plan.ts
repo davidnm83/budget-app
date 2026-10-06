@@ -38,7 +38,7 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
   const now = today();
   const [{ data: accts }, { data: txns }] = await Promise.all([
     supabase.from('account_balances').select('id, type, balance, statement_day, due_day').in('id', cards),
-    supabase.from('transactions').select('id, account_id, date, amount').in('account_id', cards).gte('date', addDays(now, -70)),
+    supabase.from('transactions').select('id, account_id, date, amount').in('account_id', cards).gte('date', addDays(now, -70)).eq('pending', false),
   ]);
   // Payment plans on these cards: what isn't billed yet is left out of the amount to pay.
   const plans = await import('./paymentPlans').then((m) => m.loadPlans()).catch(() => []);
@@ -75,7 +75,7 @@ export async function loadEntries(from: string, to: string): Promise<PlanEntry[]
 export async function loadPosted(accountIds: string[], from: string, to: string): Promise<PostedTxn[]> {
   if (!accountIds.length) return [];
   const rows = await fetchAll<any>((a, b) => supabase.from('transaction_list').select('id, date, amount, account_id, name, display_name')
-    .in('account_id', accountIds).gte('date', from).lte('date', to).order('id').range(a, b));
+    .in('account_id', accountIds).gte('date', from).lte('date', to).eq('pending', false).order('id').range(a, b));
   return rows.map((r) => ({ id: r.id, date: r.date, amount: Number(r.amount), accountId: r.account_id, name: r.name, merchant: r.display_name }));
 }
 

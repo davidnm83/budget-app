@@ -1,6 +1,6 @@
 // Run: deno test supabase/functions/_shared/sync.test.ts
 // Exercises syncItem() against a fake Plaid API and an in-memory stand-in for the database.
-import { syncItem } from './sync.ts';
+import { syncItem, trackBalanceGaps } from './sync.ts';
 import { processLoans } from './loans.ts';
 import { pairRecentTransfers } from './transfers.ts';
 
@@ -49,6 +49,7 @@ function fakeDb(tables: Record<string, Row[]>) {
       eq: (c: string, v: any) => { filters.push((r) => r[c] === v); return q; },
       is: (c: string, v: any) => { filters.push((r) => (r[c] ?? null) === v); return q; },
       gte: (c: string, v: any) => { filters.push((r) => r[c] >= v); return q; },
+      gt: (c: string, v: any) => { filters.push((r) => r[c] > v); return q; },
       lt: (c: string, v: any) => { filters.push((r) => r[c] < v); return q; },
       lte: (c: string, v: any) => { filters.push((r) => r[c] <= v); return q; },
       in: (c: string, v: any[]) => { if (v.length > 100) tooMany = true; filters.push((r) => v.includes(r[c])); return q; },
@@ -116,7 +117,8 @@ Deno.test('syncItem writes posted transactions with merchant + category, keeps e
 
   const r1 = await syncItem(db, tables.plaid_items[0] as any);
   assertEquals(r1.status, 'ok', r1.error);
-  assertEquals(r1.added, 4, 'pending skipped');
+  assertEquals(r1.added, 5, 'pending kept');
+  assertEquals([tables.transactions.find((t) => t.plaid_transaction_id === 't5')!.pending, tables.transactions.find((t) => t.plaid_transaction_id === 't5')!.reviewed], [true, true]);
   const byId = (id: string) => tables.transactions.find((t) => t.plaid_transaction_id === id)!;
   assertEquals([byId('t1').merchant, byId('t1').category_id, byId('t1').category_source, byId('t1').amount], ['Superstore', 'cat-groceries', 'learned', -25.95]);
   assertEquals([byId('t2').category_id, byId('t2').category_source], ['cat-gym', 'rule']);
@@ -275,4 +277,44 @@ Deno.test('transfers: card payment paired with the payment received on the card'
   assertEquals(await pairRecentTransfers(fakeDb(tables), user, '2026-09-30'), 1);
   const [o, i] = tables.transactions;
   assertEquals([o.transfer_pair_id, i.transfer_pair_id, o.is_transfer, i.is_transfer, i.category_id], ['in', 'out', true, true, 'cc']);
+});
+
+Deno.test('a pending transaction is replaced in place when it posts, keeping its category', async () => {
+  Deno.env.set('PLAID_ENV', 'sandbox');
+  const user = 'u1';
+  const tables: Record<string, Row[]> = {
+    accounts: [], transactions: [], merchant_rules: [], category_rules: [],
+    categories: [{ id: 'cat-food', user_id: user, name: 'Restaurants', kind: 'expense' }],
+    plaid_items: [{ id: 'item-row', user_id: user, item_id: 'item-1', institution_name: 'Test Bank', access_token_secret_id: 's', cursor: null }],
+    sync_runs: [],
+  };
+  const db = fakeDb(tables);
+  const accounts = [{ account_id: 'pa1', name: 'Visa', mask: '4242', type: 'credit', subtype: 'credit card', balances: { current: 40, available: 960, iso_currency_code: 'CAD' } }];
+  fakePlaid([
+    { from: '', res: { added: [tx('p1', 'pa1', '2026-10-03', 35, 'PIZZA PLACE', { pending: true })], modified: [], removed: [], next_cursor: 'c1', has_more: false } },
+    { from: 'c1', res: { added: [tx('s1', 'pa1', '2026-10-04', 41.5, 'PIZZA PLACE TORONTO ON', { pending_transaction_id: 'p1' })], modified: [], removed: [{ transaction_id: 'p1' }], next_cursor: 'c2', has_more: false } },
+  ], accounts);
+  await syncItem(db, tables.plaid_items[0] as any);
+  assertEquals(tables.transactions.length, 1);
+  const row = tables.transactions[0];
+  assertEquals([row.pending, row.reviewed], [true, true]);
+  row.category_id = 'cat-food'; row.category_source = 'manual'; row.notes = 'with Sam';
+  const r2 = await syncItem(db, { ...tables.plaid_items[0], cursor: 'c1' } as any);
+  assertEquals(r2.status, 'ok', r2.error);
+  assertEquals(tables.transactions.length, 1, 'replaced, not added and removed');
+  assertEquals([row.plaid_transaction_id, row.pending, row.amount, row.date, row.category_id, row.notes], ['s1', false, -41.5, '2026-10-04', 'cat-food', 'with Sam']);
+});
+
+Deno.test('balance gap: money the bank counted but has not listed yet', async () => {
+  const tables: Record<string, Row[]> = {
+    accounts: [{ id: 'a1', type: 'depository', current_balance: 450, balance_anchor: 500, balance_anchor_at: new Date(Date.now() - 86_400_000).toISOString() }],
+    transactions: [{ id: 't', account_id: 'a1', amount: -20, created_at: new Date().toISOString() }],
+  };
+  const db = fakeDb(tables);
+  await trackBalanceGaps(db, ['a1']);
+  assertEquals(tables.accounts[0].balance_gap, -30, '$50 down, $20 of it listed');
+  // The rest arrives: the gap closes and the anchor moves on.
+  tables.transactions.push({ id: 'u', account_id: 'a1', amount: -30, created_at: new Date().toISOString() });
+  await trackBalanceGaps(db, ['a1']);
+  assertEquals([tables.accounts[0].balance_gap, tables.accounts[0].balance_anchor], [0, 450]);
 });
