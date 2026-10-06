@@ -35,28 +35,40 @@ export function CreditScoreCard({ refresh = 0 }: { refresh?: number }) {
   const [logging, setLogging] = useState(false);
   const [n, setN] = useState(0);
   const [only, setOnly] = useState<Score['bureau'] | null>(null);
+  const [sel, setSel] = useState<number | null>(null); // highlighted month on the chart
   useEffect(() => { loadScores().then((r) => { setScores(r.scores); setError(r.error); }); loadUtil().then(setUtil); }, [refresh, n]);
   if (scores == null) return null;
-  const last = scores[scores.length - 1];
-  const prev = [...scores].reverse().find((s) => last && s.bureau === last.bureau && s.id !== last.id);
   // The last 12 months, a line per bureau (or just the one picked).
   const axis = Array.from({ length: 12 }, (_, i) => addMonths(thisMonth(), i - 11));
   const lines = scoreLines(scores, axis, only ? [only] : undefined);
   const firstCol = Math.max(0, Math.min(...lines.map((l) => l.values.findIndex(Number.isFinite)).filter((i) => i >= 0)));
   const used = BUREAUS.filter((b) => scores.some((s) => s.bureau === b));
+  // The headline: the latest score of each bureau shown (the one picked, or all), and how it moved:
+  // since the highlighted month, or else since that bureau's score before.
+  const heads = (only ? [only] : used).map((b) => {
+    const mine = scores.filter((s) => s.bureau === b);
+    const last = mine[mine.length - 1];
+    const line = lines.find((l) => l.name === b);
+    const at = sel != null ? line?.values[firstCol + sel] : undefined;
+    const prev = mine[mine.length - 2];
+    const was = at != null && Number.isFinite(at) ? { score: at, when: shortDate(axis[firstCol + sel!]).split(' ')[0] } : prev ? { score: prev.score, when: shortDate(prev.date) } : null;
+    return { b, last, was };
+  }).filter((h) => h.last);
   // One row per month: each bureau's last score that month, and the utilisation for it.
   const months = [...new Set(scores.map((s) => s.date.slice(0, 7)))].slice(-6).reverse()
     .map((m) => ({ m, list: used.map((b) => [...scores].reverse().find((s) => s.bureau === b && s.date.startsWith(m))).filter(Boolean) as Score[] }));
   const body = (
     <View style={{ gap: 10 }}>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-      {last ? (
-        <View style={styles.between}>
-          <View>
-            <Text style={{ color: t.text, fontSize: 28, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{last.score}</Text>
-            <Text style={{ color: t.muted, fontSize: 12 }}>{last.bureau} · {shortDate(last.date)} {last.date.slice(0, 4)}</Text>
-          </View>
-          {prev && <Text style={{ color: last.score >= prev.score ? t.positive : t.danger, fontWeight: '700' }}>{last.score >= prev.score ? '▲' : '▼'} {Math.abs(last.score - prev.score)} since {shortDate(prev.date)}</Text>}
+      {heads.length ? (
+        <View style={{ flexDirection: 'row', gap: 16, flexWrap: 'wrap' }}>
+          {heads.map(({ b, last, was }) => (
+            <View key={b} style={{ flex: 1, minWidth: 130 }}>
+              <Text style={{ color: t.text, fontSize: 28, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{last.score}</Text>
+              <Text style={{ color: t.muted, fontSize: 12 }}>{b} · {shortDate(last.date)} {last.date.slice(0, 4)}</Text>
+              {was && <Text style={{ color: last.score >= was.score ? t.positive : t.danger, fontWeight: '700', fontSize: 13 }}>{last.score === was.score ? '=' : last.score > was.score ? '▲' : '▼'} {Math.abs(last.score - was.score)} since {was.when}</Text>}
+            </View>
+          ))}
         </View>
       ) : !error && <Text style={{ color: t.muted }}>No scores yet. Note your score from Borrowell or your bank's app once a month to see the trend.</Text>}
       {used.length > 1 && (
@@ -67,7 +79,7 @@ export function CreditScoreCard({ refresh = 0 }: { refresh?: number }) {
       )}
       {scores.length >= 2 && lines.length > 0 && (
         <LineChart t={t} labels={axis.slice(firstCol).map((m) => shortDate(m).split(' ')[0])} series={lines.map((l) => ({ ...l, values: l.values.slice(firstCol) }))}
-          height={160} format={(v) => String(Math.round(v))} legend={lines.length > 1} />
+          height={160} format={(v) => String(Math.round(v))} legend={lines.length > 1} onSel={setSel} />
       )}
       {months.length > 0 && (
         <View style={{ gap: 4 }}>

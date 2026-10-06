@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
+import { searchWords,
   addDays, loanWhatIf, matchChanged, matchDues, payoffAt, payoffSchedule, computeLoanInterest, dedupeAgainstExisting, fromPlaidAmount, hourIn, learnMerchantRules,
   guessMerchant, merchantFor, normalizeDescription, parseBankCsv, parseMoney, suggestCategory, todayIn, toIsoDate, weekStart,
 } from '../src/index.ts';
@@ -302,5 +302,14 @@ describe('monthly review, subscriptions and backups', () => {
     const dates = ['2026-07-01', '2026-07-02', '2026-08-01', '2026-08-15', '2026-09-01', '2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'];
     expect(backupsToDelete(dates, '2026-10-04')).toEqual(['2026-07-02', '2026-08-15', '2026-09-26', '2026-09-27']);
     expect(backupsToDelete(dates, '2026-10-04', 7, 2)).toEqual(['2026-07-01', '2026-07-02', '2026-08-01', '2026-08-15', '2026-09-26', '2026-09-27']);
+  });
+});
+
+describe('search words', () => {
+  it('splits a search into words, dropping what PostgREST cannot take', () => {
+    expect(searchWords('Petro-Stop #147')).toEqual(['petro', 'stop', '147']);
+    expect(searchWords('  work   expenses ')).toEqual(['work', 'expenses']);
+    expect(searchWords('12.50')).toEqual(['12.50']);
+    expect(searchWords('a, (b) "c"')).toEqual(['a', 'b', 'c']);
   });
 });

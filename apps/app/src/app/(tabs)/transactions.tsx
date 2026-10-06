@@ -21,7 +21,7 @@ import { PAGE_MAX, useWide } from '@/lib/layout';
 import { TransactionEditor } from '@/components/TransactionEditor';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  categoryIcon, datePresetRange, dayHeading, formatMoney, groupByDay, searchPattern, shortDate, type DatePreset,
+  categoryIcon, datePresetRange, dayHeading, formatMoney, groupByDay, searchWords, shortDate, type DatePreset,
 } from '@budget-app/core';
 import { router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -284,10 +284,17 @@ function filtered(q: any, mode: Mode, filters: Filters, query: string) {
     const parts = [...(ids.length ? [`category_ids.ov.{${ids.join(',')}}`] : []), ...(filters.categories.includes('none') ? ['category_ids.eq.{}'] : [])];
     groups.push(parts.join(','));
   }
-  const pattern = searchPattern(query);
-  if (pattern) groups.push(['display_name', 'name', 'notes'].map((c) => `${c}.ilike.${pattern}`).join(','));
+  // Search: every word has to turn up somewhere: the merchant, the bank's text, notes, the category or
+  // its group, or the account. So a category's name works as a filter ("work expenses"), and so does
+  // an account's ("visa"). A plain number also finds that amount.
+  for (const w of searchWords(query)) {
+    const cols = ['display_name', 'name', 'notes', 'category_name', 'category_group', 'account_name'].map((c) => `${c}.ilike.*${w}*`);
+    const n = Number(w.replace(/^\$/, ''));
+    if (/^\$?\d+(\.\d{1,2})?$/.test(w) && Number.isFinite(n)) cols.push(`amount_abs.eq.${n}`);
+    groups.push(cols.join(','));
+  }
   if (groups.length === 1) q = q.or(groups[0]);
-  if (groups.length === 2) q = q.or(`and(or(${groups[0]}),or(${groups[1]}))`);
+  if (groups.length > 1) q = q.or(`and(${groups.map((g) => `or(${g})`).join(',')})`);
   const order: Record<Sort, [string, boolean][]> = {
     newest: [['date', false], ['id', false]], oldest: [['date', true], ['id', true]],
     largest: [['amount_abs', false], ['date', false]], smallest: [['amount_abs', true], ['date', false]],

@@ -18,7 +18,7 @@ import { loadPlans, setInstalment, type CardPlan } from '@/lib/paymentPlans';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { openReview } from '@/components/MonthlyReview';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Field, Sheet, useChanged } from '@/components/Forms';
 import { PeriodStrip, PeriodTitle, useBackToNow, type Period } from '@/components/PeriodStrip';
@@ -49,6 +49,8 @@ export default function BudgetTab() {
   const [against, setAgainst] = useState<Against>('prev');
   const [picked, setPicked] = useState<Month>(addMonths(thisMonth(), -2));
   const [scope, setScope] = useState<'month' | 'ytd'>('month');
+  // Which of the two months a tap on the strip sets: the one being looked at, or the one it's set against.
+  const [picking, setPicking] = useState<'month' | 'base'>('base');
   useBackToNow(() => { setMonth(thisMonth()); setAgainst('prev'); });
   // Opened at a month (from the monthly review): go there once.
   const asked = useLocalSearchParams<{ month?: string }>().month;
@@ -105,6 +107,7 @@ export default function BudgetTab() {
   const base: Month = against === 'prev' ? addMonths(month, -1) : against === 'lastYear' ? addMonths(month, -12) : picked;
   const compare = view === 'compare';
   const pickBase = (m: Month) => {
+    if (picking === 'month') { if (m === base) return; const keep = base; setMonth(m); setPicked(keep); setAgainst('pick'); return; }
     if (m === month) return;
     setScope('month');
     if (m === addMonths(month, -1)) setAgainst('prev'); else if (m === addMonths(month, -12)) setAgainst('lastYear'); else { setPicked(m); setAgainst('pick'); }
@@ -116,13 +119,28 @@ export default function BudgetTab() {
     {/* Same header as the Planner: the open period and a way back to now, the view switch, then the strip of months. */}
     <TopBar>
       <PeriodTitle t={t} title={view === 'year' ? 'Year by month' : compare && scope === 'month' ? `${monthName(month, false)} vs ${monthName(base, base.slice(0, 4) !== month.slice(0, 4))}` : monthName(month)} away={view !== 'year' && month !== current} hereText="This month" onHere={() => setMonth(current)}
-        sub={view === 'year' ? undefined : compare ? (scope === 'month' ? 'Tap a month below to compare against it' : `${monthName(month, false)} year to date against the year before`) : month === current ? 'This month' : month > current ? 'Planning ahead · spending shows once the month starts' : 'Past month'} />
+        sub={view === 'year' ? undefined : compare ? (scope === 'month' ? `Tap a month to change ${picking === 'month' ? 'the month you’re looking at' : 'the one it’s compared with'}` : `${monthName(month, false)} year to date against the year before`) : month === current ? 'This month' : month > current ? 'Planning ahead · spending shows once the month starts' : 'Past month'} />
     </TopBar>
     <View style={styles.viewSwitch}>
       <Segmented<View_> value={view} onChange={setView}
         options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
       {view === 'month' && <PeriodStrip t={t} items={strip} selected={month} current={current} onSelect={setMonth} />}
-      {compare && <PeriodStrip t={t} items={strip.map((p) => (p.key === month ? { ...p, label: `${p.label} ★` } : p))} selected={scope === 'month' ? base : month} current={current} onSelect={(k) => pickBase(k as Month)} />}
+      {compare && scope === 'month' && (
+        <View style={styles.pickRow}>
+          {([['month', month, t.accent], ['base', base, t.series2]] as const).map(([k, m, color], i) => (
+            <Fragment key={k}>
+              {i > 0 && <Text style={{ color: t.muted, fontSize: 13 }}>vs</Text>}
+              <Pressable onPress={() => setPicking(k)} accessibilityRole="button" accessibilityState={{ selected: picking === k }}
+                style={[styles.pick, { borderColor: picking === k ? color : t.line, backgroundColor: picking === k ? color + '1f' : t.card }]}>
+                <View style={[styles.dot, { backgroundColor: color }]} />
+                <Text style={{ color: t.text, fontSize: 13, fontWeight: picking === k ? '700' : '400' }} numberOfLines={1}>{monthName(m)}</Text>
+              </Pressable>
+            </Fragment>
+          ))}
+        </View>
+      )}
+      {compare && <PeriodStrip t={t} items={strip} selected={month} second={scope === 'month' ? base : undefined} focus={scope === 'month' && picking === 'base' ? base : month} current={current}
+        onSelect={(k) => (scope === 'month' ? pickBase(k as Month) : setMonth(k as Month))} />}
       {view === 'month' && month < current && (
         <Pressable onPress={() => openReview(month)} hitSlop={6} accessibilityRole="button">
           <Text style={{ color: t.accent, fontSize: 13 }}>📋 {monthName(month, false)} in review ›</Text>
@@ -860,6 +878,9 @@ function YearView(d: Data) {
 }
 
 const styles = StyleSheet.create({
+  pickRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  pick: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
   viewSwitch: { paddingHorizontal: 12, paddingBottom: 6, gap: 8, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   page: { paddingHorizontal: 12, paddingTop: 4, gap: 8, paddingBottom: UNDER_BAR, maxWidth: PAGE_MAX, width: '100%', alignSelf: 'center' },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

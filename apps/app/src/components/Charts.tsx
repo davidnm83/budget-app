@@ -20,6 +20,8 @@ interface PlotProps {
   refLine?: number;
   /** false hides the colour key (when there are too many parts for it to help). */
   legend?: boolean;
+  /** Told which point is highlighted (null when none), so numbers above the chart can follow it. */
+  onSel?: (i: number | null) => void;
 }
 
 /** "Nice" top of the axis: 1, 2, 2.5 or 5 times a power of ten. */
@@ -75,9 +77,10 @@ function Readout({ t, labels, series, sel, format, hint, col, stacked }: { t: Th
 /** What a bar or line chart needs around its plot: the read-out line, the x labels, and the legend when it shows. */
 export const plotChrome = (seriesCount: number, legend = true) => 18 + 4 + 15 + (legend && seriesCount > 1 ? 22 : 0);
 
-function Frame({ t, labels, series, height = 140, format, onPick, free, colors, refLine, stacked, legend = true, also = [], children }: PlotProps & { free?: boolean; stacked?: boolean; also?: number[]; children: (w: number, h: number, min: number, max: number, sel: number | null) => React.ReactNode }) {
+function Frame({ t, labels, series, height = 140, format, onPick, onSel, free, colors, refLine, stacked, legend = true, also = [], children }: PlotProps & { free?: boolean; stacked?: boolean; also?: number[]; children: (w: number, h: number, min: number, max: number, sel: number | null) => React.ReactNode }) {
   const [w, setW] = useState(0);
   const [sel, setSel] = useState<number | null>(null);
+  useEffect(() => { onSel?.(sel); }, [sel]);
   const wide = useWide(); // with a mouse, hovering reads a point out and one click opens it; on a phone the first tap reads it out
   const all = [...(stacked ? labels.map((_, i) => series.reduce((x, s) => x + (s.values[i] ?? 0), 0)) : series.flatMap((s) => s.values)), ...(refLine != null ? [refLine] : []), ...also].filter(Number.isFinite);
   const col = (i: number) => colors?.[i] ?? t.series[i];

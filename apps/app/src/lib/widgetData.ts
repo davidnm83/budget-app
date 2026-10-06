@@ -56,6 +56,8 @@ export interface ChartData {
   /** Parts of the whole over the period (categories, cards, apps), biggest first. Empty when the source has none. */
   breakdown: { label: string; value: number; query?: Omit<TxnQuery, 'title' | 'from' | 'to'> }[];
   tiles: { label: string; value: string; sub?: string }[];
+  /** The numbers above the chart while point i is highlighted (a change then runs from that point). */
+  tilesAt?: (i: number) => { label: string; value: string; sub?: string }[];
   /** The series are parts of a whole and should be stacked. */
   stacked?: boolean;
   /** Values are percentages, not money. */
@@ -138,6 +140,9 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
       series: lines, breakdown: [],
       tiles: lines.map((l) => { const s = latest(l.name)!; const prev = [...scores].reverse().find((x) => x.bureau === l.name && x.id !== s.id);
         return { label: l.name, value: String(s.score), sub: prev ? `${s.score >= prev.score ? '▲' : '▼'} ${Math.abs(s.score - prev.score)} · ${shortDate(s.date)}` : shortDate(s.date) }; }),
+      // A highlighted month: each bureau's change from that month to its latest score.
+      tilesAt: (i) => lines.map((l) => { const s = latest(l.name)!; const was = l.values[i];
+        return { label: l.name, value: String(s.score), sub: Number.isFinite(was) ? `${s.score >= was ? '▲' : '▼'} ${Math.abs(s.score - was)} since ${monthShort(cols[i])}` : `no score in ${monthShort(cols[i])}` }; }),
       empty: lines.length ? undefined : 'No scores yet. Log them on the Credit cards page.',
     };
   }
@@ -202,6 +207,14 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
       { label: `Average · ${prior.length || 1} mo`, value: money0(avg(prior.length ? prior : values)), sub: 'per month' },
       { label: `Total · ${n} mo`, value: money0(sumOf(values)) },
     ];
+    // A highlighted column: its own figure, against the average, beside the period's total.
+    const tilesAt = (i: number): ChartData['tiles'] => {
+      const a = avg(values.filter((_, k) => k !== i)), d = values[i] - a;
+      return [
+        { label: week ? dayShort(months[i]) : monthShort(months[i]), value: money0(values[i]), sub: n > 1 ? `${d < 0 ? '−' : '+'}${money0(Math.abs(d))} vs the average` : undefined },
+        ...tiles.slice(1),
+      ];
+    };
     if (compare) { const d = sumOf(values) - sumOf(series[1].values); tiles[1] = { label: 'Against the period before', value: `${d < 0 ? '−' : '+'}${money0(Math.abs(d))}`, sub: `was ${money0(sumOf(series[1].values))}` }; }
     // Where this month is heading: what's spent so far plus what the rest of the month usually costs.
     let outline: ChartData['outline'], note: string | undefined, refLine = mean(values);
@@ -218,7 +231,7 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
     return {
       ...base, series, stacked: stack && series.length > 1,
       breakdown: parts.map(([id, value]) => part(id, value)),
-      refLine, outline, note, tiles,
+      refLine, outline, note, tiles, tilesAt,
       drill: (i) => ({ from: months[i], to: endOf(months[i]), ...kindQ, ...acc, noTransfers: true }),
     };
   }
@@ -247,6 +260,10 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
           { label: week ? 'Today' : past ? monthShort(cur) : 'This month', value: `${rate[sofar - 1] ?? 0}%`, sub: `${money0(net[sofar - 1] ?? 0)} of ${money0(income[sofar - 1] ?? 0)}` },
           { label: week ? 'This week' : `Over ${n} mo`, value: `${tin > 0 ? Math.round((tnet / tin) * 100) : 0}%`, sub: `${money0(tnet)} kept` },
         ],
+        tilesAt: (i) => [
+          { label: week ? dayShort(months[i]) : monthShort(months[i]), value: `${rate[i]}%`, sub: `${money0(net[i])} of ${money0(income[i])}` },
+          { label: week ? 'This week' : `Over ${n} mo`, value: `${tin > 0 ? Math.round((tnet / tin) * 100) : 0}%`, sub: `${money0(tnet)} kept` },
+        ],
         drill: (i) => ({ from: months[i], to: endOf(months[i]), ...(accIds.length ? { accountIds: accIds } : {}), noTransfers: true }),
       };
     }
@@ -259,6 +276,10 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
           { label: 'Net this week', value: `${tin - tout < 0 ? '−' : '+'}${money0(Math.abs(tin - tout))}`, sub: `${money0(tin)} in · ${money0(tout)} out` }]; })() : [
         { label: past ? `Net · ${monthShort(cur)}` : 'Net this month', value: `${net[n - 1] < 0 ? '−' : '+'}${money0(Math.abs(net[n - 1]))}`, sub: `${money0(income[n - 1])} in · ${money0(spending[n - 1])} out` },
         { label: `Average net · ${n} mo`, value: `${avg(net) < 0 ? '−' : '+'}${money0(Math.abs(avg(net)))}`, sub: 'per month' }]),
+      ],
+      tilesAt: (i) => [
+        { label: `Net · ${week ? dayShort(months[i]) : monthShort(months[i])}`, value: `${net[i] < 0 ? '−' : '+'}${money0(Math.abs(net[i]))}`, sub: `${money0(income[i])} in · ${money0(spending[i])} out` },
+        ...(week ? [] : [{ label: `Average net · ${n} mo`, value: `${avg(net) < 0 ? '−' : '+'}${money0(Math.abs(avg(net)))}`, sub: 'per month' }]),
       ],
       drill: (i) => ({ from: months[i], to: endOf(months[i]), ...(accIds.length ? { accountIds: accIds } : {}), noTransfers: true }),
     };
@@ -318,6 +339,13 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
     }).sort((x, y) => x.due.localeCompare(y.due))[0];
     if (due) tiles.push({ label: 'Next due', value: shortDate(due.due), sub: due.a.name });
   }
+  // A highlighted point: the change runs from it to now (to the end of the chart for a past month).
+  const tilesAt = (i: number): ChartData['tiles'] => {
+    if (i >= values.length - 1) return tiles;
+    const from = values[i], d = last - from;
+    const change = { label: `Change since ${week ? dayShort(dates[i]) : shortDate(dates[i])}`, value: pct ? `${d < 0 ? '−' : '+'}${Math.abs(d)} pts` : `${d < 0 ? '−' : '+'}${money0(Math.abs(d))}`, sub: `from ${show(from)}` };
+    return loan ? [tiles[0], change, ...tiles.slice(1)] : [tiles[0], change, ...tiles.slice(2)];
+  };
   if (loan) {
     const ls = loanSummary(Math.abs(signedBalance(loan)), txns.map((x) => ({ date: x.date, amount: x.amount, name: x.name ?? '' })), now);
     tiles.splice(1, 1);
@@ -327,7 +355,7 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   return {
     labels: dates.map((d) => (week ? dayShort(d) : shortDate(d))), period, from: dates[0] ?? now, to: end,
     series: before ? [{ name: 'This period', values }, { name: 'Period before', values: before }] : [{ name: owedView && source === 'balance' ? 'Owed' : source === 'balance' ? 'Balance' : SOURCES[source].title, values }],
-    breakdown, tiles, refLine: mean(values), percent: pct,
+    breakdown, tiles, tilesAt, refLine: mean(values), percent: pct,
     title: source === 'balance' && accounts.length === 1 ? accounts[0].name : undefined,
     drill: (i) => (i === 0 ? null : { from: addDays(dates[i], -(step - 1)), to: dates[i], accountIds: ids }),
   };

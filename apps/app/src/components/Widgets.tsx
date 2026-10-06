@@ -203,6 +203,8 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
   const want: ChartView = cfg.view ?? cfg.chart ?? allowed[0];
   const view = allowed.includes(want) ? want : allowed[0];
   const { data, error } = useLoad(() => loadChart(cfg, anchor, range), [refresh, JSON.stringify(cfg), anchor, range?.from, range?.to]);
+  // The highlighted point on the chart: the numbers above it follow it.
+  const [sel, setSel] = useState<number | null>(null);
   const title = cfg.title || cfg.group || data?.title || SOURCES[source].title;
   if (!data) return <CardShell t={t} title={title}><Sized h={cfg.h}>{error ? <Text style={{ color: t.danger }}>{error}</Text> : <Skeleton color={t.track} />}</Sized></CardShell>;
   const open = (i: number) => { const q = data.drill?.(i); if (q) showTxns({ title: `${title} · ${data.labels[i]}`, ...q }); };
@@ -250,12 +252,12 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
           ) : (
             <>
               {!!data.note && <Text style={{ color: t.muted, fontSize: 12, lineHeight: 16 }} numberOfLines={1}>{data.note}</Text>}
-              {cfg.h !== 's' && cfg.numbers !== false && <View style={[styles.tiles, { flexWrap: 'nowrap' }]}>{data.tiles.slice(0, wide ? 3 : 2).map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}
+              {cfg.h !== 's' && cfg.numbers !== false && <View style={[styles.tiles, { flexWrap: 'nowrap' }]}>{(sel != null && data.tilesAt && sel < data.labels.length ? data.tilesAt(sel) : data.tiles).slice(0, wide ? 3 : 2).map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}
               <Fill>{(h) => {
                 const plot = Math.max(48, Math.floor(h - plotChrome(data.series.length, legend)));
                 return view === 'line'
-                  ? <LineChart t={t} labels={data.labels} series={data.series} height={plot} format={fmt} refLine={data.refLine} onPick={data.drill ? open : undefined} />
-                  : <BarChart t={t} labels={data.labels} series={data.series} height={plot} format={fmt} refLine={data.refLine} onPick={data.drill ? open : undefined}
+                  ? <LineChart t={t} labels={data.labels} series={data.series} height={plot} format={fmt} refLine={data.refLine} onPick={data.drill ? open : undefined} onSel={setSel} />
+                  : <BarChart t={t} labels={data.labels} series={data.series} height={plot} format={fmt} refLine={data.refLine} onPick={data.drill ? open : undefined} onSel={setSel}
                       stacked={data.stacked} legend={legend}
                       barColor={data.outline && !data.stacked ? (i) => (i === data.outline!.i ? tone : undefined) : undefined}
                       outline={data.outline ? { i: data.outline.i, value: data.outline.value, color: tone! } : undefined} />;

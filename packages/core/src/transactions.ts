@@ -29,6 +29,14 @@ export function searchPattern(text: string): string | null {
   return s ? `*${s}*` : null;
 }
 
+/**
+ * The words of a search, each to be matched on its own (in any order, anywhere in the text):
+ * "petro stop" finds "PETRO-STOP #147" and "Stop, Petro". Punctuation PostgREST can't take is dropped.
+ */
+export function searchWords(text: string): string[] {
+  return [...new Set(text.replace(/[,()"'*%\\:\-#/&]/g, ' ').toLowerCase().split(/\s+/).filter(Boolean))].slice(0, 6);
+}
+
 export interface DayGroup<T> { date: IsoDate; total: number; data: T[] }
 
 /** Consecutive rows with the same date become one section, with that day's net total. */

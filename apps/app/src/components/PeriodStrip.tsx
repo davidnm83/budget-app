@@ -29,7 +29,11 @@ export function PeriodTitle({ t, title, sub, away, hereText, onHere }: { t: Them
   );
 }
 
-export function PeriodStrip({ t, items, selected, current, onSelect }: { t: Theme; items: Period[]; selected: string; current: string; onSelect: (key: string) => void }) {
+/**
+ * `second` marks another period in a different colour (Compare: the month it's set against); `focus`
+ * is the one kept in view, `selected` by default.
+ */
+export function PeriodStrip({ t, items, selected, current, onSelect, second, focus }: { t: Theme; items: Period[]; selected: string; current: string; onSelect: (key: string) => void; second?: string; focus?: string }) {
   const scroll = useRef<ScrollView>(null);
   const cells = useRef(new Map<string, any>());
   const spots = useRef(new Map<string, { x: number; w: number }>());
@@ -44,31 +48,32 @@ export function PeriodStrip({ t, items, selected, current, onSelect }: { t: Them
     if (Platform.OS === 'web' && el && typeof el.offsetLeft === 'number') return { x: el.offsetLeft, w: el.offsetWidth };
     return spots.current.get(key);
   };
+  const target = focus ?? selected;
   const center = (animated: boolean) => {
-    const s = spot(selected);
+    const s = spot(target);
     if (!s || !width) return;
     scroll.current?.scrollTo({ x: Math.max(0, s.x - width / 2 + s.w / 2), animated });
   };
   // Bring the open period to the middle when it changes, when the row is measured or grows, and when
   // the page comes back into view (so a strip left scrolled elsewhere starts where it should).
-  useEffect(() => { center(moved.current); moved.current = true; }, [selected, width, contentW, items.length, items[0]?.key]);
-  useFocusEffect(useCallback(() => { center(false); }, [selected, width, contentW]));
+  useEffect(() => { center(moved.current); moved.current = true; }, [target, width, contentW, items.length, items[0]?.key]);
+  useFocusEffect(useCallback(() => { center(false); }, [target, width, contentW]));
   // Scrolled away from the open period: an arrow on that side brings it back.
-  const s = spot(selected);
+  const s = spot(target);
   const off = s && width && contentW ? (s.x + s.w < at + 8 ? 'left' : s.x > at + width - 8 ? 'right' : null) : null;
   return (
     <View onLayout={(e) => setWidth(e.nativeEvent.layout.width)} style={[styles.track, { backgroundColor: t.line }]}>
       <ScrollView ref={scroll} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 2, padding: 3 }}
         onContentSizeChange={(w) => setContentW(w)} onScroll={(e) => setAt(e.nativeEvent.contentOffset.x)} scrollEventThrottle={64}>
         {items.map((p) => {
-          const on = p.key === selected, now = p.key === current;
+          const on = p.key === selected, now = p.key === current, two = !on && p.key === second;
           return (
             <Pressable key={p.key} ref={(el) => { if (el) cells.current.set(p.key, el); else cells.current.delete(p.key); }}
-              onPress={() => (on ? center(true) : onSelect(p.key))} accessibilityRole="tab" accessibilityState={{ selected: on }}
+              onPress={() => (p.key === target ? center(true) : onSelect(p.key))} accessibilityRole="tab" accessibilityState={{ selected: on }}
               onLayout={(e) => { spots.current.set(p.key, { x: e.nativeEvent.layout.x, w: e.nativeEvent.layout.width }); }}
-              style={[styles.cell, EASE, on && { backgroundColor: t.accent }, !on && now && { borderColor: t.accent, borderWidth: 1 }]}>
-              <Text style={{ color: on ? '#ffffffcc' : now ? t.accent : t.muted, fontSize: 10, fontWeight: '700' }} numberOfLines={1}>{p.label}</Text>
-              {p.value != null && <Text style={{ color: on ? '#fff' : p.bad ? t.danger : p.dim ? t.muted : t.text, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{p.bad && !on ? '⚠ ' : ''}{p.value}</Text>}
+              style={[styles.cell, EASE, on && { backgroundColor: t.accent }, two && { backgroundColor: t.series2 }, !on && !two && now && { borderColor: t.accent, borderWidth: 1 }]}>
+              <Text style={{ color: on || two ? '#ffffffcc' : now ? t.accent : t.muted, fontSize: 10, fontWeight: '700' }} numberOfLines={1}>{p.label}</Text>
+              {p.value != null && <Text style={{ color: on || two ? '#fff' : p.bad ? t.danger : p.dim ? t.muted : t.text, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{p.bad && !on && !two ? '⚠ ' : ''}{p.value}</Text>}
             </Pressable>
           );
         })}
