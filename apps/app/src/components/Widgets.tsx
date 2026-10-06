@@ -13,6 +13,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { BalanceChart } from '@/components/AccountSheet';
 import { compact, MonthGrid, type DayCell } from '@/components/MonthGrid';
+import { loadOwed } from '@/lib/iou';
 import { Skeleton } from '@/components/Columns';
 import { Field, Sheet, useChanged } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
@@ -94,6 +95,7 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'watch', title: 'Spending watch', about: 'Your watch-list categories against their average', home: true, budget: true, sizable: true },
   { key: 'text', title: 'Text', about: 'A heading and a note of your own: what a page is for, a reminder, a goal', home: true, budget: true, config: 'text', fits: true },
   { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or an account, for the accounts and categories you choose', home: true, budget: true, config: 'chart', sizable: true },
+  { key: 'owed', title: 'Money owed', about: 'What each person owes you, or you owe them, from transactions marked with their name', home: true, budget: true, fits: true },
   { key: 'goals', title: 'Goals', about: 'Your goals with their progress and whether they’re on pace', home: true, budget: true, fits: true },
 ];
 export const DEFAULT_HOME = ['radar', 'review', 'week', 'budget', 'networth'];
@@ -166,6 +168,7 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
     case 'chart': return <ChartWidget t={t} refresh={refresh} cfg={cfg} anchor={anchor} range={range} />;
     case 'text': return <TextNote t={t} cfg={cfg} />;
     case 'goals': return <GoalsMini t={t} refresh={refresh} />;
+    case 'owed': return <OwedCard t={t} refresh={refresh} />;
     case 'radar': return <Radar t={t} refresh={refresh} settings={cfg.radar} />;
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
@@ -281,6 +284,36 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
             </>
           )}
       </Sized>
+    </CardShell>
+  );
+}
+
+/** Money owed (IDEA-9): each person's balance; tap one for the transactions behind it. */
+function OwedCard({ t, refresh }: { t: Theme; refresh: number }) {
+  const [showTxns, txnSheet] = useTxnSheet();
+  const { data } = useLoad(loadOwed, [refresh]);
+  if (!data) return <CardShell t={t} title="Money owed"><Skeleton color={t.track} /></CardShell>;
+  const open = data.filter((o) => Math.abs(o.balance) >= 0.01), settled = data.length - open.length;
+  const toYou = open.filter((o) => o.balance > 0).reduce((s, o) => s + o.balance, 0), fromYou = -open.filter((o) => o.balance < 0).reduce((s, o) => s + o.balance, 0);
+  return (
+    <CardShell t={t} title="Money owed" after={txnSheet} head={open.length ? (
+      <View style={styles.tiles}>
+        <Mini t={t} label="Owed to you" value={money0(toYou)} />
+        {fromYou >= 0.01 && <Mini t={t} label="You owe" value={money0(fromYou)} color={t.danger} />}
+      </View>
+    ) : undefined}>
+      {!data.length ? <Text style={{ color: t.muted, fontSize: 13 }}>Open a transaction and put a name under “Money owed”: money you paid or lent counts as owed to you, money paid back counts against it.</Text> : (
+        <>
+          {open.map((o) => (
+            <Pressable key={o.person} onPress={() => showTxns({ title: `Money owed · ${o.person}`, from: '1900-01-01', to: '9999-12-31', ids: o.ids })} style={({ hovered }: any) => [styles.between, hovered && { opacity: 0.7 }]}>
+              <Text style={{ color: t.text, flex: 1 }} numberOfLines={1}>{o.person}</Text>
+              <Text style={{ color: o.balance > 0 ? t.text : t.danger, fontVariant: ['tabular-nums'] }}>{o.balance > 0 ? `owes you ${formatMoney(o.balance)}` : `you owe ${formatMoney(-o.balance)}`}</Text>
+            </Pressable>
+          ))}
+          {!open.length && <Text style={{ color: t.muted, fontSize: 13 }}>All settled.</Text>}
+          {settled > 0 && <Text style={{ color: t.muted, fontSize: 12 }}>{settled} settled</Text>}
+        </>
+      )}
     </CardShell>
   );
 }

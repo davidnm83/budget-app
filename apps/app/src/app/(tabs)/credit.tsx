@@ -17,6 +17,7 @@ import { PageBoard } from '@/components/PageBoard';
 import { PlansCard } from '@/components/PaymentPlans';
 import { CreditScoreCard } from '@/components/CreditScore';
 import { loadPlans, syncPlans, type CardPlan } from '@/lib/paymentPlans';
+import { loadMinimums, ruleFor, type CardMinimum } from '@/lib/cardMinimums';
 import { makeEntry } from '@/components/Widgets';
 import { Bar, Card } from '@/components/ui';
 import { loadAccounts, today } from '@/lib/plan';
@@ -39,6 +40,7 @@ export default function Credit() {
   const [refresh, setRefresh] = useState(0);
 
   const [plans, setPlans] = useState<CardPlan[]>([]);
+  const [minimums, setMinimums] = useState<Map<string, CardMinimum>>(new Map());
   const [transfers, setTransfers] = useState<CardTransfer[]>([]);
   const load = useCallback(async () => {
     try {
@@ -53,6 +55,7 @@ export default function Credit() {
       const bt = await loadTransfers();
       await linkTransfers(bt).catch(() => false);
       setTransfers([...bt]);
+      loadMinimums().then(setMinimums);
       setTxns(await loadTxnsFor(cards.map((c) => c.id), addDays(today(), -400)));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
@@ -76,9 +79,9 @@ export default function Credit() {
     // The part of the balance on payment plans that isn't billed yet isn't part of what the statement asks for.
     // The statement: from the bank's own balance, leaving out plans and promo balance transfers not billed yet.
     const st = cycle ? cardStatement(bankOwed, mine, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans.filter((p) => p.accountId === a.id),
-      transfersOnStatement(transfers.filter((x) => x.toAccountId === a.id && !x.closedOn), owed, cycle.lastClose, now)) : null;
+      transfersOnStatement(transfers.filter((x) => x.toAccountId === a.id && !x.closedOn), owed, cycle.lastClose, now), ruleFor(minimums, a.id)) : null;
     return { a, owed, u: utilization(owed, a.credit_limit), cycle, st };
-  }).sort((x, y) => y.owed - x.owed), [cards, txns, now, plans, transfers]);
+  }).sort((x, y) => y.owed - x.owed), [cards, txns, now, plans, transfers, minimums]);
 
   const interestDue = perCard.reduce((s, c) => s + (c.st && c.st.leftToPay > 0 ? c.st.interestIfUnpaid ?? 0 : 0), 0);
   const nextDue = perCard.filter((c) => c.st && c.st.leftToPay > 0 && c.cycle).sort((x, y) => x.cycle!.due.localeCompare(y.cycle!.due))[0];

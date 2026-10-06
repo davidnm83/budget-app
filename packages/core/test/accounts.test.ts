@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardStatement, transfersOnStatement, findTransferTxns, radarTransfers, transferProgress, cardCycle, cardInterest, cardStatus, loanSummary, monthlyFlow, utilization } from '../src/index.ts';
+import { cardStatement, fitMinimumRule, minimumPayment, minimumRuleText, statementCharges, transfersOnStatement, findTransferTxns, radarTransfers, transferProgress, cardCycle, cardInterest, cardStatus, loanSummary, monthlyFlow, utilization } from '../src/index.ts';
 
 describe('loan payoff', () => {
   const txns = [
@@ -86,5 +86,27 @@ describe('statements with a balance transfer', () => {
     const late = { ...bt, date: '2026-09-25', inTxnId: 'in2' };
     const s2 = cardStatement(3590, [{ id: 'in2', date: '2026-09-25', amount: -3000 }], '2026-09-20', 30, null, [], transfersOnStatement([late], 3590, '2026-09-20', '2026-10-06'));
     expect([s2.statementOwed, s2.spentThisCycle]).toEqual([590, 0]);
+  });
+});
+
+describe('card minimum payments', () => {
+  it('works out the common shapes', () => {
+    expect(minimumPayment(1000)).toBe(30);
+    expect(minimumPayment(200)).toBe(10);
+    expect(minimumPayment(6)).toBe(6);
+    expect(minimumPayment(1405.89, { base: 'fixed', amount: 10, plusCharges: true, floor: 10, round: 'cent' }, 25.9)).toBe(35.9);
+    expect(minimumPayment(1307.32, { base: 'percent', amount: 2.5, plusCharges: false, floor: 10, round: 'dollar' })).toBe(33);
+  });
+  it('finds the rule that gives the bank’s minimum', () => {
+    const fits = fitMinimumRule([{ close: '2026-09-20', balance: 1405.89, charges: 25.9, minimum: 35.9 }]);
+    expect(minimumRuleText(fits[0])).toBe('$10 + interest and fees');
+    // A statement with no interest can't tell "$10 + interest" from "1% at least $10"; a second one can.
+    const two = fitMinimumRule([{ close: '2026-08-20', balance: 624.94, charges: 0, minimum: 10 }, { close: '2026-09-20', balance: 900, charges: 12.5, minimum: 22.5 }]);
+    expect(two.map(minimumRuleText)).toEqual(['$10 + interest and fees']);
+    expect(fitMinimumRule([{ close: '2026-09-20', balance: 1000, charges: 0, minimum: 7.77 }])).toEqual([]);
+  });
+  it('adds up the interest and fees billed on a statement', () => {
+    const t = [{ date: '2026-09-20', amount: -25.9, name: 'PURCHASE INTEREST' }, { date: '2026-09-10', amount: -40, name: 'Grocer' }, { date: '2026-08-20', amount: -3, name: 'Interest' }, { date: '2026-09-05', amount: -120, name: 'Annual fee' }];
+    expect(statementCharges(t, '2026-08-20', '2026-09-20')).toBe(145.9);
   });
 });

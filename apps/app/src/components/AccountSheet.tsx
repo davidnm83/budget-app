@@ -20,7 +20,7 @@ export { Tile } from '@/components/Tile';
 import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, instalmentsBetween, minimumPayment, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, statementCharges, instalmentsBetween, minimumPayment, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
   monthlyFlow, shortDate, utilization,
   csvReminderOn,
 } from '@budget-app/core';
@@ -32,6 +32,8 @@ import { Bar, Button, Chip, Segmented } from '@/components/ui';
 import { mergeAccounts } from '@/lib/mergeAccounts';
 import { loadEntries, loadRecurring, loadSnapshots, today } from '@/lib/plan';
 import { loadPlans, type CardPlan } from '@/lib/paymentPlans';
+import { loadMinimums, type CardMinimum } from '@/lib/cardMinimums';
+import { MinimumCheckSheet, MinimumLine } from '@/components/CardMinimum';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 import { accountHistory, bankBalance, followsSnapshots, signedBalance, type Account, type Snapshot } from '@/lib/types';
@@ -239,12 +241,16 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
   const cycle = set ? cardCycle(today(), a.statement_day!, a.due_day!) : null;
   const [plans, setPlans] = useState<CardPlan[]>([]);
   const [transfers, setTransfers] = useState<CardTransfer[]>([]);
+  const [minimum, setMinimum] = useState<CardMinimum>({ rule: null, checks: [] });
+  const [checking, setChecking] = useState(false);
+  const loadMinimum = () => loadMinimums().then((m) => setMinimum(m.get(a.id) ?? { rule: null, checks: [] }));
   useEffect(() => {
+    loadMinimum();
     loadPlans().then((ps) => setPlans(ps.filter((p) => p.accountId === a.id))).catch(() => {});
     loadTransfers().then((l) => setTransfers(l.filter((x) => x.toAccountId === a.id && !x.closedOn))).catch(() => {});
   }, [a.id]);
   const tr = cycle ? transfersOnStatement(transfers, owed, cycle.lastClose, today()) : null;
-  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!) : null;
+  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!, minimum.rule ?? undefined) : null;
   // What the left-to-pay is made of: payment plan instalments billed on this statement, and an estimate of
   // the minimum (on the whole statement, balance transfers included), less what's been paid since.
   const prevClose = cycle ? cardCycle(addDays(cycle.lastClose, -1), a.statement_day!, a.due_day!).lastClose : null;
@@ -292,6 +298,9 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
               </Text>
             ) : <Pressable onPress={onSetUp}><Text style={{ color: t.accent, fontSize: 13 }}>Add the interest rate in Details for an interest estimate.</Text></Pressable>}
             <Text style={{ color: t.muted, fontSize: 12 }}>Estimate: daily interest on what's left plus about half of this cycle's spending, for one cycle. Your statement is the final word.</Text>
+            <MinimumLine t={t} had={minimum} onCheck={() => setChecking(true)} />
+            {checking && <MinimumCheckSheet t={t} accountId={a.id} had={minimum} onClose={() => setChecking(false)} onSaved={loadMinimum}
+              initial={{ close: cycle.lastClose, balance: st.statementOwed + (tr?.held ?? 0), charges: statementCharges(txns, prevClose!, cycle.lastClose) }} />}
           </>
         )}
       </Section>

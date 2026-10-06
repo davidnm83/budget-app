@@ -29,7 +29,7 @@ export async function loadRecurring(): Promise<Recurring[]> {
 /**
  * Credit card bills (BIL-3): the amount follows the card instead of a fixed number.
  *   statement — what's left on the last statement (or, once that's paid, what you owe now)
- *   minimum   — an estimate: 3% of that, at least $10
+ *   minimum   — the card's own minimum rule (Credit cards → the card → Check against a statement), else 3%, at least $10
  *   custom    — the amount you entered
  */
 async function resolveCardBills(list: (Recurring & { card_account_id?: string | null; card_rule?: string | null })[]): Promise<Recurring[]> {
@@ -38,12 +38,15 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
   const now = today();
   const [{ data: accts }, { data: txns }] = await Promise.all([
     supabase.from('account_balances').select('id, type, balance, statement_day, due_day').in('id', cards),
-    supabase.from('transactions').select('id, account_id, date, amount').in('account_id', cards).gte('date', addDays(now, -70)).eq('pending', false),
+    supabase.from('transactions').select('id, account_id, date, amount, name').in('account_id', cards).gte('date', addDays(now, -70)).eq('pending', false),
   ]);
+  const minimums = await import('./cardMinimums').then((m) => m.loadMinimums()).catch(() => new Map());
+  const ruleOf = (id: string) => minimums.get(id)?.rule ?? undefined;
   // Payment plans on these cards: what isn't billed yet is left out of the amount to pay.
   const plans = await import('./paymentPlans').then((m) => m.loadPlans()).catch(() => []);
   const transfers = await import('./balanceTransfers').then((m) => m.loadTransfers()).catch(() => []);
   const due = new Map<string, number>();
+  const mins = new Map<string, number>(); // the statement's minimum still to pay, interest and fees included where the card's rule adds them
   for (const a of (accts ?? []) as any[]) {
     const owed = Math.max(0, Number(a.balance ?? 0)); // cards: amount owing is positive in balance
     const mine = plans.filter((p) => p.accountId === a.id);
@@ -54,17 +57,18 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
     let amount = Math.max(0, owed - mine.reduce((s, p) => s + planHeld(p, now), 0) - transfersOnStatement(bts, owed, now, now).held);
     if (a.statement_day && a.due_day) {
       const c = cardCycle(now, a.statement_day, a.due_day);
-      const st = cardStatement(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ id: x.id, date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null, mine,
-        transfersOnStatement(bts, owed, c.lastClose, now));
+      const st = cardStatement(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ id: x.id, date: x.date, amount: Number(x.amount), name: x.name })), c.lastClose, c.cycleDays, null, mine,
+        transfersOnStatement(bts, owed, c.lastClose, now), ruleOf(a.id));
       // A statement that's all on a balance transfer still asks for its minimum.
       if (st.leftToPay > 0 || st.minimumLeft) amount = Math.max(st.leftToPay, st.minimumLeft ?? 0);
+      if (st.leftToPay > 0 || st.minimumLeft) mins.set(a.id, st.minimumLeft ?? 0);
     }
     due.set(a.id, round2(amount));
   }
   return list.map((r) => {
     if (!r.card_account_id || !r.card_rule || r.card_rule === 'custom' || !due.has(r.card_account_id)) return r;
     const full = due.get(r.card_account_id)!;
-    const amount = r.card_rule === 'minimum' ? minimumPayment(full) : full;
+    const amount = r.card_rule === 'minimum' ? mins.get(r.card_account_id) ?? minimumPayment(full, minimums.get(r.card_account_id)?.rule ?? undefined) : full;
     return { ...r, amount: -amount, estimated: true };
   });
 }
