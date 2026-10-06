@@ -69,12 +69,9 @@ function activeCount(f: Filters) {
 export default function Transactions() {
   const t = useTheme();
   const navigation = useNavigation();
-  const params = useLocalSearchParams<{ mode?: string; q?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; q?: string; account?: string; from?: string; to?: string; label?: string; v?: string }>();
   const [mode, setMode] = useState<Mode>(params.mode === 'review' ? 'review' : 'all');
-  // Home's "To review" card opens this tab straight on the transactions to review.
-  useEffect(() => { if (params.mode === 'review' || params.mode === 'all') setMode(params.mode); }, [params.mode]);
   const [search, setSearch] = useState(params.q ?? '');
-  useEffect(() => { if (params.q) setSearch(params.q); }, [params.q]);
   const wide = useWide();
   const [room, setRoom] = useState(1200); // width available to the list and the pane beside it
   const twoPane = wide && splitFits(room);
@@ -82,6 +79,18 @@ export default function Transactions() {
   const searchRef = useRef<TextInput>(null);
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<Filters>(DEFAULTS);
+  // A link asking for a view (lib/txnLinks: Home's "To review", a search, a rule's matches, an account,
+  // a month) starts from a clean slate: filters and search left from before are cleared, then its own applied.
+  useEffect(() => {
+    if (!params.v && !params.mode && !params.q) return;
+    setMode(params.mode === 'review' ? 'review' : 'all');
+    setSearch(params.q ?? ''); setQuery(params.q ?? '');
+    setFilters({
+      ...DEFAULTS,
+      accounts: params.account ? [params.account] : [],
+      range: params.from || params.to ? { key: 'link', label: params.label || 'Chosen dates', from: params.from ?? '', to: params.to ?? '' } : DEFAULTS.range,
+    });
+  }, [params.v, params.mode, params.q, params.account, params.from, params.to]);
   const [showFilters, setShowFilters] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState<number | null>(null);

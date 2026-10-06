@@ -5,8 +5,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { TYPE, useWide } from '@/lib/layout';
 import type { Theme } from '@/lib/theme';
 
-export function Tile({ t, label, value, sub, color, warn, strong, three }: {
-  t: Theme; label: string; value: string; sub?: string; color?: string; warn?: boolean; strong?: boolean;
+export function Tile({ t, label, value, sub, color, warn, strong, three, lines = 2 }: {
+  t: Theme; label: string; value: string; sub?: string; /** How many lines the note may take. */ lines?: number; color?: string; warn?: boolean; strong?: boolean;
   /** One of three in a row that should stay a row on phones too. */
   three?: boolean;
 }) {
@@ -16,7 +16,7 @@ export function Tile({ t, label, value, sub, color, warn, strong, three }: {
     <View style={[styles.tile, !wide && !three && { minWidth: 140 }, { backgroundColor: c ? c + '14' : t.card, borderColor: c ?? t.line }, c && { borderLeftWidth: 3 }]}>
       <Text style={{ color: t.muted, fontSize: TYPE.tileNote, fontWeight: '600', letterSpacing: 0.3 }} numberOfLines={1}>{label.toUpperCase()}</Text>
       <Text style={{ color: c ?? t.text, fontSize: strong ? TYPE.tileValue + 2 : TYPE.tileValue, fontWeight: '700', fontVariant: ['tabular-nums'] }} numberOfLines={1}>{value}</Text>
-      {!!sub && <Text style={{ color: t.muted, fontSize: TYPE.tileNote }} numberOfLines={2}>{sub}</Text>}
+      {!!sub && <Text style={{ color: t.muted, fontSize: TYPE.tileNote }} numberOfLines={lines}>{sub}</Text>}
     </View>
   );
 }

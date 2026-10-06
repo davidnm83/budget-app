@@ -4,6 +4,7 @@
 //   • Merchant names: "text contains X" → the name to show.
 // When several rules match, the one with the longest text wins, so there is no order to manage;
 // the page shows how many recent transactions each rule actually decides instead.
+import { openTransactions } from '@/lib/txnLinks';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { categoryIcon, formatMoney, guessMerchant, matchRule, merchantFor, normalizeDescription, parseMoney, type CategoryRule } from '@budget-app/core';
 import { router, useFocusEffect } from 'expo-router';
@@ -198,7 +199,7 @@ function Matches({ t, list, text, onClose }: { t: Theme; list: Recent[]; text: s
   const [showTxns, txnSheet] = useTxnSheet();
   const dates = list.map((x) => x.date).sort();
   const popup = () => showTxns({ title: `Matching “${text.trim()}”`, from: dates[0], to: dates[dates.length - 1], ids: list.map((x) => x.id) });
-  const filtered = () => { onClose(); afterClose(() => router.navigate({ pathname: '/transactions', params: { mode: 'all', q: text.trim() } } as any)); };
+  const filtered = () => { onClose(); afterClose(() => openTransactions({ q: text.trim() })); };
   return (
     <View style={{ gap: 4 }}>
       <Text style={{ color: t.muted, fontSize: 12 }}>{list.length ? `Matches ${list.length} of your recent transactions, for example:` : 'Matches none of your recent transactions.'}</Text>

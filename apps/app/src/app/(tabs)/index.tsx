@@ -4,6 +4,7 @@
 //   3. Budget pace: spent vs where you'd expect to be by today, and the categories running ahead
 //   4. Net worth: today and the change since the 1st
 // Plus any widgets you add (Customize at the bottom); the order and choice are kept per user.
+import { openTransactions } from '@/lib/txnLinks';
 import { useFocusLoad } from '@/lib/focusLoad';
 import { PAGE_MAX } from '@/lib/layout';
 import { PageSkeleton } from '@/components/States';
@@ -123,7 +124,7 @@ export default function Home() {
 
 function ReviewCard({ t, n }: { t: Theme; n: number }) {
   return (
-    <CardShell t={t} title="To review" link={n ? 'Review' : undefined} onPress={() => router.navigate('/transactions?mode=review' as any)}>
+    <CardShell t={t} title="To review" link={n ? 'Review' : undefined} onPress={() => openTransactions({ mode: 'review' })}>
       {n ? (
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
           <Text style={{ color: t.text, fontSize: 28, fontWeight: '700' }}>{n}</Text>

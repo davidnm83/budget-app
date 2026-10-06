@@ -2,6 +2,7 @@
 // Steps: choose the file(s) → pick or create the account → check the preview → import.
 // Several files can be chosen at once; they are then taken one at a time, each with its own account and preview.
 // Rows the account already has (same amount within 3 days) are skipped, so overlapping exports are safe.
+import { openTransactions } from '@/lib/txnLinks';
 import { formatMoney, parseBankCsv, shortDate, type CsvRow, type ParsedCsv } from '@budget-app/core';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -211,7 +212,7 @@ export default function ImportScreen() {
       {done.length > 0 && (
         <Card style={{ gap: 8 }}>
           {done.map((d, i) => <Text key={i} style={{ color: t.text }}>{d}</Text>)}
-          {!file && <Button title="Review them" onPress={() => router.navigate('/transactions?mode=review' as any)} />}
+          {!file && <Button title="Review them" onPress={() => openTransactions({ mode: 'review' })} />}
         </Card>
       )}
     </ScrollView>

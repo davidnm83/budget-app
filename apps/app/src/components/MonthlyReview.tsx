@@ -1,6 +1,7 @@
 // Monthly review (IDEA-13): the first time the app opens in a new month (in its first 10 days), a
 // one-screen recap of the month before: money in and out, how the budget went, the biggest changes,
 // transactions still to review and how the goals are doing. Also opened from the Budget tab.
+import { txnHref } from '@/lib/txnLinks';
 import { addMonths, actualFor, biggestChanges, buildBudgetMonth, formatMoney, monthEnd, monthName, type Month } from '@budget-app/core';
 import { router } from 'expo-router';
 import { useEffect, useState, useSyncExternalStore } from 'react';
@@ -122,7 +123,7 @@ function ReviewSheet({ month }: { month: Month }) {
             </Section>
           )}
           <View style={{ gap: 8 }}>
-            {r.toReview > 0 && <Button title={`Review ${r.toReview} transaction${r.toReview === 1 ? '' : 's'} from ${monthName(r.month).split(' ')[0]}`} kind="plain" onPress={() => go('/transactions')} />}
+            {r.toReview > 0 && <Button title={`Review ${r.toReview} transaction${r.toReview === 1 ? '' : 's'} from ${monthName(r.month).split(' ')[0]}`} kind="plain" onPress={() => go(txnHref({ mode: 'review', from: r.month, to: monthEnd(r.month), label: monthName(r.month) }))} />}
             <Button title={`Open ${monthName(r.month).split(' ')[0]}'s budget`} kind="plain" onPress={() => go({ pathname: '/budget', params: { month: r.month } })} />
           </View>
         </View>

@@ -123,11 +123,12 @@ export default function BudgetTab() {
       <Segmented<View_> value={view} onChange={setView}
         options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
       {view === 'month' && <PeriodStrip t={t} items={strip} selected={month} current={current} onSelect={setMonth} />}
+      {compare && <PeriodStrip t={t} items={strip} selected={month} second={base} focus={picking === 'base' ? base : month} current={current}
+        onSelect={(k) => pickBase(k as Month)} />}
       {compare && (
         <View style={styles.pickRow}>
           {([['month', month, t.accent], ['base', base, t.series2]] as const).map(([k, m, color], i) => (
             <Fragment key={k}>
-              {i > 0 && <Text style={{ color: t.muted, fontSize: 13 }}>vs</Text>}
               <Pressable onPress={() => setPicking(k)} accessibilityRole="button" accessibilityState={{ selected: picking === k }}
                 style={[styles.pick, { borderColor: picking === k ? color : t.line, backgroundColor: picking === k ? color + '1f' : t.card }]}>
                 <View style={[styles.dot, { backgroundColor: color }]} />
@@ -137,8 +138,6 @@ export default function BudgetTab() {
           ))}
         </View>
       )}
-      {compare && <PeriodStrip t={t} items={strip} selected={month} second={base} focus={picking === 'base' ? base : month} current={current}
-        onSelect={(k) => pickBase(k as Month)} />}
       {view === 'month' && month < current && (
         <Pressable onPress={() => openReview(month)} hitSlop={6} accessibilityRole="button">
           <Text style={{ color: t.accent, fontSize: 13 }}>📋 {monthName(month, false)} in review ›</Text>
@@ -742,11 +741,6 @@ function CompareView(d: Data) {
 
   return (
     <>
-      {/* Shortcuts for the usual comparisons; any other month is a tap on the strip. A whole year against the one before is on the Year tab. */}
-      <View style={[styles.chips, { flexWrap: 'nowrap' }]}>
-        <Chip label="Last month" on={against === 'prev'} onPress={() => setAgainst('prev')} />
-        <Chip label="Same month last year" on={against === 'lastYear'} onPress={() => setAgainst('lastYear')} />
-      </View>
 
       <View style={styles.tiles}>
         <CmpTile t={t} label="Spent" a={totalA} b={totalB} moreIsBad />

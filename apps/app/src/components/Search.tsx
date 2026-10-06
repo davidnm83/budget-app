@@ -102,7 +102,7 @@ export function SearchBox({ pages, onGo, empty, autoFocus }: { pages: PageHit[];
             </Pressable>
           ))}
           {found?.txns.length === 8 && (
-            <Pressable onPress={() => onGo(`/transactions?q=${encodeURIComponent(text)}`)} style={row}>
+            <Pressable onPress={() => onGo(`/transactions?q=${encodeURIComponent(text)}&v=${Date.now()}`)} style={row}>
               <Ionicons name="list" size={20} color={t.accent} style={{ width: 22 }} />
               <Text style={{ color: t.accent, fontSize: 15, fontWeight: '600' }}>See all in Transactions</Text>
             </Pressable>

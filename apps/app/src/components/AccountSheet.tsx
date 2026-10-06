@@ -5,6 +5,7 @@
 //   • Details — display name, sync status, balance, card settings, planner, hide, merge.
 //   • Transactions — the latest 100.
 // The overview is built from small blocks so they can be reused on custom pages later.
+import { openTransactions } from '@/lib/txnLinks';
 import { LIST } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Sheet } from '@/components/Forms';
@@ -19,7 +20,7 @@ export { Tile } from '@/components/Tile';
 import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, instalmentsBetween, minimumPayment, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
   monthlyFlow, shortDate, utilization,
   csvReminderOn,
 } from '@budget-app/core';
@@ -134,7 +135,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
           <FlatList {...LIST}
             data={list}
             keyExtractor={(r) => r.id}
-            ListFooterComponent={list.length >= 100 ? <Button title="See all in Transactions" kind="plain" style={{ margin: 16 }} onPress={() => { onClose(); afterClose(() => router.navigate('/transactions' as any)); }} /> : null}
+            ListFooterComponent={list.length >= 100 ? <Button title="See all in Transactions" kind="plain" style={{ margin: 16 }} onPress={() => { onClose(); afterClose(() => openTransactions({ account: account.id })); }} /> : null}
             renderItem={({ item }) => (
               <Pressable onPress={() => { seedTxn(item); setTxnOpen(item.id); }}
                 style={[styles.txn, { borderColor: t.line, backgroundColor: t.card }]}>
@@ -240,7 +241,13 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
     loadPlans().then((ps) => setPlans(ps.filter((p) => p.accountId === a.id))).catch(() => {});
     loadTransfers().then((l) => setTransfers(l.filter((x) => x.toAccountId === a.id && !x.closedOn))).catch(() => {});
   }, [a.id]);
-  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, transfersOnStatement(transfers, owed, cycle.lastClose, today())) : null;
+  const tr = cycle ? transfersOnStatement(transfers, owed, cycle.lastClose, today()) : null;
+  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!) : null;
+  // What the left-to-pay is made of: payment plan instalments billed on this statement, and an estimate of
+  // the minimum (on the whole statement, balance transfers included), less what's been paid since.
+  const prevClose = cycle ? cardCycle(addDays(cycle.lastClose, -1), a.statement_day!, a.due_day!).lastClose : null;
+  const onPlans = cycle ? instalmentsBetween(plans, addDays(prevClose!, 1), cycle.lastClose).reduce((s, x) => s + x.inst.total, 0) : 0;
+  const minLeft = st && tr ? Math.max(0, minimumPayment(st.statementOwed + tr.held) - st.paidSince) : 0;
   const offBalance = a.off_balance ?? 0;
   return (
     <>
@@ -263,8 +270,12 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
         ) : (
           <>
             <View style={styles.tiles}>
-              <Tile t={t} label="Left to pay" value={formatMoney(st.leftToPay)} warn={st.leftToPay > 0 && cycle.daysToDue <= 3}
-                sub={st.leftToPay > 0 ? `by ${shortDate(cycle.due)} (${cycle.daysToDue < 0 ? `${-cycle.daysToDue}d ago` : `in ${cycle.daysToDue}d`})` : 'statement paid'} />
+              <Tile t={t} label="Left to pay" value={formatMoney(st.leftToPay)} warn={st.leftToPay > 0 && cycle.daysToDue <= 3} lines={3}
+                sub={st.leftToPay > 0
+                  ? [`by ${shortDate(cycle.due)} (${cycle.daysToDue < 0 ? `${-cycle.daysToDue}d ago` : `in ${cycle.daysToDue}d`})`,
+                      onPlans > 0.005 ? `incl. ${formatMoney(onPlans)} on payment plans` : '',
+                      `minimum ≈ ${formatMoney(minLeft)}`].filter(Boolean).join('\n')
+                  : 'statement paid'} />
               <Tile t={t} label="Last statement" value={formatMoney(st.statementOwed)} sub={`closed ${shortDate(cycle.lastClose)} · paid ${money0(st.paidSince)}`} />
               <Tile t={t} label="This cycle" value={formatMoney(st.spentThisCycle)} sub={`closes ${shortDate(cycle.nextClose)}`} />
             </View>

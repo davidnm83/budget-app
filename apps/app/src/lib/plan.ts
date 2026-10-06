@@ -1,7 +1,7 @@
 // Data for Bills and the Planner: recurring bills/income, one-off planned entries, the
 // accounts the plan covers, and posted transactions to match against.
 import {
-  addDays, balanceAt, buildWeek, cardCycle, cardStatement, planHeld, planUnbilled, transfersOnStatement, expandPlan, round2, todayIn, weekStart as mondayOf,
+  addDays, balanceAt, buildWeek, cardCycle, cardStatement, minimumPayment, planHeld, planUnbilled, transfersOnStatement, expandPlan, round2, todayIn, weekStart as mondayOf,
   type PlanEntry, type PostedTxn, type Recurring, type WeekView,
 } from '@budget-app/core';
 import { supabase } from './supabase';
@@ -63,7 +63,7 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
   return list.map((r) => {
     if (!r.card_account_id || !r.card_rule || r.card_rule === 'custom' || !due.has(r.card_account_id)) return r;
     const full = due.get(r.card_account_id)!;
-    const amount = r.card_rule === 'minimum' ? Math.min(full, Math.max(10, round2(full * 0.03))) : full;
+    const amount = r.card_rule === 'minimum' ? minimumPayment(full) : full;
     return { ...r, amount: -amount, estimated: true };
   });
 }

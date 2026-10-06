@@ -146,3 +146,8 @@ export function findTransferTxns<T extends { id: string; account_id: string; dat
   const fee = t.fee > 0 ? txns.find((r) => r.account_id === t.toAccountId && same(r.amount, -t.fee) && near(r, 35) && r.id !== into?.id) ?? null : null;
   return { out, into, fee };
 }
+
+/** An estimate of a statement's minimum payment: 3% of the balance, at least $10 (never more than the balance). Banks differ; the statement is the final word. */
+export function minimumPayment(balance: number): number {
+  return round2(Math.max(0, Math.min(balance, Math.max(10, balance * 0.03))));
+}
