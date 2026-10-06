@@ -14,7 +14,10 @@ export async function pairAllTransfers(): Promise<number> {
   }
   const { data: cats } = await supabase.from('categories').select('id, kind');
   const transferCats = new Set((cats ?? []).filter((c) => c.kind === 'transfer').map((c) => c.id));
-  const pairs = pairTransfers(rows.map((r) => ({ id: r.id, accountId: r.account_id, date: r.date, amount: Number(r.amount), transfer: r.is_transfer || transferCats.has(r.category_id) })));
+  const pairs = pairTransfers(rows
+    // A row in a spending or income category isn't a transfer, whatever the bank hinted; it never pairs.
+    .filter((r) => !r.category_id || transferCats.has(r.category_id))
+    .map((r) => ({ id: r.id, accountId: r.account_id, date: r.date, amount: Number(r.amount), transfer: r.category_id ? true : r.is_transfer })));
   for (const [a, b] of pairs) {
     await supabase.from('transactions').update({ transfer_pair_id: b, is_transfer: true }).eq('id', a);
     await supabase.from('transactions').update({ transfer_pair_id: a, is_transfer: true }).eq('id', b);

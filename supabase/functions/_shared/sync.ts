@@ -269,7 +269,8 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
         category_id: s.categoryId,
         category_source: s.source,
         plaid_category: pfc.detailed ?? null,
-        is_transfer: isTransferCategory(pfc.primary, pfc.detailed) || (s.categoryId ? rules.kindById.get(s.categoryId) === 'transfer' : false),
+        // With a category, that category decides; the bank's own transfer hint only counts without one.
+        is_transfer: s.categoryId ? rules.kindById.get(s.categoryId) === 'transfer' : isTransferCategory(pfc.primary, pfc.detailed),
         reviewed: false,
       };
     });

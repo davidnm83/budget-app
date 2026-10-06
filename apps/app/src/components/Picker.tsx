@@ -9,7 +9,7 @@ import { useWide, LIST } from '@/lib/layout';
 import { useTheme } from '@/lib/theme';
 import { useBackToClose } from '@/lib/useBackToClose';
 
-export interface PickItem { id: string; label: string; group?: string; detail?: string; /** A small picture before the label (a bank or merchant logo). */ icon?: React.ReactNode }
+export interface PickItem { id: string; label: string; group?: string; detail?: string; /** A second line under the label. */ sub?: string; /** A small picture before the label (a bank or merchant logo). */ icon?: React.ReactNode }
 
 export function MultiPicker({ visible, title, items, selected, onChange, onClose }: {
   visible: boolean; title: string; items: PickItem[]; selected: string[]; onChange: (ids: string[]) => void; onClose: () => void;
@@ -143,7 +143,11 @@ export function SinglePicker({ visible, title, placeholder, items, selected, sug
             : (
               <Pressable onPress={() => onPick(item.id)} style={({ pressed, hovered }: any) => [styles.row, { paddingVertical: 9, borderColor: t.line, backgroundColor: pressed || hovered ? t.line : t.card }]}>
                 {item.icon}
-                <Text style={{ color: t.text, fontSize: 15, flex: 1 }} numberOfLines={1}>{item.label}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: t.text, fontSize: 15 }} numberOfLines={1}>{item.label}</Text>
+                  {!!item.sub && <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={1}>{item.sub}</Text>}
+                </View>
+                {!!item.detail && <Text style={{ color: t.text, fontSize: 14, fontVariant: ['tabular-nums'] }}>{item.detail}</Text>}
                 {item.id === selected && <Ionicons name="checkmark" size={20} color={t.accent} />}
               </Pressable>
             )} />

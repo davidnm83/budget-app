@@ -222,6 +222,9 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
         }
       }
     }
+    // A transfer pair only holds while this side is a transfer: a spending or income category ends it.
+    const nowTransfer = split ? parts!.every((p) => cats.find((c) => c.id === p.category_id)?.kind === 'transfer') : categoryId ? cat?.kind === 'transfer' : txn.is_transfer;
+    if (!error && txn.transfer_pair_id && !nowTransfer) await unpair(txn.id, txn.transfer_pair_id);
     setBusy(false);
     if (error) { setError(error.message); return; }
     // Undo puts the transaction's own fields back. Splits and newly made rules are left as they are.
@@ -249,10 +252,16 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       </Card>
 
       {pair && (
-        <Pressable onPress={() => (onOpen ? onOpen(pair.id) : router.push({ pathname: '/transaction/[id]', params: { id: pair.id } }))} style={styles.ruleRow}>
-          <Text style={{ color: t.muted, flex: 1, fontSize: 13 }}>🔄 Transfer: the other side is {formatMoney(pair.amount)} in {pair.account} on {shortDate(pair.date)}. Not counted as spending.</Text>
-          <Text style={{ color: t.accent }}>Open ›</Text>
-        </Pressable>
+        <View style={styles.ruleRow}>
+          <Pressable onPress={() => (onOpen ? onOpen(pair.id) : router.push({ pathname: '/transaction/[id]', params: { id: pair.id } }))} style={{ flex: 1, flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            <Text style={{ color: t.muted, flex: 1, fontSize: 13 }}>🔄 Transfer: the other side is {formatMoney(pair.amount)} in {pair.account} on {shortDate(pair.date)}. Not counted as spending.</Text>
+            <Text style={{ color: t.accent }}>Open ›</Text>
+          </Pressable>
+          {/* Not the same money after all: split the pair. Each side then counts by its own category. */}
+          <Pressable onPress={async () => { const e = await unpair(txn.id, pair.id); if (e) setError(e); else { setPair(null); setTxn({ ...txn, transfer_pair_id: null, is_transfer: cats.find((c) => c.id === categoryId)?.kind === 'transfer' }); toast('No longer paired'); } }} hitSlop={6}>
+            <Text style={{ color: t.accent }}>Unpair</Text>
+          </Pressable>
+        </View>
       )}
 
       {(txn.original_date || txn.original_amount != null) && (
@@ -393,4 +402,17 @@ function EditorPlaceholder({ t }: { t: Theme }) {
       {bar(44)}
     </View>
   );
+}
+
+/**
+ * Splits a transfer pair: neither side points at the other any more, and each is a transfer only if
+ * its own category says so (uncategorised ones stop being one).
+ */
+async function unpair(a: string, b: string): Promise<string | null> {
+  const { data } = await supabase.from('transactions').select('id, category_id, categories(kind)').in('id', [a, b]);
+  for (const r of (data ?? []) as any[]) {
+    const { error } = await supabase.from('transactions').update({ transfer_pair_id: null, is_transfer: r.categories?.kind === 'transfer' }).eq('id', r.id);
+    if (error) return error.message;
+  }
+  return null;
 }

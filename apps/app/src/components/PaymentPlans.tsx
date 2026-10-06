@@ -113,7 +113,7 @@ function InstalmentSheet({ t, plan, inst, count, onClose, onSaved }: { t: Theme;
   const [date, setDate] = useState(inst.date);
   const [amount, setAmount] = useState(was.amount != null ? String(was.amount) : '');
   const [paidBy, setPaidBy] = useState<string | null>(was.paidBy ?? null);
-  const [found, setFound] = useState<{ id: string; date: string; amount: number; display_name: string; account_name: string }[]>([]);
+  const [found, setFound] = useState<{ id: string; date: string; amount: number; display_name: string; account_name: string; category_name: string | null; name: string }[]>([]);
   const [pick, setPick] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -121,10 +121,11 @@ function InstalmentSheet({ t, plan, inst, count, onClose, onSaved }: { t: Theme;
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
   // Payments that reached this card around the instalment's date (and the one already linked).
   useEffect(() => {
-    supabase.from('transaction_list').select('id, date, amount, display_name, account_name').eq('account_id', plan.accountId).gt('amount', 0)
+    supabase.from('transaction_list').select('id, date, amount, display_name, account_name, category_name, name').eq('account_id', plan.accountId).gt('amount', 0)
       .gte('date', addDays(inst.date, -25)).lte('date', addDays(inst.date, 35)).order('date').then(({ data }) => setFound((data ?? []).map((x: any) => ({ ...x, amount: Number(x.amount) }))));
   }, []);
   const linked = found.find((x) => x.id === paidBy);
+  const linkedCard = found[0]?.account_name ?? 'the card';
   const save = async (reset?: boolean) => {
     const a = amount.trim() ? parseMoney(amount) : null, d = toIsoDate(date);
     if (!reset && (!d || (a != null && (isNaN(a) || a < 0)))) { setError('Check the date and the amount.'); return; }
@@ -147,7 +148,7 @@ function InstalmentSheet({ t, plan, inst, count, onClose, onSaved }: { t: Theme;
           <TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder={inst.total.toFixed(2)} placeholderTextColor={t.muted} style={input} accessibilityLabel="Amount the bank billed" />
         </Field>
       )}
-      <Field t={t} label="Paid by" hint={paidBy ? 'This instalment shows as paid.' : found.length ? 'The payment to the card that covered it. Optional: it marks the instalment as paid.' : 'No payments to this card around this date yet.'}>
+      <Field t={t} label="Paid by" hint={paidBy ? 'This instalment shows as paid.' : found.length ? `The payment as it arrived on ${linkedCard}: the credit on the card, not the money leaving your bank account. Optional: it marks the instalment as paid.` : `No payments to ${linkedCard} around this date yet.`}>
         <Pressable onPress={() => setPick(true)} style={[styles.input, styles.pick, { borderColor: t.line, backgroundColor: t.card }]}>
           <Text style={{ color: paidBy ? t.text : t.muted, flex: 1 }} numberOfLines={1}>{linked ? `${shortDate(linked.date)} · ${linked.display_name} · ${formatMoney(linked.amount)}` : paidBy ? 'Linked' : 'Not linked · choose a payment'}</Text>
           <Ionicons name="chevron-down" size={16} color={t.muted} />
@@ -156,7 +157,11 @@ function InstalmentSheet({ t, plan, inst, count, onClose, onSaved }: { t: Theme;
       {(was.date || was.amount != null) && <Button title="Back to the worked-out date and amount" kind="plain" disabled={busy} onPress={() => save(true)} />}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <SinglePicker visible={pick} title="Payment" selected={paidBy ?? 'none'} onClose={() => setPick(false)}
-        items={[{ id: 'none', label: 'Not linked' }, ...found.map((x) => ({ id: x.id, label: `${shortDate(x.date)} · ${x.display_name}`, detail: formatMoney(x.amount) }))]}
+        items={[{ id: 'none', label: 'Not linked' }, ...found.map((x) => ({
+          id: x.id, label: `${shortDate(x.date)} · ${x.display_name}`, detail: formatMoney(x.amount),
+          sub: [x.category_name ?? 'No category', x.name !== x.display_name ? x.name : '', Math.abs(x.amount - inst.total) < 0.01 ? 'same as this instalment' : ''].filter(Boolean).join(' · '),
+          group: `Credits on ${linkedCard}`,
+        }))]}
         onPick={(id) => { setPaidBy(id === 'none' ? null : id); setPick(false); }} />
     </Sheet>
   );

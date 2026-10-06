@@ -8,7 +8,10 @@ export async function pairRecentTransfers(admin: Admin, userId: string, today: s
   const { data: cats } = await admin.from('categories').select('id, kind').eq('user_id', userId);
   const transferCats = new Set((cats ?? []).filter((c: any) => c.kind === 'transfer').map((c: any) => c.id));
   const list = (rows ?? []) as any[];
-  const pairs = pairTransfers(list.map((r) => ({ id: r.id, accountId: r.account_id, date: r.date, amount: Number(r.amount), transfer: r.is_transfer || transferCats.has(r.category_id) })));
+  const pairs = pairTransfers(list
+    // A row in a spending or income category isn't a transfer, whatever the bank hinted; it never pairs.
+    .filter((r) => !r.category_id || transferCats.has(r.category_id))
+    .map((r) => ({ id: r.id, accountId: r.account_id, date: r.date, amount: Number(r.amount), transfer: r.category_id ? true : r.is_transfer })));
   const byId = new Map(list.map((r) => [r.id, r]));
   for (const [a, b] of pairs) {
     const ra = byId.get(a), rb = byId.get(b);
