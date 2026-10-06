@@ -120,6 +120,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   useUnsaved(ready && !!txn && !busy && (merchant !== (txn.merchant ?? '') || categoryId !== txn.category_id || notes !== (txn.notes ?? '') || tags !== (txn.tags ?? []).join(', ')
     || date !== txn.date || amount !== Number(txn.amount).toFixed(2) || makeRule
     || JSON.stringify(parts?.map((p) => [p.category_id, p.amount, p.notes]) ?? []) !== JSON.stringify(savedParts)));
+  // Every hook above the early returns below (a hook after one breaks a transaction opened by its link).
+  const [planFor, setPlanFor] = useState<{ accounts: Account[]; seed: PlanSeed } | null>(null);
   if (!txn) return <View style={{ flex: 1, backgroundColor: t.bg }} />;
   const split = !!parts && parts.length > 0;
   const shownSuggested = suggested.filter((x) => cats.some((c) => c.id === x)).slice(0, 5);
@@ -155,7 +157,6 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   };
 
   // A card purchase being paid off in instalments: the plan form opens filled in from this transaction.
-  const [planFor, setPlanFor] = useState<{ accounts: Account[]; seed: PlanSeed } | null>(null);
   const startPlan = async () => {
     if (!txn) return;
     try {
