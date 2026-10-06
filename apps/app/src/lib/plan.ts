@@ -1,7 +1,7 @@
 // Data for Bills and the Planner: recurring bills/income, one-off planned entries, the
 // accounts the plan covers, and posted transactions to match against.
 import {
-  addDays, balanceAt, buildWeek, cardCycle, cardStatement, minimumPayment, planHeld, planUnbilled, transfersOnStatement, expandPlan, round2, todayIn, weekStart as mondayOf,
+  addDays, addMonths, balanceAt, buildWeek, monthEnd, monthOf, cardCycle, cardStatement, minimumPayment, planHeld, planUnbilled, transfersOnStatement, expandPlan, round2, todayIn, weekStart as mondayOf,
   type PlanEntry, type PostedTxn, type Recurring, type WeekView,
 } from '@budget-app/core';
 import { supabase } from './supabase';
@@ -172,4 +172,67 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
     actual[d] = round2(shown.reduce((s, a) => s + balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), addDays(d, 1)), 0));
   }
   return { view, accounts: all, recurring, entries, ahead, actual, strip };
+}
+
+export interface MonthData {
+  month: string; view: WeekView; accounts: Account[];
+  /** The real end-of-day balance of the shown accounts, for each day of the month up to today. */
+  actual: Record<string, number>;
+  /** Each month's planned bills and income added up, 6 months back to 12 ahead (the month strip). */
+  strip: { month: string; net: number }[];
+}
+const monthCache = new Map<string, MonthData>();
+/** The last month loaded for these settings, to show at once while it loads again. */
+export const cachedMonth = (month: string, only: string | null) => monthCache.get(`${month}|${only ?? ''}`) ?? null;
+
+/**
+ * One month of the plan, day by day, the same way as a week: bills, income and one-offs matched to what
+ * posted, with the running balance. A past or the current month starts from the real balance on its first
+ * day; a later one from the projected balance carried forward from the start of this month.
+ */
+export async function loadMonth(month: string, only: string | null): Promise<MonthData> {
+  const now = today();
+  const cur = monthOf(now);
+  const all = await loadAccounts();
+  const planAccounts = all.filter((a) => a.plan_include);
+  const ids = planAccounts.map((a) => a.id);
+  const first = month < cur ? month : cur, end = monthEnd(month);
+  const stripFrom = addMonths(cur, -6), stripTo = monthEnd(addMonths(cur, 12));
+  const [recurring, entries, posted] = await Promise.all([
+    loadRecurring(), loadEntries(addDays(first < stripFrom ? first : stripFrom, -31), addDays(end > stripTo ? end : stripTo, 31)),
+    ids.length ? loadPosted(ids, addDays(first, -4), addDays(end > now ? end : now, 4)) : Promise.resolve([] as PostedTxn[]),
+  ]);
+  const shown = only ? planAccounts.filter((a) => a.id === only) : planAccounts;
+  const balanceOn = (d: string) => Object.fromEntries(planAccounts.map((a) => [a.id, balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), d)]));
+  const days = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 864e5) + 1;
+  let start = balanceOn(month <= cur ? month : cur);
+  if (month > cur) {
+    // Carry the plan forward from the start of this month to the day before this one.
+    const run = buildWeek({ weekStart: cur, days: days(cur, addDays(month, -1)), today: now, planned: expandPlan(recurring, entries, cur, addDays(month, -1)), actuals: posted,
+      accounts: planAccounts.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })) });
+    start = run.endBalanceByAccount;
+  }
+  const view = buildWeek({ weekStart: month, days: days(month, end), today: now, planned: expandPlan(recurring, entries, month, end), actuals: posted,
+    accounts: shown.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })) });
+  const actual: Record<string, number> = {};
+  for (let d = month; d <= end && d <= now; d = addDays(d, 1)) {
+    actual[d] = round2(shown.reduce((s, a) => s + balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), addDays(d, 1)), 0));
+  }
+  const strip: MonthData['strip'] = [];
+  for (let m = stripFrom; m <= addMonths(cur, 12); m = addMonths(m, 1)) {
+    strip.push({ month: m, net: round2(expandPlan(recurring, entries, m, monthEnd(m)).filter((p) => !p.transfer).reduce((x, p) => x + p.amount, 0)) });
+  }
+  const out = { month, view, accounts: all, actual, strip };
+  monthCache.set(`${month}|${only ?? ''}`, out);
+  return out;
+}
+
+/** Saved daily balances (IDEA-2) for these accounts from a date, by account, oldest first. None before the migration. */
+export async function loadSnapshots(accountIds: string[], from: string): Promise<Map<string, { date: string; balance: number }[]>> {
+  const out = new Map<string, { date: string; balance: number }[]>();
+  if (!accountIds.length) return out;
+  const { data, error } = await supabase.from('balance_snapshots').select('account_id, date, balance').in('account_id', accountIds).gte('date', from).order('date').limit(5000);
+  if (error) return out;
+  for (const r of (data ?? []) as any[]) (out.get(r.account_id) ?? out.set(r.account_id, []).get(r.account_id)!).push({ date: r.date, balance: Number(r.balance) });
+  return out;
 }

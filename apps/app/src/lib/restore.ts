@@ -15,7 +15,7 @@ export interface Backup { app: string; format: number; exported_at: string; tabl
 
 // Parents before children.
 const ORDER = ['categories', 'category_groups', 'accounts', 'transactions', 'transaction_splits', 'category_rules', 'merchant_rules',
-  'merchant_sites', 'recurring', 'plan_entries', 'budgets', 'payment_plans', 'goals', 'goal_entries', 'receipts', 'credit_scores', 'balance_transfers'];
+  'merchant_sites', 'recurring', 'plan_entries', 'budgets', 'payment_plans', 'goals', 'goal_entries', 'receipts', 'credit_scores', 'balance_transfers', 'balance_snapshots'];
 const NEVER = ['plaid_items', 'sync_runs'];
 const CHUNK = 400;
 
@@ -85,7 +85,7 @@ export async function restoreBackup(b: Backup, progress: (msg: string) => void):
 
   progress('Clearing what is here now…');
   for (const t of [...extraTables()].reverse()) await clear(t, uid);
-  for (const t of ['balance_transfers', 'credit_scores', 'receipts', 'goal_entries', 'goals', 'payment_plans', 'transaction_splits', 'plan_entries', 'budgets', 'category_rules', 'recurring', 'transactions', 'merchant_rules', 'merchant_sites', 'category_groups', 'accounts', 'categories']) await clear(t, uid);
+  for (const t of ['balance_snapshots', 'balance_transfers', 'credit_scores', 'receipts', 'goal_entries', 'goals', 'payment_plans', 'transaction_splits', 'plan_entries', 'budgets', 'category_rules', 'recurring', 'transactions', 'merchant_rules', 'merchant_sites', 'category_groups', 'accounts', 'categories']) await clear(t, uid);
 
   let rows = 0;
   for (const t of ORDER) {
@@ -106,7 +106,10 @@ export async function restoreBackup(b: Backup, progress: (msg: string) => void):
       if (pairs.length) { progress(`Pairing ${pairs.length.toLocaleString()} transfers…`); await insertAll(t, pairs, notes, 'id'); }
     } else {
       try { rows += await insertAll(t, mine(src), notes); }
-      catch (e) { if (t !== 'payment_plans') throw e; notes.push('Card payment plans were not restored: this database is missing that table (run the newest migrations, then restore again).'); }
+      catch (e) {
+        if (t === 'balance_snapshots') { notes.push('Saved daily balances were not restored: this database is missing that table (run the newest migrations, then restore again).'); continue; }
+        if (t !== 'payment_plans') throw e; notes.push('Card payment plans were not restored: this database is missing that table (run the newest migrations, then restore again).');
+      }
     }
   }
 

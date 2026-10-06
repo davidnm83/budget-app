@@ -15,12 +15,16 @@ let ownBacks = 0; // history.back() calls we made ourselves, whose popstate must
 let listening = false;
 
 let waiting: (() => void)[] = [];
+let closedAt = 0;
+/** True for a moment after a pop-up closes (pages use it to skip a reload the router's step back can set off). */
+export const justClosed = () => Date.now() - closedAt < 1500;
 function flush() { const w = waiting; waiting = []; w.forEach((f) => f()); }
 
 function onPop() {
   if (ownBacks > 0) { ownBacks--; if (ownBacks === 0) flush(); return; }
   const top = stack.pop();
   if (!top) return;
+  closedAt = Date.now();
   top.closedByBack = true;
   // A pop-up with unsaved changes can decline (it asks first): it stays open, with its history entry back.
   if (top.close() === false) {
@@ -45,6 +49,7 @@ export function useBackToClose(visible: boolean, onClose: () => void | boolean) 
       if (entry.closedByBack) return;
       const i = stack.indexOf(entry);
       if (i >= 0) stack.splice(i, 1);
+      closedAt = Date.now();
       ownBacks++;
       window.history.back();
     };

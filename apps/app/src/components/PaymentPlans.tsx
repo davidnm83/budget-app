@@ -1,7 +1,7 @@
 // Card payment plans on the Credit cards page: the list with progress, a plan's details and
 // schedule, and the form to add one (from a purchase, or one that already started).
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { addDays, categoryIcon, type Instalment, formatMoney, monthsAfter, parseMoney, planProgress, planSchedule, shortDate, toIsoDate } from '@budget-app/core';
+import { addDays, categoryIcon, findPlanDuplicates, type PlanDuplicate, type Instalment, formatMoney, monthsAfter, parseMoney, planProgress, planSchedule, shortDate, toIsoDate } from '@budget-app/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useConfirm } from '@/components/Confirm';
@@ -20,6 +20,59 @@ import type { Account } from '@/lib/types';
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
 /** What a new plan starts from: a purchase in the app, or nothing (a plan entered by hand). */
 export type PlanSeed = Partial<PlanInput> & { purchaseDate?: string };
+
+interface ManualTxn { id: string; accountId: string; date: string; amount: number; name: string; importId: string | null }
+/**
+ * Transactions typed in by hand that do a plan's job twice: an instalment or the plan itself entered before
+ * the plan was set up, and plans entered twice. Each can be removed (or opened, for a plan) from here.
+ */
+function PlanDuplicates({ t, plans, name, onChanged }: { t: Theme; plans: CardPlan[]; name: (id: string | null) => string; onChanged: () => void }) {
+  const [found, setFound] = useState<PlanDuplicate<ManualTxn>[]>([]);
+  const [confirm, confirmSheet] = useConfirm();
+  const [again, setAgain] = useState(0);
+  const cards = [...new Set(plans.map((p) => p.accountId))].join(',');
+  useEffect(() => {
+    if (!plans.length) { setFound([]); return; }
+    let live = true;
+    supabase.from('transactions').select('id, account_id, date, amount, name, merchant, import_id').eq('source', 'manual')
+      .in('account_id', cards.split(',')).or('import_id.is.null,import_id.not.like.plan:*').limit(2000)
+      .then(({ data }) => {
+        if (!live) return;
+        const rows = ((data ?? []) as any[]).map((r) => ({ id: r.id, accountId: r.account_id, date: r.date, amount: Number(r.amount), name: r.merchant && !String(r.name ?? '').toLowerCase().includes(String(r.merchant).toLowerCase()) ? `${r.merchant} · ${r.name}` : r.name || r.merchant || '', importId: r.import_id }));
+        setFound(findPlanDuplicates(plans, rows));
+      });
+    return () => { live = false; };
+  }, [cards, plans, again]);
+  // The same plan entered twice: same card, same amount, starting within a month of each other.
+  const twice = plans.flatMap((a, i) => plans.slice(i + 1).filter((b) => b.accountId === a.accountId && Math.abs(b.principal - a.principal) <= 0.01 && Math.abs(new Date(a.startDate).getTime() - new Date(b.startDate).getTime()) <= 31 * 864e5).map((b) => [a, b] as const));
+  if (!found.length && !twice.length) return null;
+  const remove = (d: PlanDuplicate<ManualTxn>) => confirm({
+    title: 'Delete this transaction?', action: 'Delete',
+    message: `“${d.txn.name}” (${formatMoney(d.txn.amount)} on ${shortDate(d.txn.date)}) was entered by hand and is ${d.why} “${d.plan.description}”, which the plan already adds itself.`,
+    run: async () => { const { error } = await supabase.from('transactions').delete().eq('id', d.txn.id); if (error) toast(error.message); else { toast('Deleted'); setAgain((n) => n + 1); onChanged(); } },
+  });
+  return (
+    <View style={{ gap: 6, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Ionicons name="copy-outline" size={15} color={t.danger} />
+        <Text style={{ color: t.danger, fontSize: 13, fontWeight: '700' }}>Possible duplicates</Text>
+      </View>
+      {twice.map(([a, b]) => (
+        <Text key={a.id + b.id} style={{ color: t.text, fontSize: 13 }}>“{a.description}” and “{b.description}” look like the same plan ({formatMoney(a.principal)} on {name(a.accountId) || 'a card'}). Open the one you don’t want and delete it.</Text>
+      ))}
+      {found.map((d) => (
+        <View key={d.txn.id} style={styles.between}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text, fontSize: 13 }} numberOfLines={1}>{shortDate(d.txn.date)} · {d.txn.name} · {formatMoney(d.txn.amount)}</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={2}>Entered by hand; {d.why} “{d.plan.description}”</Text>
+          </View>
+          <Pressable onPress={() => remove(d)} hitSlop={8} accessibilityLabel="Delete this transaction"><Text style={{ color: t.danger, fontSize: 13, fontWeight: '600' }}>Delete</Text></Pressable>
+        </View>
+      ))}
+      {confirmSheet}
+    </View>
+  );
+}
 
 /** The list on the Credit cards page. */
 export function PlansCard({ t, plans, accounts, onChanged }: { t: Theme; plans: CardPlan[]; accounts: Account[]; onChanged: () => void }) {
@@ -52,6 +105,7 @@ export function PlansCard({ t, plans, accounts, onChanged }: { t: Theme; plans: 
           </Text>
         </Pressable>
       ))}
+      <PlanDuplicates t={t} plans={plans} name={name} onChanged={onChanged} />
       {finished.length > 0 && <Pressable onPress={() => setShowDone(!showDone)} hitSlop={6}><Text style={{ color: t.accent, fontSize: 12 }}>{showDone ? 'Hide' : 'Show'} {finished.length} finished</Text></Pressable>}
       {form && <PlanForm plan={form.plan} seed={form.seed} accounts={accounts} onClose={() => setForm(null)} onSaved={onChanged} />}
       {open && <PlanDetail t={t} plan={open} accounts={accounts} onClose={() => setOpen(null)} onChanged={onChanged} onEdit={() => { const p = open; setOpen(null); afterClose(() => setForm({ plan: p })); }} />}

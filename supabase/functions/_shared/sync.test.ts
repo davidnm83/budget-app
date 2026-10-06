@@ -23,12 +23,16 @@ function fakeDb(tables: Record<string, Row[]>) {
     let single = false;
     let returning = false;
     let conflict: string | null = null;
+    let ignore = false;
     const run = () => {
       const t = tables[name];
       // Like the real server: a lookup with too many ids in it is refused.
       if (op === 'select' && tooMany) return { data: null, error: { message: 'URI too long' } };
       if (op === 'insert') {
-        const fresh = (Array.isArray(payload) ? payload : [payload]).filter((r: Row) => !conflict || !t.some((x) => x[conflict!] === r[conflict!]));
+        // On a clash: left alone (ignoreDuplicates) or brought up to date, like the real upsert.
+        const keys = conflict?.split(',') ?? [];
+        const clash = (r: Row) => (keys.length ? t.find((x) => keys.every((k) => x[k] === r[k])) : undefined);
+        const fresh = (Array.isArray(payload) ? payload : [payload]).filter((r: Row) => { const x = clash(r); if (x && !ignore) Object.assign(x, r); return !x; });
         const rows = fresh.map((r: Row) => ({ id: `${name}-${++idSeq}`, ...r }));
         t.push(...rows);
         return { data: returning ? (single ? rows[0] : rows) : null, error: null };
@@ -43,7 +47,7 @@ function fakeDb(tables: Record<string, Row[]>) {
     const q: any = {
       select: () => { if (op !== 'select') returning = true; return q; },
       insert: (p: any) => { op = 'insert'; payload = p; return q; },
-      upsert: (p: any, o: { onConflict: string }) => { op = 'insert'; payload = p; conflict = o.onConflict; return q; },
+      upsert: (p: any, o: { onConflict: string; ignoreDuplicates?: boolean }) => { op = 'insert'; payload = p; conflict = o.onConflict; ignore = !!o.ignoreDuplicates; return q; },
       update: (p: any) => { op = 'update'; payload = p; return q; },
       delete: () => { op = 'delete'; return q; },
       eq: (c: string, v: any) => { filters.push((r) => r[c] === v); return q; },
@@ -317,4 +321,17 @@ Deno.test('balance gap: money the bank counted but has not listed yet', async ()
   tables.transactions.push({ id: 'u', account_id: 'a1', amount: -30, created_at: new Date().toISOString() });
   await trackBalanceGaps(db, ['a1']);
   assertEquals([tables.accounts[0].balance_gap, tables.accounts[0].balance_anchor], [0, 450]);
+});
+
+Deno.test('balance snapshots: one a day per account, the last sync of the day wins', async () => {
+  const tables: Record<string, Row[]> = {
+    accounts: [{ id: 'a1', user_id: 'u1', type: 'credit', current_balance: 300, balance_anchor: null, balance_anchor_at: null }],
+    transactions: [],
+  };
+  const db = fakeDb(tables);
+  await trackBalanceGaps(db, ['a1'], '2026-10-05');
+  tables.accounts[0].current_balance = 320;
+  await trackBalanceGaps(db, ['a1'], '2026-10-05');
+  await trackBalanceGaps(db, ['a1'], '2026-10-06');
+  assertEquals(tables.balance_snapshots.map((r) => [r.date, r.balance, r.user_id]), [['2026-10-05', -320, 'u1'], ['2026-10-06', -320, 'u1']]);
 });

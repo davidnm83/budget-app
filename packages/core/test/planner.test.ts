@@ -86,6 +86,12 @@ describe('weekly planner', () => {
     expect(early.warnings).toEqual([{ accountId: 'chq', date: '2026-09-15', balance: 45, buffer: 50, cause: 'Rogers' }]);
     expect(w.summary).toMatchObject({ plannedIn: 600, plannedOut: 180, actualOut: 105, unplannedOut: 25, overdue: 1 });
   });
+  it('builds a whole month the same way when given its length', () => {
+    const m = buildWeek({ weekStart: '2026-09-01', days: 30, today: '2026-09-17', accounts: [{ id: 'chq', name: 'Chequing', startBalance: 150, buffer: 50 }], planned, actuals: [] });
+    expect(m.days.length).toBe(30);
+    expect(m.days[29].date).toBe('2026-09-30');
+    expect(m.endBalance).toBe(150 - 80 - 100 + 600);
+  });
   it('works out past balances', () => {
     const tx = [{ date: '2026-09-28', amount: -20 }, { date: '2026-09-30', amount: 100 }];
     expect(balanceAt(500, tx, '2026-09-29')).toBe(400);

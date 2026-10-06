@@ -158,3 +158,33 @@ export function instalmentsBetween<T extends PaymentPlan>(plans: T[], from: IsoD
   return plans.flatMap((plan) => { const s = planSchedule(plan); return s.filter((x) => x.date >= from && x.date <= to).map((inst) => ({ plan, inst, count: s.length })); })
     .sort((a, b) => a.inst.date.localeCompare(b.inst.date));
 }
+
+export interface PlanDuplicate<T> { plan: PaymentPlan; txn: T; n: number | null; why: string }
+/**
+ * Transactions entered by hand that do the same job as a plan's own entries: typed in before the plan was
+ * set up, for one of its instalments (the same amount, within 1%, within a few days) or for the plan itself (its
+ * description, near its start). The plan's own entries (import_id "plan:…") and the purchase and credit
+ * it is linked to are never listed.
+ */
+export function findPlanDuplicates<T extends { id: string; accountId: string; date: IsoDate; amount: number; name: string; importId?: string | null }>(
+  plans: (PlanOnCard & { accountId: string })[], manual: T[],
+): PlanDuplicate<T>[] {
+  const out: PlanDuplicate<T>[] = [];
+  const seen = new Set<string>();
+  const words = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+  const days = (a: IsoDate, b: IsoDate) => Math.abs(parseIso(a).getTime() - parseIso(b).getTime()) / 864e5;
+  for (const p of plans) {
+    const mine = new Set([p.purchaseTxnId, p.creditTxnId].filter(Boolean) as string[]);
+    const name = words(p.description);
+    const sched = planSchedule(p);
+    for (const t of manual) {
+      if (seen.has(t.id) || mine.has(t.id) || t.accountId !== p.accountId || t.importId?.startsWith('plan:')) continue;
+      const inst = sched.find((x) => days(x.date, t.date) <= 5 && Math.abs(Math.abs(t.amount) - x.total) <= Math.max(0.5, x.total * 0.01));
+      const named = name.length > 0 && name.some((w) => words(t.name).includes(w)) && t.date >= monthsAfter(p.startDate, -2) && t.date <= (sched[sched.length - 1]?.date ?? p.startDate);
+      if (!inst && !named) continue;
+      seen.add(t.id);
+      out.push({ plan: p, txn: t, n: inst?.n ?? null, why: inst ? `the same as instalment ${inst.n} (${inst.date}) of` : 'named like' });
+    }
+  }
+  return out.sort((a, b) => a.txn.date.localeCompare(b.txn.date));
+}

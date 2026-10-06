@@ -106,13 +106,16 @@ export interface WeekView {
  */
 export function buildWeek(opts: {
   weekStart: IsoDate;
+  /** How many days from `weekStart` (7 = a week; a month's length for the month view). */
+  days?: number;
   today: IsoDate;
   accounts: { id: string; startBalance: number; buffer: number; name: string }[];
   planned: PlannedItem[];
   actuals: PostedTxn[];
 }): WeekView {
   const ids = new Set(opts.accounts.map((a) => a.id));
-  const end = addDays(opts.weekStart, 6);
+  const span = opts.days ?? 7;
+  const end = addDays(opts.weekStart, span - 1);
   const planned = opts.planned.filter((p) => p.accountId && ids.has(p.accountId) && p.date >= opts.weekStart && p.date <= end);
   // Actuals a few days either side can still pay a planned entry; only this week's count as unplanned.
   const actuals = opts.actuals.filter((t) => ids.has(t.accountId));
@@ -150,7 +153,7 @@ export function buildWeek(opts: {
   let running = round2(opts.accounts.reduce((s, a) => s + a.startBalance, 0));
   const startBalance = running;
   const days: WeekDay[] = [];
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < span; i++) {
     const date = addDays(opts.weekStart, i);
     const dayRows: WeekRow[] = [];
     for (const r of rows.filter((x) => x.date === date)) {

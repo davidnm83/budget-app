@@ -5,19 +5,20 @@ import { loadScores, scoreLines } from './creditScores';
 import { supabase } from './supabase';
 import type { TxnQuery } from '@/components/TxnSheet';
 import { loadTxnsFor } from './accountTxns';
-import { loadAccounts, today } from './plan';
+import { loadAccounts, loadMonth, loadSnapshots, today } from './plan';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from './reports';
-import { accountHistory, signedBalance, type Account } from './types';
+import { accountHistory, followsSnapshots, signedBalance, type Account } from './types';
 
-export type Source = 'spending' | 'income' | 'cashflow' | 'savings' | 'networth' | 'carddebt' | 'utilization' | 'balance' | 'creditscore' | 'tags';
+export type Source = 'spending' | 'income' | 'cashflow' | 'savings' | 'networth' | 'carddebt' | 'utilization' | 'balance' | 'creditscore' | 'tags' | 'bills';
 /** How a chart's total is split into parts (for the pie, the ranked list and the table). */
 export type SplitBy = 'category' | 'group' | 'account' | 'type';
-export type ChartView = 'bars' | 'line' | 'pie' | 'list' | 'table' | 'tiles' | 'flow';
-export const VIEW_LABEL: Record<ChartView, string> = { bars: 'Bars', line: 'Line', pie: 'Pie', list: 'Ranked list', table: 'Table', tiles: 'Numbers', flow: 'Flow' };
+export type ChartView = 'bars' | 'line' | 'pie' | 'list' | 'table' | 'tiles' | 'flow' | 'calendar';
+export const VIEW_LABEL: Record<ChartView, string> = { bars: 'Bars', line: 'Line', pie: 'Pie', list: 'Ranked list', table: 'Table', tiles: 'Numbers', flow: 'Flow', calendar: 'Calendar' };
 export const SOURCES: Record<Source, { title: string; about: string; views: ChartView[] }> = {
-  spending: { title: 'Spending', about: 'All spending or the categories you choose, by month and by category', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles'] },
-  income: { title: 'Income', about: 'Money coming in, by month and by category', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles'] },
-  cashflow: { title: 'Money in and out', about: 'Income against spending each month, or as a flow from where it came from to where it went', views: ['bars', 'line', 'flow', 'table', 'tiles'] },
+  spending: { title: 'Spending', about: 'All spending or the categories you choose, by month, by category or day by day', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles', 'calendar'] },
+  income: { title: 'Income', about: 'Money coming in, by month and by category', views: ['bars', 'line', 'pie', 'list', 'table', 'tiles', 'calendar'] },
+  cashflow: { title: 'Money in and out', about: 'Income against spending each month, as a flow from where it came from to where it went, or day by day', views: ['bars', 'line', 'flow', 'table', 'tiles', 'calendar'] },
+  bills: { title: 'Bills & income', about: 'What the Planner expects each day (bills, income, one-offs), what has been paid, and the balance', views: ['calendar'] },
   savings: { title: 'Savings rate', about: 'The share of each month\'s income that wasn\'t spent', views: ['bars', 'line', 'table', 'tiles'] },
   networth: { title: 'Net worth', about: 'Everything you own minus everything you owe, over time, and by account or type', views: ['line', 'bars', 'list', 'table', 'tiles'] },
   carddebt: { title: 'Card debt', about: 'What you owe on credit cards over time, and by card', views: ['line', 'bars', 'pie', 'list', 'table', 'tiles'] },
@@ -30,7 +31,7 @@ export const SOURCES: Record<Source, { title: string; about: string; views: Char
 /** Which ways each source can be split. The first is the default. */
 export const SPLITS: Partial<Record<Source, SplitBy[]>> = { spending: ['category', 'group', 'account'], income: ['category', 'account'], cashflow: [], networth: ['account', 'type'], carddebt: ['account'], utilization: ['account'], balance: ['account'] };
 /** Sources that aren't about accounts, so the account picker is hidden for them. */
-export const NO_ACCOUNTS: Source[] = ['creditscore', 'tags'];
+export const NO_ACCOUNTS: Source[] = ['creditscore', 'tags', 'bills'];
 export const SPLIT_LABEL: Record<SplitBy, string> = { category: 'Category', group: 'Group', account: 'Account', type: 'Account type' };
 
 export interface ChartCfg {
@@ -69,6 +70,10 @@ export interface ChartData {
   plain?: boolean;
   /** The Flow view: where the period's money came from and went (income categories → spending groups). */
   flow?: { inputs: { label: string; value: number; query?: Omit<TxnQuery, 'title' | 'from' | 'to'> }[]; outputs: { label: string; value: number; query?: Omit<TxnQuery, 'title' | 'from' | 'to'> }[] };
+  /** The Calendar view: one month, a figure per day. */
+  calendar?: { month: string; days: Record<string, { out: number; in: number; balance?: number; late?: boolean }>; heat?: 'out' | 'in' };
+  /** The transactions behind a day of the calendar. */
+  drillDay?: (date: string) => Omit<TxnQuery, 'title'>;
   /** Where the last bar is heading (drawn as a dashed outline), and whether that beats the average. */
   outline?: { i: number; value: number; good: boolean };
   /** A sentence under the title ("Heading for …"). */
@@ -190,6 +195,7 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   const allAccounts = (await loadAccounts()).filter((a) => !a.is_hidden);
   const chosen = pickAccounts(cfg, allAccounts);
   const accIds = chosen.map((a) => a.id);
+  if (cfg.view === 'calendar' && SOURCES[source].views.includes('calendar')) return loadCalendar(cfg, source, cur, accIds);
   const by: SplitBy | undefined = cfg.by && (SPLITS[source] ?? []).includes(cfg.by) ? cfg.by : (SPLITS[source] ?? [])[0];
   const mean = (values: number[]) => (cfg.avg && values.length > 1 ? avg(values) : undefined);
 
@@ -374,7 +380,8 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   const end = past ? monthEnd(cur) : now;
   const total = span + Math.ceil(Math.max(0, daysBetween(end, now)) / step) + 1;
   const txns = await loadTxnsFor(accounts.map((a) => a.id), loan ? '1900-01-01' : addDays(now, -total * step - 7));
-  const per = accounts.map((a) => accountHistory(a, txns.filter((x) => x.account_id === a.id && x.date >= addDays(now, -total * step - 7)), now, total, step).filter((p) => p.date <= end).slice(-span));
+  const snaps = await loadSnapshots(accounts.filter(followsSnapshots).map((a) => a.id), addDays(now, -total * step - 7));
+  const per = accounts.map((a) => accountHistory(a, txns.filter((x) => x.account_id === a.id && x.date >= addDays(now, -total * step - 7)), now, total, step, snaps.get(a.id)).filter((p) => p.date <= end).slice(-span));
   const allDates = per[0]?.map((p) => p.date) ?? [];
   const sign = owedView ? -1 : 1;
   const limit = accounts.reduce((x, a) => x + Number(a.credit_limit ?? 0), 0);
@@ -479,4 +486,58 @@ async function loadLines(from: string, to: string, accountIds: string[], byDay =
     if (!data || data.length < 1000) break;
   }
   return [...m.values()];
+}
+
+/** One month day by day: spending, income or both from what posted, or the Planner's bills, income and balance. */
+async function loadCalendar(cfg: ChartCfg, source: Source, month: string, accIds: string[]): Promise<ChartData> {
+  const now = today(), end = monthEnd(month);
+  const period = monthOf(now) === month ? 'this month' : monthName(month);
+  const base = { labels: [], series: [], breakdown: [], period, from: month, to: end };
+  const acc = accIds.length ? { accountIds: accIds } : {};
+  if (source === 'bills') {
+    const d = await loadMonth(month, null);
+    const days: NonNullable<ChartData['calendar']>['days'] = {};
+    let toPay = 0, bills = 0, income = 0;
+    for (const day of d.view.days) {
+      const rows = day.rows.filter((r) => !r.item?.transfer);
+      const out = -rows.filter((r) => r.counted < 0).reduce((x, r) => x + r.counted, 0), inn = rows.filter((r) => r.counted > 0).reduce((x, r) => x + r.counted, 0);
+      for (const r of rows) if (r.kind === 'planned') { if (r.planned! < 0) { bills -= r.counted; if (r.actual == null) toPay -= r.planned!; } else income += r.counted; }
+      days[day.date] = { out, in: inn, balance: d.actual[day.date] ?? day.endBalance, late: rows.some((r) => r.overdue) };
+    }
+    const low = d.view.days.filter((x) => x.date >= now).reduce<{ date: string; endBalance: number } | null>((m, x) => (!m || x.endBalance < m.endBalance ? x : m), null);
+    return {
+      ...base, calendar: { month, days },
+      drillDay: (date) => ({ from: date, to: date, accountIds: d.accounts.filter((a) => a.plan_include).map((a) => a.id), noTransfers: true }),
+      tiles: [
+        { label: 'Bills', value: money0(bills), sub: toPay > 0 ? `${money0(toPay)} still to pay` : 'all paid' },
+        { label: 'Income', value: money0(income), sub: 'planned' },
+        ...(low ? [{ label: 'Lowest', value: money0(low.endBalance), sub: shortDate(low.date) }] : []),
+      ],
+      empty: d.accounts.some((a) => a.plan_include) ? undefined : 'Choose the accounts that pay your bills in Settings → Planner.',
+    };
+  }
+  const [cats, lines] = await Promise.all([loadCategories(), loadLines(month, end, accIds, true)]);
+  const picked = cfgCategories(cfg, cats);
+  const ids = new Set(picked.map((c) => c.id));
+  const days: NonNullable<ChartData['calendar']>['days'] = {};
+  for (const r of lines) {
+    if (r.kind === 'transfer' || (picked.length && !ids.has(r.category_id ?? ''))) continue;
+    if (source === 'spending' && r.kind !== 'expense') continue;
+    if (source === 'income' && r.kind !== 'income') continue;
+    const x = days[r.month] ?? (days[r.month] = { out: 0, in: 0 });
+    if (r.kind === 'expense') x.out -= r.total; else if (r.kind === 'income') x.in += r.total;
+  }
+  const list = Object.entries(days);
+  const tout = list.reduce((a, [, x]) => a + x.out, 0), tin = list.reduce((a, [, x]) => a + x.in, 0);
+  const top = list.sort((a, b) => (source === 'income' ? b[1].in - a[1].in : b[1].out - a[1].out))[0];
+  const sofar = monthOf(now) === month ? Number(now.slice(8, 10)) : Number(end.slice(8, 10));
+  const kind = source === 'income' ? { kind: 'income' as const } : source === 'spending' ? (picked.length ? { categoryIds: [...ids] } : { kind: 'expense' as const }) : {};
+  return {
+    ...base, calendar: { month, days, heat: source === 'income' ? 'in' : source === 'spending' ? 'out' : undefined },
+    drillDay: (date) => ({ from: date, to: date, ...kind, ...acc, noTransfers: true }),
+    tiles: source === 'cashflow'
+      ? [{ label: 'Money in', value: money0(tin), sub: period }, { label: 'Money out', value: money0(tout), sub: `${tin >= tout ? 'kept' : 'over'} ${money0(Math.abs(tin - tout))}` }]
+      : [{ label: source === 'income' ? 'Income' : 'Spending', value: money0(source === 'income' ? tin : tout), sub: `${money0((source === 'income' ? tin : tout) / Math.max(1, sofar))} a day` },
+         ...(top ? [{ label: 'Biggest day', value: money0(source === 'income' ? top[1].in : top[1].out), sub: shortDate(top[0]) }] : [])],
+  };
 }

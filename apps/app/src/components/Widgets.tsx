@@ -6,12 +6,13 @@ export { Tile, Tile as Mini } from '@/components/Tile';
 import { Tile as Mini } from '@/components/Tile';
 import {
   RADAR_CHECKS, RADAR_LIMITS, type RadarSettings,
-  addDays, addMonths, balanceHistory, categoryIcon, expandPlan, loanSummary, formatMoney, monthEnd, shortDate, weekStart, type Month,
+  addDays, addMonths, balanceHistory, categoryIcon, loanSummary, formatMoney, monthEnd, shortDate, weekStart, type Month,
 } from '@budget-app/core';
 import { router } from 'expo-router';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { BalanceChart } from '@/components/AccountSheet';
+import { compact, MonthGrid, type DayCell } from '@/components/MonthGrid';
 import { Skeleton } from '@/components/Columns';
 import { Field, Sheet, useChanged } from '@/components/Forms';
 import { MultiPicker } from '@/components/Picker';
@@ -19,7 +20,7 @@ import { loadTxnsFor } from '@/lib/accountTxns';
 import { supabase } from '@/lib/supabase';
 import { useTxnSheet } from '@/components/TxnSheet';
 import { Bar, Button, Chip, LIFT, Segmented } from '@/components/ui';
-import { loadAccounts, loadEntries, loadRecurring, today } from '@/lib/plan';
+import { loadAccounts, today } from '@/lib/plan';
 import { loadPrefs, savePrefs } from '@/lib/prefs';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from '@/lib/reports';
 import { PRESS, RISE } from '@/lib/motion';
@@ -70,6 +71,7 @@ const LEGACY: Record<string, WidgetCfg> = {
   account: { source: 'balance', view: 'line', months: 12, payoff: true },
   creditscore: { source: 'creditscore', view: 'line', months: 12, title: 'Credit score' },
   tags: { source: 'tags', view: 'list', months: 24, title: 'Tag totals' },
+  calendar: { source: 'bills', view: 'calendar', title: 'Bills calendar', h: 'l' },
 };
 export function parseEntry(e: string): [string, WidgetCfg] {
   const i = e.indexOf('::');
@@ -90,7 +92,6 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'cash', title: 'Cash position', about: 'Cash, card debt, and what’s left after paying the cards', home: true, budget: true, fits: true },
   { key: 'runway', title: 'Cash runway', about: 'How many days your cash lasts at your usual daily spending', home: true, budget: true, fits: true },
   { key: 'watch', title: 'Spending watch', about: 'Your watch-list categories against their average', home: true, budget: true, sizable: true },
-  { key: 'calendar', title: 'Bills calendar', about: 'This month’s bills and income on a calendar', home: true, budget: true, fits: true },
   { key: 'text', title: 'Text', about: 'A heading and a note of your own: what a page is for, a reminder, a goal', home: true, budget: true, config: 'text', fits: true },
   { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or an account, for the accounts and categories you choose', home: true, budget: true, config: 'chart', sizable: true },
   { key: 'goals', title: 'Goals', about: 'Your goals with their progress and whether they’re on pace', home: true, budget: true, fits: true },
@@ -169,7 +170,6 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
     case 'cash': return <CashPosition t={t} refresh={refresh} />;
     case 'runway': return <Runway t={t} refresh={refresh} />;
     case 'watch': return <WatchMini t={t} refresh={refresh} h={cfg.h} />;
-    case 'calendar': return <BillsCalendar t={t} refresh={refresh} anchor={anchor} />;
     default: return null;
   }
 }
@@ -228,6 +228,12 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
             <Fill>{(h, w) => <FlowChart t={t} format={fmt} width={w} height={h}
               inputs={data.flow!.inputs.map((n) => ({ ...n, onPress: n.query ? () => showTxns({ title: `${n.label} · ${data.period}`, from: data.from, to: data.to, ...n.query }) : undefined }))}
               outputs={data.flow!.outputs.map((n) => ({ ...n, onPress: n.query ? () => showTxns({ title: `${n.label} · ${data.period}`, from: data.from, to: data.to, ...n.query }) : undefined }))} />}</Fill>
+          ) : view === 'calendar' && data.calendar ? (
+            <>
+              {cfg.h === 'l' && cfg.numbers !== false && <View style={[styles.tiles, { flexWrap: 'nowrap' }]}>{data.tiles.slice(0, wide ? 3 : 2).map((x) => <Mini key={x.label} t={t} label={x.label} value={x.value} sub={x.sub} />)}</View>}
+              <Fill>{(h) => <CalendarChart t={t} cal={data.calendar!} height={h} onDay={data.drillDay ? (d) => showTxns({ title: `${title} · ${shortDate(d)}`, ...data.drillDay!(d) }) : undefined} />}</Fill>
+              {period}
+            </>
           ) : view === 'pie' ? (
             <Fill>{(h, w) => <Donut t={t} slices={data.breakdown.map((b) => ({ label: b.label, value: b.value, onPress: openPart(b) }))} format={fmt} note={data.period}
               width={w} height={h} labels={cfg.labels ?? (cfg.legend === false ? 'none' : 'auto')} />}</Fill>
@@ -277,6 +283,27 @@ function ChartWidget({ t, refresh, cfg, anchor, range }: { t: Theme; refresh: nu
       </Sized>
     </CardShell>
   );
+}
+
+/** The Calendar view: each day's money out and in, shaded by how big it is, and the balance when there is one. */
+function CalendarChart({ t, cal, height, onDay }: { t: Theme; cal: NonNullable<ChartData['calendar']>; height: number; onDay?: (date: string) => void }) {
+  const now = today();
+  const weeks = Math.ceil(((new Date(cal.month + 'T00:00:00Z').getUTCDay() + 6) % 7 + Number(monthEnd(cal.month).slice(8, 10))) / 7);
+  const cell = Math.max(24, Math.floor((height - 16) / weeks) - 2);
+  const max = Math.max(1, ...Object.values(cal.days).map((x) => (cal.heat === 'in' ? x.in : x.out)));
+  const cells: Record<string, DayCell> = {};
+  for (const [d, x] of Object.entries(cal.days)) {
+    const lines = [...(x.out >= 0.5 ? [{ text: compact(-x.out), color: t.danger }] : []), ...(x.in >= 0.5 ? [{ text: `+${compact(x.in)}`, color: t.positive }] : [])];
+    // Room for the day's number, two amounts and the balance from about 62px; below that the balance goes first, then the second amount.
+    const shown = lines.slice(0, cell >= 46 ? 2 : 1);
+    cells[d] = {
+      lines: shown,
+      foot: x.balance != null && (cell >= 62 || (cell >= 50 && shown.length < 2)) && (lines.length || d === now) ? { text: compact(x.balance), color: x.balance < 0 ? t.danger : t.muted } : undefined,
+      dot: x.late ? t.danger : undefined,
+      shade: cal.heat && (cal.heat === 'in' ? x.in : x.out) >= 0.5 ? { color: cal.heat === 'in' ? t.positive : t.danger, level: (cal.heat === 'in' ? x.in : x.out) / max } : undefined,
+    };
+  }
+  return <MonthGrid t={t} month={cal.month} today={now} cells={cells} onPress={onDay} height={cell} />;
 }
 
 const monthShort = (m: string) => new Date(m + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' });
@@ -406,47 +433,6 @@ function WatchMini({ t, refresh, h }: { t: Theme; refresh: number; h?: WidgetCfg
   );
 }
 
-function BillsCalendar({ t, refresh, anchor }: { t: Theme; refresh: number; anchor?: Month }) {
-  const month: Month = anchor ?? thisMonth();
-  const end = monthEnd(month);
-  const [showTxns, txnSheet] = useTxnSheet();
-  const { data } = useLoad(async () => {
-    const [rec, ent] = await Promise.all([loadRecurring(), loadEntries(addDays(month, -31), addDays(end, 31))]);
-    return expandPlan(rec, ent, month, end).filter((p) => !p.transfer);
-  }, [refresh, month]);
-  const now = today();
-  const first = new Date(month + 'T00:00:00Z');
-  const lead = (first.getUTCDay() + 6) % 7; // Monday first
-  const days = Number(end.slice(8, 10));
-  const cells = [...Array(lead).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];
-  const byDay = new Map<number, number[]>();
-  for (const p of data ?? []) { const d = Number(p.date.slice(8, 10)); (byDay.get(d) ?? byDay.set(d, []).get(d)!).push(p.amount); }
-  const out = (data ?? []).filter((p) => p.amount < 0).reduce((s, p) => s + p.amount, 0);
-  const inn = (data ?? []).filter((p) => p.amount > 0).reduce((s, p) => s + p.amount, 0);
-  return (
-    <CardShell t={t} after={txnSheet} title={`Bills · ${new Date(month + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'long', timeZone: 'UTC' })}`} link="Bills" onPress={() => router.navigate({ pathname: '/planner', params: { view: 'bills' } } as any)}>
-      <View style={styles.calHead}>{['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => <Text key={i} style={[styles.calCell, { color: t.muted, fontSize: 10 }]}>{d}</Text>)}</View>
-      <View style={styles.calGrid}>
-        {cells.map((d, i) => {
-          const amounts = d ? byDay.get(d) ?? [] : [];
-          const o = amounts.filter((a) => a < 0).reduce((s, a) => s + a, 0);
-          const n = amounts.filter((a) => a > 0).reduce((s, a) => s + a, 0);
-          const isToday = d && `${month.slice(0, 8)}${String(d).padStart(2, '0')}` === now;
-          return (
-            <Pressable key={i} disabled={!d} onPress={() => { const day = `${month.slice(0, 8)}${String(d).padStart(2, '0')}`; showTxns({ title: `${shortDate(day)}`, from: day, to: day, noTransfers: true }); }}
-              style={[styles.calCell, styles.calBox, { borderColor: isToday ? t.accent : 'transparent' }]}>
-              {d ? <Text style={{ color: t.muted, fontSize: 10 }}>{d}</Text> : null}
-              {o ? <Text style={{ color: t.danger, fontSize: 9, fontVariant: ['tabular-nums'] }} numberOfLines={1}>{money0(-o).replace(/^(-?)[^\d]+/, '$1')}</Text> : null}
-              {n ? <Text style={{ color: t.positive, fontSize: 9, fontVariant: ['tabular-nums'] }} numberOfLines={1}>+{money0(n).replace(/^[^\d]+/, '')}</Text> : null}
-            </Pressable>
-          );
-        })}
-      </View>
-      <Text style={{ color: t.muted, fontSize: 12 }}>Bills {money0(-out)} · income {money0(inn)} this month · tap a day for what posted</Text>
-    </CardShell>
-  );
-}
-
 export function entryLabel(e: string): string {
   const [k, c] = parseEntry(e);
   const w = WIDGETS.find((x) => x.key === keyOf(e));
@@ -463,6 +449,8 @@ export const PRESETS: { name: string; cfg: WidgetCfg }[] = [
   { name: 'Spending', cfg: { source: 'spending', view: 'bars', months: 6 } },
   { name: 'Spending by category', cfg: { source: 'spending', view: 'pie', months: 1 } },
   { name: 'Spending by group', cfg: { source: 'spending', by: 'group', view: 'list', months: 1 } },
+  { name: 'Spending by day', cfg: { source: 'spending', view: 'calendar', months: 1, h: 'l' } },
+  { name: 'Bills calendar', cfg: { source: 'bills', view: 'calendar', months: 1, h: 'l' } },
   { name: 'Average spending', cfg: { source: 'spending', view: 'tiles', months: 3 } },
   { name: 'Money in and out', cfg: { source: 'cashflow', view: 'bars', months: 12 } },
   { name: 'Net worth', cfg: { source: 'networth', view: 'line', months: 12 } },
@@ -667,10 +655,6 @@ const styles = StyleSheet.create({
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   mini: { flex: 1, borderWidth: StyleSheet.hairlineWidth, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6 },
   bars: { height: 96, flexDirection: 'row', gap: 4 },
-  calHead: { flexDirection: 'row' },
-  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
-  calCell: { width: `${100 / 7}%`, alignItems: 'center' },
-  calBox: { minHeight: 38, paddingVertical: 2, borderWidth: 1, borderRadius: 6 },
   pick: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 10, padding: 10 },
 });
 

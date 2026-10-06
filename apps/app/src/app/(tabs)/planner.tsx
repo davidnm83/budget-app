@@ -9,9 +9,9 @@ import { UNDER_BAR } from '@/lib/layout';
 import { seedTxn } from '@/lib/txnCache';
 import { Tile } from '@/components/Tile';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { addDays, addMonths, expandPlan, formatMoney, monthEnd, monthName, monthOf, shortDate, weekStart as mondayOf, type WeekRow , instalmentsBetween } from '@budget-app/core';
+import { addDays, formatMoney, monthName, monthOf, shortDate, weekStart as mondayOf, type WeekRow , instalmentsBetween } from '@budget-app/core';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BillForm, PlanEntryForm, Sheet } from '@/components/Forms';
 import { TransactionEditor } from '@/components/TransactionEditor';
@@ -21,7 +21,8 @@ import { loadPlans, type CardPlan } from '@/lib/paymentPlans';
 import { IconButton, TopBar } from '@/components/TopBar';
 import { Card, Chip, Empty, Segmented, Fab } from '@/components/ui';
 import Bills from './bills';
-import { loadEntries, loadRecurring, loadWeek, today, type PlannerData } from '@/lib/plan';
+import { cachedMonth, loadMonth, loadWeek, today, type MonthData, type PlannerData } from '@/lib/plan';
+import { PlannerMonth, PlanRow } from '@/components/PlannerMonth';
 import { PeriodStrip, PeriodTitle, useBackToNow, type Period } from '@/components/PeriodStrip';
 import { useTheme, type Theme } from '@/lib/theme';
 
@@ -53,35 +54,39 @@ export default function Planner() {
   useEffect(() => { if (params.view === 'bills') { setView('month'); router.setParams({ view: undefined } as any); } }, [params.view]);
 
   const [cardPlans, setCardPlans] = useState<CardPlan[]>([]);
-  // Month view's strip: each month's bills and income added up, 6 months back to 12 ahead.
-  const [monthStrip, setMonthStrip] = useState<Period[]>([]);
-  useEffect(() => {
-    if (view !== 'month') return;
-    const cur = monthOf(today()), first = addMonths(cur, -6), lastM = addMonths(cur, 12);
-    Promise.all([loadRecurring(), loadEntries(first, monthEnd(lastM))]).then(([rec, ent]) => {
-      const out: Period[] = [];
-      for (let m = first; m <= lastM; m = addMonths(m, 1)) {
-        const net = expandPlan(rec, ent, m, monthEnd(m)).filter((p) => !p.transfer).reduce((x, p) => x + p.amount, 0);
-        const yr = m.slice(0, 4) !== cur.slice(0, 4) ? ` ${m.slice(2, 4)}` : '';
-        out.push({ key: m, label: m === cur ? 'THIS MONTH' : new Date(m + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' }).toUpperCase() + yr,
-          value: `${net < 0 ? '−' : '+'}${money0(Math.abs(net))}`, bad: net < 0, dim: m < cur });
-      }
-      setMonthStrip(out);
-    }).catch(() => setMonthStrip([]));
-  }, [view, billsKey]);
+  // The month view: shown at once from the last load of that month, then brought up to date.
+  const [mdata, setMdata] = useState<MonthData | null>(() => cachedMonth(monthOf(today()), null));
+  const wanted = useRef(''); // the month asked for last: a slower load of an earlier one doesn't replace it
   const load = useCallback(async () => {
+    if (view === 'all') return;
     setLoading(true); setError('');
-    try { const d = await loadWeek(week, only); setData(d); loadPlans().then(setCardPlans).catch(() => {}); if (week === mondayOf(today()) && !only) setPlannerBadge(d.view?.summary.overdue ?? 0); else refreshPlannerBadge(); }
+    if (view === 'month') {
+      const had = cachedMonth(month, only);
+      if (had) setMdata(had);
+      const key = `${month}|${only}`; wanted.current = key;
+      try { const m = await loadMonth(month, only); if (wanted.current === key) setMdata(m); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setLoading(false); }
+      return;
+    }
+    try {
+      const d = await loadWeek(week, only); setData(d);
+      // Get this month ready too, so switching to Month shows it straight away.
+      if (!cachedMonth(monthOf(today()), only)) loadMonth(monthOf(today()), only).then((m) => setMdata((x) => x ?? m)).catch(() => {});
+      loadPlans().then(setCardPlans).catch(() => {}); if (week === mondayOf(today()) && !only) setPlannerBadge(d.view?.summary.overdue ?? 0); else refreshPlannerBadge(); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
-  }, [week, only]);
+  }, [week, only, view, month]);
   useFocusLoad(load);
   usePullRefresh(load);
 
   const now = today();
   const thisWeek = mondayOf(now);
   const planAccounts = data?.accounts.filter((a) => a.plan_include) ?? [];
-  const name = (id: string | null) => data?.accounts.find((a) => a.id === id)?.name ?? '';
+  const accounts = data?.accounts ?? mdata?.accounts ?? null;
+  const name = (id: string | null) => accounts?.find((a) => a.id === id)?.name ?? '';
+  const monthStrip: Period[] = (mdata?.strip ?? []).map(({ month: m, net }) => ({
+    key: m, label: m === monthOf(now) ? 'THIS MONTH' : new Date(m + 'T00:00:00Z').toLocaleDateString('en-CA', { month: 'short', timeZone: 'UTC' }).toUpperCase() + (m.slice(0, 4) !== now.slice(0, 4) ? ` ${m.slice(2, 4)}` : ''),
+    value: `${net < 0 ? '−' : '+'}${money0(Math.abs(net))}`, bad: net < 0, dim: m < monthOf(now),
+  }));
   const v = data?.view;
   const label = `${shortDate(week)} – ${shortDate(addDays(week, 6))}`;
   // Actual against planned: today's real balance (this week) and a past week's real end.
@@ -123,7 +128,17 @@ export default function Planner() {
         )}
         {view === 'month' && <PeriodStrip t={t} selected={month} current={monthOf(now)} onSelect={setMonth} items={monthStrip} />}
       </View>
-      {view !== 'week' ? <Bills key={billsKey} mode={view} month={month} embedded /> : (
+      {view === 'all' ? <Bills key={billsKey} mode="all" embedded /> : view === 'month' ? (
+        <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+          {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
+          {mdata ? (
+            mdata.accounts.some((a) => a.plan_include)
+              ? <View style={{ gap: 10, opacity: mdata.month === month ? 1 : 0.45 }} pointerEvents={mdata.month === month ? 'auto' : 'none'}><PlannerMonth t={t} d={mdata} now={now} only={only} setOnly={setOnly} onRow={openRow} onChanged={() => { load(); setBillsKey((k) => k + 1); }}
+                  onAdd={(date) => setForm({ date, description: '', amount: null, account_id: (only ?? mdata.accounts.find((a) => a.plan_include)?.id) ?? null })} /></View>
+              : <Card><Text style={{ color: t.text }}>Choose the accounts that pay your bills: tap one on the Accounts tab (or Settings → Planner) and turn on “Plan bills from this account”.</Text></Card>
+          ) : <PageSkeleton tiles={3} cards={1} />}
+        </ScrollView>
+      ) : (
 
       <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
         {planAccounts.length > 1 && (
@@ -195,7 +210,7 @@ export default function Planner() {
                       );
                     })()}
                   </View>
-                  {d.rows.filter((r) => !(hideUnplanned && r.kind === 'actual')).map((r) => <Row key={r.key} t={t} r={r} account={only ? '' : name(r.accountId)} onPress={() => openRow(r)} />)}
+                  {d.rows.filter((r) => !(hideUnplanned && r.kind === 'actual')).map((r) => <PlanRow key={r.key} t={t} r={r} account={only ? '' : name(r.accountId)} onPress={() => openRow(r)} />)}
                 </View>
               ))}
             </Card>
@@ -234,38 +249,16 @@ export default function Planner() {
 
       {/* The same round + as every other page: a one-off in Week, a bill or income in Month and All bills. */}
       <Fab label={view === 'week' ? 'Plan a one-off' : 'Add a bill or income'} onPress={() => (view === 'week' ? setForm({ date: week > now ? week : now, description: '', amount: null, account_id: planAccounts[0]?.id ?? null }) : addBill())} />
-      {newBill && data && <BillForm initial={{ kind: 'bill', frequency: 'monthly', start_date: now }} accounts={data.accounts} categories={cats} onClose={() => setNewBill(false)} onSaved={() => { load(); setBillsKey((k) => k + 1); }} />}
+      {newBill && accounts && <BillForm initial={{ kind: 'bill', frequency: 'monthly', start_date: now }} accounts={accounts} categories={cats} onClose={() => setNewBill(false)} onSaved={() => { load(); setBillsKey((k) => k + 1); }} />}
       {txnOpen && (
         <Sheet title="Transaction" scroll={false} onClose={() => setTxnOpen(null)}>
           <TransactionEditor key={txnOpen} id={txnOpen} onOpen={setTxnOpen} onDone={() => { setTxnOpen(null); load(); }} />
         </Sheet>
       )}
-      {form && data && <PlanEntryForm initial={form} accounts={data.accounts} onClose={() => setForm(null)} onSaved={load} />}
+      {form && accounts && <PlanEntryForm initial={form} accounts={accounts} onClose={() => setForm(null)} onSaved={load} />}
     </View>
   );
 }
-
-function Row({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string; onPress: () => void }) {
-  const matched = r.kind === 'planned' && r.actual != null;
-  const icon = r.kind === 'actual' ? 'flash-outline' : matched ? 'checkmark-circle' : r.overdue ? 'alert-circle' : 'time-outline';
-  const color = r.kind === 'actual' ? t.muted : matched ? t.accent : r.overdue ? t.danger : t.muted;
-  return (
-    <Pressable onPress={onPress} style={({ pressed, hovered }: any) => [styles.row, (pressed || hovered) && { backgroundColor: t.line }]}>
-      <Ionicons name={icon} size={17} color={color} />
-      <View style={{ flex: 1 }}>
-        <Text style={[ROW.title, { color: t.text, fontWeight: r.kind === 'actual' ? '500' : '600' }]} numberOfLines={1}>{r.description}</Text>
-        <Text style={{ color: r.overdue ? t.danger : t.muted, fontSize: 12 }} numberOfLines={1}>
-          {r.kind === 'actual' ? 'unplanned' : matched ? `planned ${formatMoney(r.planned!)}` : r.overdue ? 'not posted yet' : 'planned'}{account ? ` · ${account}` : ''}
-        </Text>
-      </View>
-      <View style={{ alignItems: 'flex-end' }}>
-        <Text style={{ color: r.counted > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'], fontWeight: matched || r.kind === 'actual' ? '600' : '400' }}>{formatMoney(r.counted)}</Text>
-        <Text style={{ color: r.balanceAfter < 0 ? t.danger : t.muted, fontSize: 12, fontVariant: ['tabular-nums'] }}>{formatMoney(r.balanceAfter)}</Text>
-      </View>
-    </Pressable>
-  );
-}
-
 
 const styles = StyleSheet.create({
   today: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 1, borderRadius: 10 },

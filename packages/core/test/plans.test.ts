@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardStatement, cardStatus, findPlanCredit, planHeld, plansOffBalance, instalmentsBetween, monthsAfter, planProgress, planSchedule, plansDeferred, type PaymentPlan } from '../src/index.ts';
+import { cardStatement, cardStatus, findPlanCredit, findPlanDuplicates, planHeld, plansOffBalance, instalmentsBetween, monthsAfter, planProgress, planSchedule, plansDeferred, type PaymentPlan } from '../src/index.ts';
 
 const plan = (o: Partial<PaymentPlan> = {}): PaymentPlan => ({ id: 'p', description: 'Laptop', principal: 1200, months: 12, startDate: '2026-01-15', setupFee: 0, apr: 0, ...o });
 const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
@@ -125,5 +125,21 @@ describe('statements with payment plans (option B)', () => {
     const txns = [{ id: 'pay', date: '2026-10-01', amount: 500, name: 'PAYMENT RECEIVED' }, { id: 'cr', date: '2026-10-03', amount: 1800, name: 'INSTALLMENT PLAN FOR $1,800.00' }];
     expect(findPlanCredit(p, txns)?.id).toBe('cr');
     expect(findPlanCredit(p, txns, new Set(['cr']))).toBeNull();
+  });
+});
+
+describe('payment plan duplicates', () => {
+  const p = { ...plan(), accountId: 'card', purchaseTxnId: 'buy' };
+  const t = (id: string, date: string, amount: number, name = 'Payment', o: object = {}) => ({ id, accountId: 'card', date, amount, name, importId: null, ...o });
+  it('finds hand-typed instalments and plan entries, leaving the plan’s own and other cards alone', () => {
+    const found = findPlanDuplicates([p], [
+      t('a', '2026-02-16', -99.5),                       // instalment 2, a day late, a few cents off
+      t('b', '2026-03-01', -42, 'Laptop instalment'),     // named after the plan
+      t('c', '2026-02-15', -100, 'x', { accountId: 'other' }),
+      t('d', '2026-02-15', 0, 'Laptop', { importId: 'plan:p:2' }),
+      t('buy', '2026-01-10', -1200, 'Laptop'),
+      t('e', '2026-02-15', -55),                         // not an instalment amount
+    ]);
+    expect(found.map((f) => [f.txn.id, f.n])).toEqual([['a', 2], ['b', null]]);
   });
 });

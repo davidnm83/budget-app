@@ -12,7 +12,7 @@
 import type { Admin } from './supabase.ts';
 import { plaid, PlaidError, RELINK_CODES } from './plaid.ts';
 import {
-  addDays, fromPlaidAmount, isTransferCategory, merchantFor, plaidCategoryNames, planMerge, sameAccount, suggestCategory,
+  addDays, todayIn, fromPlaidAmount, isTransferCategory, merchantFor, plaidCategoryNames, planMerge, sameAccount, suggestCategory,
   type CategoryRule, type MerchantRule,
 } from './core/index.ts';
 
@@ -355,14 +355,16 @@ const GAP_DAYS = 10;
  * doesn't is the gap: money the bank has counted but not listed yet. The anchor moves on once the
  * gap closes, or after GAP_DAYS.
  */
-export async function trackBalanceGaps(admin: Admin, accountIds: string[]): Promise<void> {
+export async function trackBalanceGaps(admin: Admin, accountIds: string[], today = todayIn(Deno.env.get('APP_TIMEZONE') ?? 'UTC')): Promise<void> {
   if (!accountIds.length) return;
-  const { data: rows, error } = await admin.from('accounts').select('id, type, current_balance, balance_anchor, balance_anchor_at').in('id', accountIds);
+  const { data: rows, error } = await admin.from('accounts').select('id, user_id, type, current_balance, balance_anchor, balance_anchor_at').in('id', accountIds);
   if (error) return; // before the migration
   const nowIso = new Date().toISOString();
   for (const a of (rows ?? []) as any[]) {
     if (a.current_balance == null) continue;
     const signed = (a.type === 'credit' || a.type === 'loan' ? -1 : 1) * Number(a.current_balance);
+    // Today's balance as the bank gave it (IDEA-2). Quietly skipped before the migration has run.
+    await admin.from('balance_snapshots').upsert({ user_id: a.user_id, account_id: a.id, date: today, balance: signed, taken_at: nowIso }, { onConflict: 'account_id,date' });
     let gap = 0;
     if (a.balance_anchor != null && a.balance_anchor_at) {
       const { data: since } = await admin.from('transactions').select('amount').eq('account_id', a.id).gt('created_at', a.balance_anchor_at).limit(5000);

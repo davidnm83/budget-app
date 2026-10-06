@@ -30,11 +30,11 @@ import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextI
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bar, Button, Chip, Segmented } from '@/components/ui';
 import { mergeAccounts } from '@/lib/mergeAccounts';
-import { loadEntries, loadRecurring, today } from '@/lib/plan';
+import { loadEntries, loadRecurring, loadSnapshots, today } from '@/lib/plan';
 import { loadPlans, type CardPlan } from '@/lib/paymentPlans';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
-import { accountHistory, bankBalance, signedBalance, type Account } from '@/lib/types';
+import { accountHistory, bankBalance, followsSnapshots, signedBalance, type Account, type Snapshot } from '@/lib/types';
 import { loadTransfers, type CardTransfer } from '@/lib/balanceTransfers';
 import { afterClose, useBackToClose } from '@/lib/useBackToClose';
 import { useTxnSheet } from '@/components/TxnSheet';
@@ -61,6 +61,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<'overview' | 'details' | 'txns'>('overview');
   const [history, setHistory] = useState<Txn[] | null>(null);
+  const [snaps, setSnaps] = useState<Snapshot[]>([]);
   const [list, setList] = useState<{ id: string; date: string; amount: number; display_name: string; category_name: string | null }[]>([]);
   useBackToClose(!!account, onClose);
   const [showTxns, txnSheet] = useTxnSheet();
@@ -68,7 +69,8 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
 
   useEffect(() => {
     if (!account) return;
-    setTab('overview'); setHistory(null); setList([]);
+    setTab('overview'); setHistory(null); setList([]); setSnaps([]);
+    if (followsSnapshots(account)) loadSnapshots([account.id], addDays(today(), -371)).then((m) => setSnaps(m.get(account.id) ?? []));
     (async () => {
       // Loans: all history (payments and interest to date). Others: the past year.
       const from = new Date(); from.setFullYear(from.getFullYear() - 1);
@@ -116,8 +118,8 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
                 {account.type === 'credit' && <CardBlock t={t} a={account} txns={history} onSetUp={() => setTab('details')} />}
                 {account.type === 'depository' && <CashBlock t={t} a={account} txns={history} onClose={onClose}
                   onMonth={(m) => showTxns({ title: `${account.name} · ${monthName(m)}`, from: m, to: monthEnd(m), accountIds: [account.id] })} />}
-                {account.current_balance != null && history.length > 0 && (
-                  <BalanceChart t={t} owed={account.type === 'loan' || account.type === 'credit'} points={accountHistory(account, history.filter((x) => x.date >= addDays(today(), -371)), today(), 53, 7)}
+                {account.current_balance != null && (history.length > 0 || snaps.length > 0) && (
+                  <BalanceChart t={t} owed={account.type === 'loan' || account.type === 'credit'} points={accountHistory(account, history.filter((x) => x.date >= addDays(today(), -371)), today(), 53, 7, snaps).filter((p, _i, all) => !snaps.length || !followsSnapshots(account) || p.date >= snaps[0].date || all.length < 3)}
                     onPick={(from, to) => showTxns({ title: `${account.name} · week of ${shortDate(from)}`, from, to, accountIds: [account.id] })} />
                 )}
               </>
