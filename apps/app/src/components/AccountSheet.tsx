@@ -20,7 +20,7 @@ export { Tile } from '@/components/Tile';
 import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, statementCharges, instalmentsBetween, minimumPayment, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, plansBilled, statementCharges, instalmentsBetween, minimumPayment, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
   monthlyFlow, shortDate, utilization,
   csvReminderOn,
 } from '@budget-app/core';
@@ -300,7 +300,7 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
             <Text style={{ color: t.muted, fontSize: 12 }}>Estimate: daily interest on what's left plus about half of this cycle's spending, for one cycle. Your statement is the final word.</Text>
             <MinimumLine t={t} had={minimum} onCheck={() => setChecking(true)} />
             {checking && <MinimumCheckSheet t={t} accountId={a.id} had={minimum} onClose={() => setChecking(false)} onSaved={loadMinimum}
-              initial={{ close: cycle.lastClose, balance: st.statementOwed + (tr?.held ?? 0), charges: statementCharges(txns, prevClose!, cycle.lastClose) }} />}
+              initial={{ close: cycle.lastClose, balance: st.statementOwed + (tr?.held ?? 0), charges: statementCharges(txns, prevClose!, cycle.lastClose), plans: plansBilled(plans, prevClose!, cycle.lastClose) }} />}
           </>
         )}
       </Section>

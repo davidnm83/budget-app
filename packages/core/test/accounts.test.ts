@@ -110,3 +110,20 @@ describe('card minimum payments', () => {
     expect(statementCharges(t, '2026-08-20', '2026-09-20')).toBe(145.9);
   });
 });
+
+describe('card minimums with payment plans', () => {
+  it('finds "$10 + interest and fees + the instalment" from four statements', () => {
+    // Made-up figures shaped like a card with a payment plan, a balance transfer fee and some interest.
+    const checks = [
+      { close: '2026-06-16', balance: 1200, charges: 0, plans: 200, minimum: 210 },
+      { close: '2026-07-16', balance: 3400, charges: 52.5, plans: 200, minimum: 262.5 },
+      { close: '2026-08-16', balance: 3300, charges: 21.4, plans: 200, minimum: 231.4 },
+      { close: '2026-09-16', balance: 3100, charges: 44.1, plans: 199.98, minimum: 254.08 },
+    ];
+    expect(fitMinimumRule(checks).map(minimumRuleText)[0]).toBe('$10 + interest and fees + payment plan instalments');
+    expect(minimumPayment(3100, { base: 'fixed', amount: 10, plusCharges: true, floor: 10, round: 'cent', plusPlans: true }, 44.1, 199.98)).toBe(254.08);
+  });
+  it('tries other shares of the balance', () => {
+    expect(minimumRuleText(fitMinimumRule([{ close: '2026-09-24', balance: 500, charges: 0, minimum: 11 }, { close: '2026-08-24', balance: 900, charges: 0, minimum: 19.8 }])[0])).toBe('2.2% of the balance, at least $10');
+  });
+});

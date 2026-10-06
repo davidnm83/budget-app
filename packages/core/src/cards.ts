@@ -4,7 +4,7 @@
  */
 import { daysBetween, parseIso, toIso, type IsoDate } from './dates.ts';
 import { round2 } from './money.ts';
-import { planHeld, type PlanOnCard } from './plans.ts';
+import { planHeld, planSchedule, type PlanOnCard } from './plans.ts';
 
 function onDay(y: number, m: number, day: number): IsoDate {
   const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
@@ -80,8 +80,10 @@ export function cardStatement(owedNow: number, txns: { id?: string; date: IsoDat
   const spentThisCycle = round2(real.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0));
   const leftToPay = round2(Math.max(0, statementOwed - paidSince));
   // The interest and fees on this statement count toward the minimum for banks that add them.
-  const charges = rule.plusCharges ? statementCharges(txns, prevCloseOf(lastClose, cycleDays), lastClose) : 0;
-  const minimumLeft = round2(Math.max(0, minimumPayment(statementOwed + Math.max(0, transfers.held), rule, charges) - paidSince));
+  const prevClose = prevCloseOf(lastClose, cycleDays);
+  const charges = rule.plusCharges ? statementCharges(txns, prevClose, lastClose) : 0;
+  const billed = rule.plusPlans ? plansBilled(plans, prevClose, lastClose) : 0;
+  const minimumLeft = round2(Math.max(0, minimumPayment(statementOwed + Math.max(0, transfers.held), rule, charges, billed) - paidSince));
   return { statementOwed, paidSince, leftToPay, spentThisCycle, minimumLeft, interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
 }
 
@@ -160,7 +162,8 @@ export function findTransferTxns<T extends { id: string; account_id: string; dat
 /**
  * How a card's minimum payment is worked out. Banks use a few shapes: a fixed amount plus the statement's
  * interest and fees ($10 + interest), a share of the balance with a floor (3%, at least $10), or a share
- * plus interest and fees. Some round up to the dollar. Never more than the balance.
+ * plus interest and fees. Some round up to the dollar. Cards with payment plans usually add the instalments
+ * billed on the statement on top ($10 + interest and fees + the instalment). Never more than the balance.
  */
 export interface MinimumRule {
   base: 'fixed' | 'percent';
@@ -171,15 +174,20 @@ export interface MinimumRule {
   /** Never less than this (unless the balance is smaller). */
   floor: number;
   round: 'cent' | 'dollar';
+  /** The payment plan instalments billed on the statement are added (after the floor). */
+  plusPlans?: boolean;
 }
 /** The estimate used until a card's own rule is known. */
 export const DEFAULT_MINIMUM: MinimumRule = { base: 'percent', amount: 3, plusCharges: false, floor: 10, round: 'cent' };
 
-/** A statement's minimum payment. `charges`: the interest and fees billed on that statement. */
-export function minimumPayment(balance: number, rule: MinimumRule = DEFAULT_MINIMUM, charges = 0): number {
+/**
+ * A statement's minimum payment. `charges`: the interest and fees billed on that statement; `plans`: the
+ * payment plan instalments billed on it (the purchase part; a plan's own interest and fees are charges).
+ */
+export function minimumPayment(balance: number, rule: MinimumRule = DEFAULT_MINIMUM, charges = 0, plans = 0): number {
   if (balance <= 0) return 0;
   const core = rule.base === 'fixed' ? rule.amount : (balance * rule.amount) / 100;
-  let m = Math.max(rule.floor, core + (rule.plusCharges ? Math.max(0, charges) : 0));
+  let m = Math.max(rule.floor, core + (rule.plusCharges ? Math.max(0, charges) : 0)) + (rule.plusPlans ? Math.max(0, plans) : 0);
   m = rule.round === 'dollar' ? Math.ceil(round2(m)) : round2(m);
   return round2(Math.min(balance, m));
 }
@@ -187,22 +195,29 @@ export function minimumPayment(balance: number, rule: MinimumRule = DEFAULT_MINI
 /** A rule in words: "$10 + interest and fees", "3% of the balance, at least $10". */
 export function minimumRuleText(r: MinimumRule): string {
   const core = r.base === 'fixed' ? `$${r.amount}` : `${r.amount}% of the balance`;
-  return `${core}${r.plusCharges ? ' + interest and fees' : ''}${r.floor > 0 && !(r.base === 'fixed' && r.floor <= r.amount) ? `, at least $${r.floor}` : ''}${r.round === 'dollar' ? ', rounded up to the dollar' : ''}`;
+  return `${core}${r.plusCharges ? ' + interest and fees' : ''}${r.plusPlans ? ' + payment plan instalments' : ''}${r.floor > 0 && !(r.base === 'fixed' && r.floor <= r.amount) ? `, at least $${r.floor}` : ''}${r.round === 'dollar' ? ', rounded up to the dollar' : ''}`;
 }
 
 /** A statement checked against the bank: its balance, the interest and fees on it, and the minimum the bank asked for. */
-export interface MinimumCheck { close: IsoDate; balance: number; charges: number; minimum: number }
+export interface MinimumCheck { close: IsoDate; balance: number; charges: number; minimum: number; /** Payment plan instalments billed on it. */ plans?: number }
 
 /** The rules that give the bank's minimum on every check (to the cent), simplest first. */
 export function fitMinimumRule(checks: MinimumCheck[]): MinimumRule[] {
   if (!checks.length) return [];
   const out: MinimumRule[] = [];
-  const add = (r: MinimumRule) => { if (checks.every((c) => Math.abs(minimumPayment(c.balance, r, c.charges) - c.minimum) < 0.005)) out.push(r); };
-  for (const round of ['cent', 'dollar'] as const) {
-    for (const amount of [10, 15, 20, 25]) add({ base: 'fixed', amount, plusCharges: true, floor: amount, round });
-    for (const plusCharges of [false, true]) for (const amount of [1, 1.5, 2, 2.5, 3, 4, 5]) for (const floor of [10, 15, 20, 25, 0]) add({ base: 'percent', amount, plusCharges, floor, round });
+  const add = (r: MinimumRule) => { if (checks.every((c) => Math.abs(minimumPayment(c.balance, r, c.charges, c.plans ?? 0) - c.minimum) < 0.005)) out.push(r); };
+  // Instalments are only worth trying when a check has some; then the rules with them come first.
+  const withPlans = checks.some((c) => (c.plans ?? 0) > 0) ? [true, false] : [false];
+  for (const plusPlans of withPlans) for (const round of ['cent', 'dollar'] as const) {
+    for (const amount of [10, 15, 20, 25]) add({ base: 'fixed', amount, plusCharges: true, floor: amount, round, ...(plusPlans ? { plusPlans } : {}) });
+    for (const plusCharges of [false, true]) for (const amount of [1, 1.25, 1.5, 2, 2.2, 2.5, 3, 3.5, 4, 5]) for (const floor of [10, 15, 20, 25, 0]) add({ base: 'percent', amount, plusCharges, floor, round, ...(plusPlans ? { plusPlans } : {}) });
   }
   return out;
+}
+
+/** The purchase part of the payment plan instalments billed on a statement (dated after `prevClose`, up to `close`). */
+export function plansBilled(plans: PlanOnCard[], prevClose: IsoDate, close: IsoDate): number {
+  return round2(plans.flatMap((p) => planSchedule(p)).filter((x) => x.date > prevClose && x.date <= close).reduce((s, x) => s + x.principal, 0));
 }
 
 /** Interest and fees billed on a statement: the card's charges between the two closing dates that say so. */

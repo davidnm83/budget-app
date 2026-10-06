@@ -25,19 +25,20 @@ export function MinimumLine({ t, had, onCheck }: { t: Theme; had: CardMinimum; o
  * worked out. The rules that give the bank's minimum (on this and earlier checks) are shown to pick from.
  */
 export function MinimumCheckSheet({ t, accountId, had, initial, onClose, onSaved }: {
-  t: Theme; accountId: string; had: CardMinimum; initial: { close: string; balance: number; charges: number }; onClose: () => void; onSaved: () => void;
+  t: Theme; accountId: string; had: CardMinimum; initial: { close: string; balance: number; charges: number; plans: number }; onClose: () => void; onSaved: () => void;
 }) {
   const [close, setClose] = useState(initial.close);
   const [balance, setBalance] = useState(initial.balance.toFixed(2));
   const [charges, setCharges] = useState(initial.charges.toFixed(2));
+  const [plans, setPlans] = useState(initial.plans.toFixed(2));
   const [minimum, setMinimum] = useState('');
   const [result, setResult] = useState<{ fits: MinimumRule[]; saved: MinimumRule | null } | null>(null);
   const [busy, setBusy] = useState(false);
-  const dirty = useChanged([close, balance, charges, minimum]) && !result;
+  const dirty = useChanged([close, balance, charges, plans, minimum]) && !result;
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
   const num = (s: string) => parseMoney(s) ?? NaN;
-  const check = { close, balance: num(balance), charges: num(charges), minimum: num(minimum) };
-  const ok = Number.isFinite(check.balance) && Number.isFinite(check.charges) && Number.isFinite(check.minimum) && check.minimum > 0;
+  const check = { close, balance: num(balance), charges: num(charges), minimum: num(minimum), plans: plans.trim() ? num(plans) : 0 };
+  const ok = Number.isFinite(check.balance) && Number.isFinite(check.charges) && Number.isFinite(check.plans) && Number.isFinite(check.minimum) && check.minimum > 0;
   const run = async (pick?: MinimumRule) => {
     setBusy(true);
     try {
@@ -60,6 +61,9 @@ export function MinimumCheckSheet({ t, accountId, had, initial, onClose, onSaved
           <Field t={t} label="Interest and fees on it" hint="Worked out from the card's transactions; change it to what the statement shows.">
             <TextInput value={charges} onChangeText={setCharges} keyboardType="decimal-pad" style={input} accessibilityLabel="Interest and fees" />
           </Field>
+          <Field t={t} label="Payment plan instalments on it" hint="What the statement bills for payment plans this month (0 if none). Many banks add it to the minimum.">
+            <TextInput value={plans} onChangeText={setPlans} keyboardType="decimal-pad" style={input} accessibilityLabel="Payment plan instalments" />
+          </Field>
           <Field t={t} label="Minimum payment on the statement">
             <TextInput value={minimum} onChangeText={setMinimum} keyboardType="decimal-pad" placeholder="e.g. 35.90" placeholderTextColor={t.muted} style={input} accessibilityLabel="Minimum payment" autoFocus />
           </Field>
@@ -70,7 +74,7 @@ export function MinimumCheckSheet({ t, accountId, had, initial, onClose, onSaved
           {result.fits.slice(0, 6).map((r, i) => (
             <Pressable key={i} onPress={() => run(r)} disabled={busy} style={({ hovered }: any) => [styles.fit, { borderColor: i === 0 ? t.accent : t.line }, hovered && { backgroundColor: t.line }]}>
               <Text style={{ color: t.text, flex: 1 }}>{minimumRuleText(r)}</Text>
-              <Text style={{ color: t.muted, fontSize: 12 }}>{formatMoney(minimumPayment(check.balance, r, check.charges))}</Text>
+              <Text style={{ color: t.muted, fontSize: 12 }}>{formatMoney(minimumPayment(check.balance, r, check.charges, check.plans))}</Text>
             </Pressable>
           ))}
         </>
