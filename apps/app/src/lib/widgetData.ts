@@ -7,7 +7,7 @@ import type { TxnQuery } from '@/components/TxnSheet';
 import { loadTxnsFor } from './accountTxns';
 import { loadAccounts, today } from './plan';
 import { loadCategories, loadCategoryMonths, loadMonthSummaries, thisMonth, type Category } from './reports';
-import { signedBalance, type Account } from './types';
+import { accountHistory, signedBalance, type Account } from './types';
 
 export type Source = 'spending' | 'income' | 'cashflow' | 'savings' | 'networth' | 'carddebt' | 'utilization' | 'balance' | 'creditscore';
 /** How a chart's total is split into parts (for the pie, the ranked list and the table). */
@@ -303,7 +303,7 @@ export async function loadChart(cfg: ChartCfg, anchor?: string, range?: { from: 
   const end = past ? monthEnd(cur) : now;
   const total = span + Math.ceil(Math.max(0, daysBetween(end, now)) / step) + 1;
   const txns = await loadTxnsFor(accounts.map((a) => a.id), loan ? '1900-01-01' : addDays(now, -total * step - 7));
-  const per = accounts.map((a) => balanceHistory(signedBalance(a), txns.filter((x) => x.account_id === a.id && x.date >= addDays(now, -total * step - 7)), now, total, step).filter((p) => p.date <= end).slice(-span));
+  const per = accounts.map((a) => accountHistory(a, txns.filter((x) => x.account_id === a.id && x.date >= addDays(now, -total * step - 7)), now, total, step).filter((p) => p.date <= end).slice(-span));
   const allDates = per[0]?.map((p) => p.date) ?? [];
   const sign = owedView ? -1 : 1;
   const limit = accounts.reduce((x, a) => x + Number(a.credit_limit ?? 0), 0);

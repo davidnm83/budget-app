@@ -1,3 +1,5 @@
+import { balanceHistory, plansOffBalance, type PlanOnCard } from '@budget-app/core';
+
 export interface Category { id: string; name: string; group_name: string; kind: 'expense' | 'income' | 'transfer'; sort: number }
 export interface Account {
   id: string; name: string; mask: string | null; type: string | null; subtype: string | null; kind: 'plaid' | 'manual';
@@ -5,6 +7,8 @@ export interface Account {
   official_name?: string | null; plan_include?: boolean; plan_buffer?: number; start_balance?: number | null;
   credit_limit?: number | null; statement_day?: number | null; due_day?: number | null; apr?: number | null;
   loan_payment_match?: string | null; loan_paying_account_id?: string | null; loan_last_balance?: number | null; loan_last_balance_date?: string | null; icon?: string | null; csv_reminder?: boolean | null;
+  /** Cards: still owed on payment plans the bank has moved off its balance (added by loadAccounts), and those plans. */
+  off_balance?: number; off_plans?: PlanOnCard[];
 }
 export interface Txn {
   id: string; account_id: string; date: string; amount: number; currency: string; name: string; merchant: string | null;
@@ -17,7 +21,15 @@ export interface Txn {
 export interface PlaidItem { id: string; item_id: string; institution_name: string; status: 'ok' | 'login_required' | 'error'; error_code: string | null; last_synced_at: string | null }
 
 // Plaid reports what you owe on cards and loans as a positive balance; the app shows it as negative.
-export const signedBalance = (a: Pick<Account, 'type' | 'current_balance'>) => (a.type === 'credit' || a.type === 'loan' ? -1 : 1) * Number(a.current_balance ?? 0);
+/** The balance as the bank reports it. Card statements are worked out from this one. */
+export const bankBalance = (a: Pick<Account, 'type' | 'current_balance'>) => (a.type === 'credit' || a.type === 'loan' ? -1 : 1) * Number(a.current_balance ?? 0);
+/**
+ * The balance everywhere else: for a card, everything owed on it, including payment plans the bank
+ * has moved off its balance with a credit (still owed, billed month by month).
+ */
+export const signedBalance = (a: Pick<Account, 'type' | 'current_balance'> & { off_balance?: number }) => bankBalance(a) - (a.type === 'credit' ? a.off_balance ?? 0 : 0);
+/** What a card's off-balance plans came to on a past date (for charts worked back from today). */
+export const offBalanceAt = (a: Pick<Account, 'off_plans'>, date: string) => plansOffBalance(a.off_plans ?? [], date);
 
 /** The heading an account sits under in lists and pickers, by its type. */
 export const ACCOUNT_GROUPS = ['Cash', 'Credit cards', 'Loans', 'Investments', 'Other'] as const;
@@ -27,3 +39,13 @@ export function accountGroup(type: string | null | undefined): string {
 /** Accounts in picker order: by group (Cash, cards, loans…), then name. */
 export const byAccountGroup = <T extends { type?: string | null; name: string }>(list: T[]) =>
   [...list].sort((a, b) => ACCOUNT_GROUPS.indexOf(accountGroup(a.type) as any) - ACCOUNT_GROUPS.indexOf(accountGroup(b.type) as any) || a.name.localeCompare(b.name));
+
+/**
+ * An account's balance over time, worked back from today's through its transactions. For a card,
+ * what's owed in all on each date: the plans the bank had moved off its balance by then are added.
+ */
+export function accountHistory(a: Account, txns: { date: string; amount: number }[], today: string, points: number, step: number) {
+  const now = a.off_balance ?? 0;
+  return balanceHistory(signedBalance(a), txns, today, points, step)
+    .map((p) => (a.off_plans?.length ? { ...p, balance: p.balance + now - offBalanceAt(a, p.date) } : p));
+}

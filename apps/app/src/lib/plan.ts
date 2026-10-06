@@ -1,7 +1,7 @@
 // Data for Bills and the Planner: recurring bills/income, one-off planned entries, the
 // accounts the plan covers, and posted transactions to match against.
 import {
-  addDays, balanceAt, buildWeek, cardCycle, cardStatement, planHeld, expandPlan, round2, todayIn, weekStart as mondayOf,
+  addDays, balanceAt, buildWeek, cardCycle, cardStatement, planHeld, planUnbilled, transfersOnStatement, expandPlan, round2, todayIn, weekStart as mondayOf,
   type PlanEntry, type PostedTxn, type Recurring, type WeekView,
 } from '@budget-app/core';
 import { supabase } from './supabase';
@@ -42,16 +42,20 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
   ]);
   // Payment plans on these cards: what isn't billed yet is left out of the amount to pay.
   const plans = await import('./paymentPlans').then((m) => m.loadPlans()).catch(() => []);
+  const transfers = await import('./balanceTransfers').then((m) => m.loadTransfers()).catch(() => []);
   const due = new Map<string, number>();
   for (const a of (accts ?? []) as any[]) {
     const owed = Math.max(0, Number(a.balance ?? 0)); // cards: amount owing is positive in balance
     const mine = plans.filter((p) => p.accountId === a.id);
     // With nothing left on the statement (or no statement dates), it's what's owed now, less the payment
     // plan instalments not billed yet: those come due on later statements, not this payment.
-    let amount = Math.max(0, owed - mine.reduce((s, p) => s + planHeld(p, now), 0));
+    // Promo balance transfers on the card are paid off on their own schedule, like plans.
+    const bts = transfers.filter((x) => x.toAccountId === a.id && !x.closedOn);
+    let amount = Math.max(0, owed - mine.reduce((s, p) => s + planHeld(p, now), 0) - transfersOnStatement(bts, owed, now, now).held);
     if (a.statement_day && a.due_day) {
       const c = cardCycle(now, a.statement_day, a.due_day);
-      const st = cardStatement(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ id: x.id, date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null, mine);
+      const st = cardStatement(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ id: x.id, date: x.date, amount: Number(x.amount) })), c.lastClose, c.cycleDays, null, mine,
+        transfersOnStatement(bts, owed, c.lastClose, now));
       if (st.leftToPay > 0) amount = st.leftToPay;
     }
     due.set(a.id, round2(amount));
@@ -82,7 +86,22 @@ export async function loadPosted(accountIds: string[], from: string, to: string)
 export async function loadAccounts(): Promise<Account[]> {
   const { data, error } = await supabase.from('account_balances').select('*').eq('is_hidden', false).order('name');
   if (error) throw new Error(error.message);
-  return (data ?? []).map((a: any) => ({ ...a, current_balance: a.balance, balance_updated_at: a.balance_as_of, plan_buffer: Number(a.plan_buffer ?? 0) }));
+  return withOffBalance((data ?? []).map((a: any) => ({ ...a, current_balance: a.balance, balance_updated_at: a.balance_as_of, plan_buffer: Number(a.plan_buffer ?? 0) })));
+}
+
+/**
+ * Cards: add what's still owed on payment plans the bank has moved off the balance, so every "owed"
+ * (card lists, utilisation, net worth, charts) is the whole debt. Statements use the bank's balance.
+ */
+export async function withOffBalance(list: Account[]): Promise<Account[]> {
+  if (!list.some((a) => a.type === 'credit')) return list;
+  const plans = await import('./paymentPlans').then((m) => m.loadPlans()).catch(() => []);
+  const now = today();
+  return list.map((a) => {
+    if (a.type !== 'credit') return a;
+    const off = plans.filter((p) => p.accountId === a.id && p.creditDate);
+    return off.length ? { ...a, off_plans: off, off_balance: off.reduce((s, p) => s + (p.creditDate! <= now ? planUnbilled(p, now) : 0), 0) } : a;
+  });
 }
 
 export interface PlannerData {

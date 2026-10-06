@@ -19,7 +19,7 @@ export { Tile } from '@/components/Tile';
 import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, plansOffBalance, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
   monthlyFlow, shortDate, utilization,
   csvReminderOn,
 } from '@budget-app/core';
@@ -33,7 +33,8 @@ import { loadEntries, loadRecurring, today } from '@/lib/plan';
 import { loadPlans, type CardPlan } from '@/lib/paymentPlans';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
-import { signedBalance, type Account } from '@/lib/types';
+import { accountHistory, bankBalance, signedBalance, type Account } from '@/lib/types';
+import { loadTransfers, type CardTransfer } from '@/lib/balanceTransfers';
 import { afterClose, useBackToClose } from '@/lib/useBackToClose';
 import { useTxnSheet } from '@/components/TxnSheet';
 
@@ -72,10 +73,11 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
       const from = new Date(); from.setFullYear(from.getFullYear() - 1);
       const all: Txn[] = [];
       for (let p = 0; ; p += 1000) {
-        let q = supabase.from('transactions').select('date, amount, name').eq('account_id', account.id);
+        // Ids too: a card's statement tells plan and transfer movements apart by them.
+        let q = supabase.from('transactions').select('id, date, amount, name').eq('account_id', account.id).eq('pending', false);
         if (account.type !== 'loan') q = q.gte('date', from.toISOString().slice(0, 10));
         const { data } = await q.order('date', { ascending: false }).range(p, p + 999);
-        all.push(...(data ?? []).map((r) => ({ date: r.date, amount: Number(r.amount), name: r.name })));
+        all.push(...(data ?? []).map((r) => ({ id: r.id, date: r.date, amount: Number(r.amount), name: r.name })));
         if (!data || data.length < 1000) break;
       }
       setHistory(all);
@@ -114,7 +116,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
                 {account.type === 'depository' && <CashBlock t={t} a={account} txns={history} onClose={onClose}
                   onMonth={(m) => showTxns({ title: `${account.name} · ${monthName(m)}`, from: m, to: monthEnd(m), accountIds: [account.id] })} />}
                 {account.current_balance != null && history.length > 0 && (
-                  <BalanceChart t={t} owed={account.type === 'loan' || account.type === 'credit'} points={balanceHistory(signedBalance(account), history.filter((x) => x.date >= addDays(today(), -371)), today(), 53, 7)}
+                  <BalanceChart t={t} owed={account.type === 'loan' || account.type === 'credit'} points={accountHistory(account, history.filter((x) => x.date >= addDays(today(), -371)), today(), 53, 7)}
                     onPick={(from, to) => showTxns({ title: `${account.name} · week of ${shortDate(from)}`, from, to, accountIds: [account.id] })} />
                 )}
               </>
@@ -226,15 +228,20 @@ export function LoanBlock({ t, a, txns }: { t: Theme; a: Account; txns: Txn[] })
 
 /** Credit cards: statement and due date, interest estimate, utilisation. */
 export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns: Txn[]; onSetUp: () => void }) {
+  // Owed in all (utilisation and the header); the statement is worked out from the bank's own balance.
   const owed = Math.max(0, -signedBalance(a));
+  const bankOwed = Math.max(0, -bankBalance(a));
   const u = utilization(owed, a.credit_limit);
   const set = a.statement_day && a.due_day;
   const cycle = set ? cardCycle(today(), a.statement_day!, a.due_day!) : null;
   const [plans, setPlans] = useState<CardPlan[]>([]);
-  useEffect(() => { loadPlans().then((ps) => setPlans(ps.filter((p) => p.accountId === a.id))).catch(() => {}); }, [a.id]);
-  const st = cycle ? cardStatement(owed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans) : null;
-  // Plans the bank has taken off the balance with a credit are still owed.
-  const offBalance = plansOffBalance(plans, today());
+  const [transfers, setTransfers] = useState<CardTransfer[]>([]);
+  useEffect(() => {
+    loadPlans().then((ps) => setPlans(ps.filter((p) => p.accountId === a.id))).catch(() => {});
+    loadTransfers().then((l) => setTransfers(l.filter((x) => x.toAccountId === a.id && !x.closedOn))).catch(() => {});
+  }, [a.id]);
+  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, transfersOnStatement(transfers, owed, cycle.lastClose, today())) : null;
+  const offBalance = a.off_balance ?? 0;
   return (
     <>
       <Section t={t} title="Utilisation">
@@ -249,7 +256,7 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
           </>
         )}
       </Section>
-      {offBalance > 0 && <Text style={{ color: t.muted, fontSize: 13 }}>Plus {formatMoney(offBalance)} still to come on payment plans the bank has moved off the balance: {formatMoney(owed + offBalance)} owed in all.</Text>}
+      {offBalance > 0.005 && <Text style={{ color: t.muted, fontSize: 13 }}>Owed in all, with {formatMoney(offBalance)} still to come on payment plans the bank shows apart from its balance of {formatMoney(-bankBalance(a))}.</Text>}
       <Section t={t} title="Statement">
         {!cycle || !st ? (
           <Pressable onPress={onSetUp}><Text style={{ color: t.accent }}>Set the statement closing day, due day and interest rate in Details to see what's due and what interest would cost.</Text></Pressable>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findTransferTxns, radarTransfers, transferProgress, cardCycle, cardInterest, cardStatus, loanSummary, monthlyFlow, utilization } from '../src/index.ts';
+import { cardStatement, transfersOnStatement, findTransferTxns, radarTransfers, transferProgress, cardCycle, cardInterest, cardStatus, loanSummary, monthlyFlow, utilization } from '../src/index.ts';
 
 describe('loan payoff', () => {
   const txns = [
@@ -66,5 +66,21 @@ describe('balance transfers', () => {
     expect(radarTransfers([{ id: 'b', to: 'Visa', remaining: 1200, promoEnd: '2026-11-15', daysLeft: 40, perMonth: 600 }])[0].severity).toBe('heads');
     expect(radarTransfers([{ id: 'b', to: 'Visa', remaining: 1200, promoEnd: '2026-10-01', daysLeft: -5, perMonth: null }])[0].severity).toBe('act');
     expect(radarTransfers([{ id: 'b', to: 'Visa', remaining: 0, promoEnd: '2026-11-15', daysLeft: 40, perMonth: 0 }])).toEqual([]);
+  });
+});
+
+describe('statements with a balance transfer', () => {
+  it('a promo transfer already on the card is left out of the amount due; its charge is not spending', () => {
+    const bt = { id: 'b', fromAccountId: 'old', toAccountId: 'new', amount: 3000, fee: 90, date: '2026-09-01', promoApr: 0, promoEnd: '2027-03-01', inTxnId: 'in' };
+    // Closed Sep 20 owing $3,090 + $400 of purchases; $100 spent since.
+    const txns = [{ id: 'in', date: '2026-09-01', amount: -3000 }, { id: 'f', date: '2026-09-02', amount: -90 }, { id: 'p', date: '2026-09-10', amount: -400 }, { id: 'q', date: '2026-09-25', amount: -100 }];
+    const tr = transfersOnStatement([bt], 3590, '2026-09-20', '2026-10-06');
+    expect(tr.held).toBe(3090);
+    const s = cardStatement(3590, txns, '2026-09-20', 30, null, [], tr);
+    expect([s.statementOwed, s.leftToPay, s.spentThisCycle]).toEqual([400, 400, 100]);
+    // Made this cycle: not on the statement yet, and not counted as spending either.
+    const late = { ...bt, date: '2026-09-25', inTxnId: 'in2' };
+    const s2 = cardStatement(3590, [{ id: 'in2', date: '2026-09-25', amount: -3000 }], '2026-09-20', 30, null, [], transfersOnStatement([late], 3590, '2026-09-20', '2026-10-06'));
+    expect([s2.statementOwed, s2.spentThisCycle]).toEqual([590, 0]);
   });
 });

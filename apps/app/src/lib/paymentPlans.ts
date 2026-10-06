@@ -30,6 +30,8 @@ export interface CardPlan extends PaymentPlan, PlanOnCard {
   offsetStart: boolean;
   /** The bank's plan credit, for cards that move a plan off the balance with one (see PlanOnCard). */
   creditTransactionId?: string | null;
+  /** Look for the bank's plan credit by itself (off once you unlink one). */
+  creditSearch?: boolean;
 }
 export type PlanInput = Omit<CardPlan, 'id'>;
 const PLAN_CATEGORY = 'Payment plan';
@@ -38,7 +40,7 @@ const fromRow = (r: any): CardPlan => ({
   id: r.id, description: r.description, principal: Number(r.principal), months: Number(r.months), startDate: r.start_date, setupFee: Number(r.setup_fee), apr: Number(r.apr),
   countFrom: r.count_from, closedOn: r.closed_on, accountId: r.account_id, transactionId: r.transaction_id, categoryId: r.category_id,
   interestCategoryId: r.interest_category_id, payingAccountId: r.paying_account_id, postCharges: r.post_charges, postFee: r.post_fee ?? true, monthlyFee: Number(r.monthly_fee ?? 0), offsetStart: !!r.offset_start,
-  instalments: r.instalments ?? {}, creditTransactionId: r.credit_transaction_id ?? null,
+  instalments: r.instalments ?? {}, creditTransactionId: r.credit_transaction_id ?? null, creditSearch: r.credit_search ?? true,
   purchaseTxnId: r.transaction_id, creditTxnId: r.credit_transaction_id ?? null,
 });
 const toRow = (p: PlanInput) => ({
@@ -204,7 +206,7 @@ export async function deletePlan(p: CardPlan) {
  * payment nor income. Plans whose bank keeps them in the balance never get one, and nothing changes.
  */
 export async function linkPlanCredits(plans: CardPlan[]): Promise<void> {
-  const open = plans.filter((p) => !p.creditTransactionId && !p.closedOn);
+  const open = plans.filter((p) => !p.creditTransactionId && !p.closedOn && p.creditSearch !== false);
   if (!open.length) return;
   const taken = new Set(plans.map((p) => p.creditTransactionId).filter(Boolean) as string[]);
   const from = open.reduce((m, p) => { const d = p.purchaseDate ?? core.monthsAfter(p.startDate, -2); return d < m ? d : m; }, '9999-12-31');
@@ -225,6 +227,10 @@ export async function linkPlanCredits(plans: CardPlan[]): Promise<void> {
 
 /** Link the bank's plan credit by hand (or unlink it with null). A linked credit is filed under "Payment plan". */
 export async function setPlanCredit(p: CardPlan, txnId: string | null): Promise<void> {
-  fail((await supabase.from('payment_plans').update({ credit_transaction_id: txnId }).eq('id', p.id)).error);
+  // Unlinked: it stays unlinked (no new search), and the credit goes back to being uncategorised for you to file.
+  const up = await supabase.from('payment_plans').update({ credit_transaction_id: txnId, credit_search: !!txnId }).eq('id', p.id);
+  if (up.error && /credit_search/.test(up.error.message)) fail((await supabase.from('payment_plans').update({ credit_transaction_id: txnId }).eq('id', p.id)).error);
+  else fail(up.error);
   if (txnId) fail((await supabase.from('transactions').update({ category_id: await planCategory(), category_source: 'manual', is_transfer: true }).eq('id', txnId)).error);
+  else if (p.creditTransactionId) fail((await supabase.from('transactions').update({ category_id: null, category_source: null, is_transfer: false, reviewed: false }).eq('id', p.creditTransactionId)).error);
 }

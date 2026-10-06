@@ -8,7 +8,7 @@ import { usePullRefresh } from '@/lib/pullRefresh';
 import { bankLogo, customPicture, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { UNDER_BAR } from '@/lib/layout';
-import { plansOffBalance, addDays, cardCycle, cardStatement, formatMoney, shortDate, utilization } from '@budget-app/core';
+import { addDays, cardCycle, cardStatement, transfersOnStatement, formatMoney, shortDate, utilization } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -23,7 +23,7 @@ import { loadAccounts, today } from '@/lib/plan';
 import { loadTxnsFor, type Row } from '@/lib/accountTxns';
 import { Tile } from '@/components/Tile';
 import { useTheme } from '@/lib/theme';
-import { signedBalance, type Account } from '@/lib/types';
+import { bankBalance, signedBalance, type Account } from '@/lib/types';
 
 // Card debt and utilisation over time are Chart widgets now (Card debt; Card utilisation), added from Edit layout.
 const CREDIT_DEFAULT = [makeEntry('credit:tiles', { w: 'full' }), makeEntry('credit:cards', { w: 'full' })];
@@ -62,21 +62,23 @@ export default function Credit() {
   const now = today();
   const cards = accounts.filter((a) => a.type === 'credit');
   const owedOf = (a: Account) => Math.max(0, -signedBalance(a));
-  // What's owed in all: the balances, plus plans the bank has moved off them with a credit.
-  const onPlans = plansOffBalance(plans.filter((p) => cards.some((a) => a.id === p.accountId)), now);
-  const totalOwed = cards.reduce((s, a) => s + owedOf(a), 0) + onPlans;
+  // Owed in all: each card's balance already includes plans the bank shows apart from it.
+  const onPlans = cards.reduce((s, a) => s + (a.off_balance ?? 0), 0);
+  const totalOwed = cards.reduce((s, a) => s + owedOf(a), 0);
   const withLimit = cards.filter((a) => a.credit_limit);
   const totalLimit = withLimit.reduce((s, a) => s + Number(a.credit_limit), 0);
   const util = totalLimit ? withLimit.reduce((s, a) => s + owedOf(a), 0) / totalLimit : null;
 
   const perCard = useMemo(() => cards.map((a) => {
     const mine = txns.filter((x) => x.account_id === a.id);
-    const owed = owedOf(a);
+    const owed = owedOf(a), bankOwed = Math.max(0, -bankBalance(a));
     const cycle = a.statement_day && a.due_day ? cardCycle(now, a.statement_day, a.due_day) : null;
     // The part of the balance on payment plans that isn't billed yet isn't part of what the statement asks for.
-    const st = cycle ? cardStatement(owed, mine, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans.filter((p) => p.accountId === a.id)) : null;
+    // The statement: from the bank's own balance, leaving out plans and promo balance transfers not billed yet.
+    const st = cycle ? cardStatement(bankOwed, mine, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans.filter((p) => p.accountId === a.id),
+      transfersOnStatement(transfers.filter((x) => x.toAccountId === a.id && !x.closedOn), owed, cycle.lastClose, now)) : null;
     return { a, owed, u: utilization(owed, a.credit_limit), cycle, st };
-  }).sort((x, y) => y.owed - x.owed), [cards, txns, now, plans]);
+  }).sort((x, y) => y.owed - x.owed), [cards, txns, now, plans, transfers]);
 
   const interestDue = perCard.reduce((s, c) => s + (c.st && c.st.leftToPay > 0 ? c.st.interestIfUnpaid ?? 0 : 0), 0);
   const nextDue = perCard.filter((c) => c.st && c.st.leftToPay > 0 && c.cycle).sort((x, y) => x.cycle!.due.localeCompare(y.cycle!.due))[0];

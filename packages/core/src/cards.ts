@@ -59,14 +59,17 @@ export function cardStatus(owedNow: number, txns: { date: IsoDate; amount: numbe
  * statement doesn't ask for that. The purchase and the bank's plan credit are plan movements: they
  * count as neither spending nor payments, so a $1,800 plan credit no longer looks like a payment.
  */
-export function cardStatement(owedNow: number, txns: { id?: string; date: IsoDate; amount: number }[], lastClose: IsoDate, cycleDays: number, apr: number | null, plans: PlanOnCard[] = []): CardStatus {
-  const moves = new Set(plans.flatMap((p) => [p.purchaseTxnId, p.creditTxnId]).filter(Boolean) as string[]);
+export function cardStatement(owedNow: number, txns: { id?: string; date: IsoDate; amount: number }[], lastClose: IsoDate, cycleDays: number, apr: number | null, plans: PlanOnCard[] = [],
+  transfers: { held: number; moves: (string | null | undefined)[] } = { held: 0, moves: [] }): CardStatus {
+  // `transfers`: the promo balance transfers on this card that were already on it when the statement
+  // closed (left out like a plan), and their charges (moved money, not spending).
+  const moves = new Set([...plans.flatMap((p) => [p.purchaseTxnId, p.creditTxnId]), ...transfers.moves].filter(Boolean) as string[]);
   const after = txns.filter((t) => t.date > lastClose);
   const atClose = owedNow + after.reduce((s, t) => s + t.amount, 0);
-  const statementOwed = round2(Math.max(0, atClose - plans.reduce((s, p) => s + planHeld(p, lastClose), 0)));
+  const statementOwed = round2(Math.max(0, atClose - plans.reduce((s, p) => s + planHeld(p, lastClose), 0) - Math.max(0, transfers.held)));
   const real = after.filter((t) => !(t.id && moves.has(t.id)));
   const paidSince = round2(real.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0));
-  const spentThisCycle = round2(-real.filter((t) => t.amount < 0).reduce((s, t) => s + t.amount, 0));
+  const spentThisCycle = round2(real.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0));
   const leftToPay = round2(Math.max(0, statementOwed - paidSince));
   return { statementOwed, paidSince, leftToPay, spentThisCycle, interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
 }
@@ -109,6 +112,16 @@ export interface TransferProgress {
   /** A month, to clear it before the promo rate ends. */
   perMonth: number | null;
   ended: boolean;
+}
+
+/**
+ * What of these transfers to a card a statement closing on `lastClose` leaves out: the ones made by
+ * then whose promo rate hadn't ended, at what's left of them. Plus their charges, which aren't spending.
+ */
+export function transfersOnStatement(list: BalanceTransfer[], owedOnTo: number, lastClose: IsoDate, today: IsoDate): { held: number; moves: (string | null | undefined)[] } {
+  const held = list.filter((t) => t.date <= lastClose && (!t.promoEnd || t.promoEnd > lastClose))
+    .reduce((s, t) => s + transferProgress(t, owedOnTo, today).remaining, 0);
+  return { held: round2(Math.min(held, owedOnTo)), moves: list.map((t) => t.inTxnId) };
 }
 
 export function transferProgress(t: BalanceTransfer, owedOnTo: number, today: IsoDate): TransferProgress {

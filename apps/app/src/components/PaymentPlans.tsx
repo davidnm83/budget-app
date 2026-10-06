@@ -128,7 +128,7 @@ function BankCredit({ t, plan, onChanged }: { t: Theme; plan: CardPlan; onChange
   };
   const set = async (id: string | null) => {
     setPick(false);
-    try { await setPlanCredit(plan, id); toast(id ? 'Plan credit linked' : 'Plan credit unlinked'); onChanged({ ...plan, creditTransactionId: id, creditTxnId: id, creditDate: id ? found?.find((x) => x.id === id)?.date ?? null : null }); }
+    try { await setPlanCredit(plan, id); toast(id ? 'Plan credit linked' : 'Plan credit unlinked'); onChanged({ ...plan, creditTransactionId: id, creditSearch: !!id, creditTxnId: id, creditDate: id ? found?.find((x) => x.id === id)?.date ?? null : null }); }
     catch (e) { toast(e instanceof Error ? e.message : String(e), { error: true }); }
   };
   return (
@@ -137,7 +137,7 @@ function BankCredit({ t, plan, onChanged }: { t: Theme; plan: CardPlan; onChange
       {linked ? (
         <Text style={{ color: t.text, fontSize: 13 }}>{shortDate(linked.date)} · {linked.name} · {formatMoney(linked.amount)}. The plan is off the card’s balance from then on, and still counts in what’s owed.</Text>
       ) : (
-        <Text style={{ color: t.muted, fontSize: 13 }}>None. Some cards take a plan off the balance with a credit for its amount; when one arrives it’s linked by itself and isn’t counted as a payment.</Text>
+        <Text style={{ color: t.muted, fontSize: 13 }}>{plan.creditSearch === false ? 'None: unlinked, so the app won’t look for one again. Choose one if the bank does take this plan off the balance.' : 'None. Some cards take a plan off the balance with a credit for its amount; when one arrives it’s linked by itself and isn’t counted as a payment.'}</Text>
       )}
       <View style={{ flexDirection: 'row', gap: 16 }}>
         <Pressable onPress={open} hitSlop={6}><Text style={{ color: t.accent, fontSize: 13 }}>{linked ? 'Change' : 'Choose one'}</Text></Pressable>

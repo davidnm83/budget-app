@@ -18,6 +18,7 @@ import { Empty } from '@/components/ui';
 import { callFunction, supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
+import { withOffBalance } from '@/lib/plan';
 
 const GROUPS: Record<string, string> = { depository: 'Cash', credit: 'Credit cards', loan: 'Loans', investment: 'Investments' };
 const ORDER = ['Cash', 'Credit cards', 'Loans', 'Investments', 'Other'];
@@ -38,7 +39,7 @@ export default function Accounts() {
     const { data, error } = await supabase.from('account_balances').select('*').order('name');
     setLoading(false);
     if (error) setMsg(error.message);
-    else setAccounts((data ?? []).map((a: any) => ({ ...a, current_balance: a.balance, balance_updated_at: a.balance_as_of, plan_buffer: Number(a.plan_buffer ?? 0) })) as Account[]);
+    else setAccounts(await withOffBalance((data ?? []).map((a: any) => ({ ...a, current_balance: a.balance, balance_updated_at: a.balance_as_of, plan_buffer: Number(a.plan_buffer ?? 0) })) as Account[]));
   }, []);
   useFocusLoad(load);
   usePullRefresh(load);

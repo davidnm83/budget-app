@@ -48,7 +48,6 @@ export default function BudgetTab() {
   // Compare: what the open month is set against. In Compare the strip picks this baseline.
   const [against, setAgainst] = useState<Against>('prev');
   const [picked, setPicked] = useState<Month>(addMonths(thisMonth(), -2));
-  const [scope, setScope] = useState<'month' | 'ytd'>('month');
   // Which of the two months a tap on the strip sets: the one being looked at, or the one it's set against.
   const [picking, setPicking] = useState<'month' | 'base'>('base');
   useBackToNow(() => { setMonth(thisMonth()); setAgainst('prev'); });
@@ -109,23 +108,22 @@ export default function BudgetTab() {
   const pickBase = (m: Month) => {
     if (picking === 'month') { if (m === base) return; const keep = base; setMonth(m); setPicked(keep); setAgainst('pick'); return; }
     if (m === month) return;
-    setScope('month');
     if (m === addMonths(month, -1)) setAgainst('prev'); else if (m === addMonths(month, -12)) setAgainst('lastYear'); else { setPicked(m); setAgainst('pick'); }
   };
   const data = { t, cats, groupIcons, widgets, setWidgets, refresh, showTxns, budgets, rows, summaries, month, setMonth, reload: load, setError, setView,
-    against, setAgainst, picked, setPicked, scope, setScope, base };
+    against, setAgainst, base };
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
     {/* Same header as the Planner: the open period and a way back to now, the view switch, then the strip of months. */}
     <TopBar>
-      <PeriodTitle t={t} title={view === 'year' ? 'Year by month' : compare && scope === 'month' ? `${monthName(month, false)} vs ${monthName(base, base.slice(0, 4) !== month.slice(0, 4))}` : monthName(month)} away={view !== 'year' && month !== current} hereText="This month" onHere={() => setMonth(current)}
-        sub={view === 'year' ? undefined : compare ? (scope === 'month' ? `Tap a month to change ${picking === 'month' ? 'the month you’re looking at' : 'the one it’s compared with'}` : `${monthName(month, false)} year to date against the year before`) : month === current ? 'This month' : month > current ? 'Planning ahead · spending shows once the month starts' : 'Past month'} />
+      <PeriodTitle t={t} title={view === 'year' ? 'Year by month' : compare ? `${monthName(month, false)} vs ${monthName(base, base.slice(0, 4) !== month.slice(0, 4))}` : monthName(month)} away={view !== 'year' && month !== current} hereText="This month" onHere={() => setMonth(current)}
+        sub={view === 'year' ? undefined : compare ? `Tap a month to change ${picking === 'month' ? 'the month you’re looking at' : 'the one it’s compared with'}` : month === current ? 'This month' : month > current ? 'Planning ahead · spending shows once the month starts' : 'Past month'} />
     </TopBar>
     <View style={styles.viewSwitch}>
       <Segmented<View_> value={view} onChange={setView}
         options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
       {view === 'month' && <PeriodStrip t={t} items={strip} selected={month} current={current} onSelect={setMonth} />}
-      {compare && scope === 'month' && (
+      {compare && (
         <View style={styles.pickRow}>
           {([['month', month, t.accent], ['base', base, t.series2]] as const).map(([k, m, color], i) => (
             <Fragment key={k}>
@@ -139,8 +137,8 @@ export default function BudgetTab() {
           ))}
         </View>
       )}
-      {compare && <PeriodStrip t={t} items={strip} selected={month} second={scope === 'month' ? base : undefined} focus={scope === 'month' && picking === 'base' ? base : month} current={current}
-        onSelect={(k) => (scope === 'month' ? pickBase(k as Month) : setMonth(k as Month))} />}
+      {compare && <PeriodStrip t={t} items={strip} selected={month} second={base} focus={picking === 'base' ? base : month} current={current}
+        onSelect={(k) => pickBase(k as Month)} />}
       {view === 'month' && month < current && (
         <Pressable onPress={() => openReview(month)} hitSlop={6} accessibilityRole="button">
           <Text style={{ color: t.accent, fontSize: 13 }}>📋 {monthName(month, false)} in review ›</Text>
@@ -163,7 +161,7 @@ export default function BudgetTab() {
 interface Data {
   t: Theme; cats: Category[]; groupIcons: Record<string, string>; widgets: string[]; setWidgets: (w: string[]) => void; refresh: number; showTxns: (q: TxnQuery) => void; budgets: Budget[]; rows: CategoryMonth[]; summaries: MonthSummary[];
   month: Month; setMonth: (m: Month) => void; reload: () => void; setError: (e: string) => void; setView: (v: View_) => void;
-  against: Against; setAgainst: (a: Against) => void; picked: Month; setPicked: (m: Month) => void; scope: 'month' | 'ytd'; setScope: (s: 'month' | 'ytd') => void; base: Month;
+  against: Against; setAgainst: (a: Against) => void; base: Month;
 }
 
 /** What a budget line (category or group) added up to in a given month. */
@@ -704,15 +702,8 @@ function Archive({ d, months }: { d: Data; months: MonthSummary[] }) {
 // ───────────────────────── Compare (BUD-5) ─────────────────────────
 type Against = 'prev' | 'lastYear' | 'pick';
 function CompareView(d: Data) {
-  const { t, month, against, setAgainst, picked, setPicked, scope, setScope } = d;
-  const other = d.base;
-  const span = (end: Month): Month[] => {
-    if (scope === 'month') return [end];
-    const out: Month[] = [];
-    for (let m = end.slice(0, 4) + '-01-01'; m <= end; m = addMonths(m, 1)) out.push(m);
-    return out;
-  };
-  const aMonths = span(month), bMonths = span(scope === 'ytd' ? addMonths(month, -12) : other);
+  const { t, month, against, setAgainst } = d;
+  const aMonths = [month], bMonths = [d.base];
   const label = (ms: Month[]) => (ms.length === 1 ? monthName(ms[0]) : `${monthName(ms[0], false).slice(0, 3)}–${monthName(ms[ms.length - 1])}`);
 
   const spend = (ms: Month[]) => {
@@ -751,15 +742,11 @@ function CompareView(d: Data) {
 
   return (
     <>
-      <Segmented value={scope} onChange={setScope} options={[{ value: 'month', label: 'One month' }, { value: 'ytd', label: 'Year to date' }]} />
-      {scope === 'month' && (
-        <View style={styles.chips}>
-          <Chip label="Last month" on={against === 'prev'} onPress={() => setAgainst('prev')} />
-          <Chip label="Same month last year" on={against === 'lastYear'} onPress={() => setAgainst('lastYear')} />
-          <Chip label="Pick a month" on={against === 'pick'} onPress={() => setAgainst('pick')} />
-        </View>
-      )}
-      {scope === 'month' && against === 'pick' && <Stepper label={monthName(picked)} onPrev={() => setPicked(addMonths(picked, -1))} onNext={() => setPicked(addMonths(picked, 1))} />}
+      {/* Shortcuts for the usual comparisons; any other month is a tap on the strip. A whole year against the one before is on the Year tab. */}
+      <View style={[styles.chips, { flexWrap: 'nowrap' }]}>
+        <Chip label="Last month" on={against === 'prev'} onPress={() => setAgainst('prev')} />
+        <Chip label="Same month last year" on={against === 'lastYear'} onPress={() => setAgainst('lastYear')} />
+      </View>
 
       <View style={styles.tiles}>
         <CmpTile t={t} label="Spent" a={totalA} b={totalB} moreIsBad />
@@ -823,8 +810,18 @@ function CmpTile({ t, label, a, b, moreIsBad, moreIsGood }: { t: Theme; label: s
 function YearView(d: Data) {
   const { t } = d;
   const [year, setYear] = useState(Number(d.month.slice(0, 4)));
+  // Against the year before (the old "year to date" compare): the same months of both years.
+  const [against, setAgainst] = useState(false);
   const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}-01`);
   const totals = months.map((m) => totalsFor(d.rows, m));
+  const nowYear = Number(thisMonth().slice(0, 4));
+  const upto = year === nowYear ? Number(thisMonth().slice(5, 7)) : 12;
+  const before = months.slice(0, upto).map((m) => totalsFor(d.rows, addMonths(m, -12)));
+  const prevOf = (key: string) => {
+    const ids = key.startsWith('g:') ? expense.filter((c) => c.group === key.slice(2)).map((c) => c.id) : [key.slice(2)];
+    return before.reduce((s, tt) => s + ids.reduce((x, id) => x + actualFor('expense', tt.get(id) ?? 0), 0), 0);
+  };
+  const span = upto === 12 ? String(year - 1) : `Jan–${monthName(months[upto - 1], false).slice(0, 3)} ${year - 1}`;
   const budgetFor = (key: string, m: Month) => d.budgets.find((b) => b.month === m && budgetKey(b) === key)?.amount;
 
   const expense = d.cats.filter((c) => c.kind === 'expense');
@@ -842,6 +839,14 @@ function YearView(d: Data) {
   return (
     <>
       <Stepper label={String(year)} onPrev={() => setYear(year - 1)} onNext={() => setYear(year + 1)} nextDisabled={year >= Number(thisMonth().slice(0, 4))} here={year === Number(thisMonth().slice(0, 4))} hereText="This year" onToday={() => setYear(Number(thisMonth().slice(0, 4)))} />
+      <View style={styles.chips}>
+        <Chip label={upto === 12 ? `Against ${year - 1}` : `Against the same months of ${year - 1}`} on={against} onPress={() => setAgainst(!against)} />
+      </View>
+      {against && lines.length > 0 && (() => {
+        const groupsOnly = lines.filter((l) => l.group);
+        const now = groupsOnly.reduce((s, l) => s + l.values.slice(0, upto).reduce((a, v) => a + v, 0), 0), was = groupsOnly.reduce((s, l) => s + prevOf(l.key), 0);
+        return <Text style={{ color: t.text, fontSize: 13 }}>Spent {money0(now)} {upto === 12 ? `in ${year}` : `so far in ${year}`} against {money0(was)} in {span}: <Text style={{ color: now > was ? t.danger : t.accent, fontWeight: '600' }}>{now > was ? '▲' : '▼'} {money0(Math.abs(now - was))}</Text>.</Text>;
+      })()}
       <Text style={{ color: t.muted, fontSize: 13 }}>Spending per month. Where a budget was set, it shows underneath; red means over. Scroll sideways for all 12 months; tap an amount for its transactions.</Text>
       {!lines.length ? <Empty text={`No spending in ${year}.`} /> : (
         <Card style={{ padding: 0 }}>
@@ -851,6 +856,8 @@ function YearView(d: Data) {
                 <Text style={[styles.yLabel, { color: t.muted }]}>Category</Text>
                 {months.map((m) => <Text key={m} style={[styles.yCell, { color: t.muted }]}>{monthName(m, false).slice(0, 3)}</Text>)}
                 <Text style={[styles.yCell, { color: t.muted, fontWeight: '600' }]}>Total</Text>
+                {against && <Text style={[styles.yCell, { color: t.muted }]} numberOfLines={1}>{upto === 12 ? year - 1 : `${year - 1} YTD`}</Text>}
+                {against && <Text style={[styles.yCell, { color: t.muted }]}>Change</Text>}
               </View>
               {lines.map((l) => (
                 <View key={l.key} style={[styles.yRow, { borderColor: t.line }, l.group && { backgroundColor: t.bg }]}>
@@ -867,6 +874,13 @@ function YearView(d: Data) {
                     );
                   })}
                   <Text style={[styles.yCell, { color: t.text, fontWeight: '600' }]}>{money0(l.values.reduce((s, v) => s + v, 0))}</Text>
+                  {against && (() => {
+                    const was = prevOf(l.key), now = l.values.slice(0, upto).reduce((s, v) => s + v, 0), ch = now - was;
+                    return <>
+                      <Text style={[styles.yCell, { color: t.muted }]}>{was ? money0(was) : '–'}</Text>
+                      <Text style={[styles.yCell, { color: Math.abs(ch) < 0.5 ? t.muted : ch > 0 ? t.danger : t.accent }]}>{Math.abs(ch) < 0.5 ? '—' : `${ch > 0 ? '▲' : '▼'} ${money0(Math.abs(ch))}`}</Text>
+                    </>;
+                  })()}
                 </View>
               ))}
             </View>
