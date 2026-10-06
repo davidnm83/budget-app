@@ -1,5 +1,7 @@
 // Credit cards (VIEW-1): every card's balance, limit and utilisation, what's left on each
 // statement and the interest it would cost if unpaid. Tap a card for its full page.
+import { TransfersCard } from '@/components/BalanceTransfers';
+import { linkTransfers, loadTransfers, type CardTransfer } from '@/lib/balanceTransfers';
 import { PAGE_MAX } from '@/lib/layout';
 import { EmptyState } from '@/components/States';
 import { usePullRefresh } from '@/lib/pullRefresh';
@@ -37,6 +39,7 @@ export default function Credit() {
   const [refresh, setRefresh] = useState(0);
 
   const [plans, setPlans] = useState<CardPlan[]>([]);
+  const [transfers, setTransfers] = useState<CardTransfer[]>([]);
   const load = useCallback(async () => {
     try {
       const all = await loadAccounts();
@@ -46,6 +49,10 @@ export default function Credit() {
       const ps = await loadPlans();
       setPlans(ps);
       await syncPlans(ps).catch(() => 0);
+      // Balance transfers: link the transactions the banks have listed since last time.
+      const bt = await loadTransfers();
+      await linkTransfers(bt).catch(() => false);
+      setTransfers([...bt]);
       setTxns(await loadTxnsFor(cards.map((c) => c.id), addDays(today(), -400)));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
@@ -115,6 +122,7 @@ export default function Credit() {
         ) },
       ]} />
       <PlansCard t={t} plans={plans} accounts={accounts} onChanged={load} />
+      <TransfersCard t={t} transfers={transfers} accounts={accounts} onChanged={load} />
       <CreditScoreCard refresh={refresh} />
       <AccountSheet account={open} accounts={accounts} onClose={() => setOpen(null)} onChanged={load} />
     </ScrollView>

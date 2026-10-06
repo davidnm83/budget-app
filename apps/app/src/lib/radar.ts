@@ -1,8 +1,9 @@
 // Radar: gathers what the checks in @budget-app/core need (the plan, this month's budget, recent
 // spending by category) and returns the cards to show, most urgent first. Worked out in the app
 // from data it already loads, so it also works from the offline copy.
+import { loadTransfers } from './balanceTransfers';
 import {
-  addDays, addMonths, buildBudgetMonth, monthEnd, monthOf, weekStart as mondayOf, radarBanks, radarBills, radarGoals, radarSubscriptions, radarBuffer, radarCards, radarLimits, radarPace, radarRunway, radarUnusual, rankRadar, actualFor,
+  addDays, addMonths, buildBudgetMonth, monthEnd, monthOf, weekStart as mondayOf, radarBanks, radarBills, radarGoals, radarSubscriptions, radarTransfers, transferProgress, radarBuffer, radarCards, radarLimits, radarPace, radarRunway, radarUnusual, rankRadar, actualFor,
   type RadarCard, type RadarCheck, type RadarSettings,
 } from '@budget-app/core';
 import { loadAccounts, loadWeek, today } from './plan';
@@ -34,10 +35,11 @@ export async function loadRadar(settings: RadarSettings = {}): Promise<{ cards: 
     on('bank') ? supabase.from('plaid_items').select('id, institution_name, status').then(({ data }) => data ?? []) : skip([]),
   ]);
   // Goals and subscriptions: their own queries, and quietly nothing when the tables aren't there yet.
-  const [goals, charges] = await Promise.all([
+  const [goals, charges, transfers] = await Promise.all([
     on('goals') ? loadGoals().then((r) => r.goals).catch(() => []) : skip([]),
     on('subs') ? supabase.from('transactions').select('id, date, amount, name, merchant, account_id').lt('amount', 0).eq('pending', false).gte('date', addDays(now, -200)).order('date').limit(5000)
       .then(({ data }) => (data ?? []).map((r: any) => ({ ...r, amount: Number(r.amount) }))) : skip([]),
+    on('transfers') ? loadTransfers().then((l) => l.filter((x) => !x.closedOn && x.promoEnd)) : skip([]),
   ]);
   const name = (id: string) => thisWeek?.accounts.find((a) => a.id === id)?.name ?? 'An account';
   const lastDay = Number(monthEnd(month).slice(8, 10)), day = Number(now.slice(8, 10));
@@ -57,6 +59,11 @@ export async function loadRadar(settings: RadarSettings = {}): Promise<{ cards: 
     ...(on('cards') ? radarCards(accounts.filter((a) => a.type === 'credit' && !a.is_hidden).map((a) => ({ id: a.id, name: a.name, owed: Math.max(0, -signedBalance(a)), limit: a.credit_limit == null ? null : Number(a.credit_limit) })), L) : []),
     ...(on('goals') ? radarGoals(goals.filter((g) => !g.closed_on && !g.progress.done).map((g) => ({ id: g.id, name: g.name, behind: g.progress.behind, perMonth: g.progress.perMonth, kind: g.kind }))) : []),
     ...(on('subs') ? radarSubscriptions(charges, now) : []),
+    ...(on('transfers') && transfers.length ? await (async () => {
+      const cards = accounts.length ? accounts : await loadAccounts();
+      const owed = (id: string) => { const a = cards.find((x) => x.id === id); return a ? Math.max(0, -signedBalance(a)) : 0; };
+      return radarTransfers(transfers.map((x) => { const g = transferProgress(x, owed(x.toAccountId), now); return { id: x.id, to: cards.find((a) => a.id === x.toAccountId)?.name ?? 'A card', remaining: g.remaining, promoEnd: x.promoEnd, daysLeft: g.daysLeft, perMonth: g.perMonth }; }));
+    })() : []),
     ...(on('runway') ? radarRunway(cash, spendDays ? months.reduce((s, m) => s + Math.abs(m.spending), 0) / spendDays : 0, month, L) : []),
   ];
   const dismissed = (prefs.dismissed_suggestions ?? []).filter((k) => k.startsWith(PREFIX)).map((k) => k.slice(PREFIX.length));

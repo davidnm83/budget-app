@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardCycle, cardInterest, cardStatus, loanSummary, monthlyFlow, utilization } from '../src/index.ts';
+import { findTransferTxns, radarTransfers, transferProgress, cardCycle, cardInterest, cardStatus, loanSummary, monthlyFlow, utilization } from '../src/index.ts';
 
 describe('loan payoff', () => {
   const txns = [
@@ -39,5 +39,32 @@ describe('cash flow', () => {
   it('sums money in and out by month', () => {
     expect(monthlyFlow([{ date: '2026-09-03', amount: 100 }, { date: '2026-09-04', amount: -40 }, { date: '2026-10-01', amount: -5 }], '2026-10-01', 2))
       .toEqual([{ month: '2026-09-01', in: 100, out: 40 }, { month: '2026-10-01', in: 0, out: 5 }]);
+  });
+});
+
+describe('balance transfers', () => {
+  const bt = { id: 'b', fromAccountId: 'old', toAccountId: 'new', amount: 3000, fee: 90, date: '2026-09-01', promoApr: 0, promoEnd: '2027-03-01' };
+  it('what is left and a month to clear it before the promo ends', () => {
+    const p = transferProgress(bt, 3500, '2026-10-06');
+    expect(p.remaining).toBe(3090); // the card also has $410 of new spending, which isn't the transfer
+    expect(p.monthsLeft).toBe(5);
+    expect(p.perMonth).toBe(618);
+    expect(transferProgress(bt, 1200, '2026-10-06').remaining).toBe(1200);
+    expect(transferProgress(bt, 1200, '2027-03-05').ended).toBe(true);
+  });
+  it('finds its transactions on both cards', () => {
+    const rows = [
+      { id: 'x', account_id: 'old', date: '2026-09-02', amount: 3000 },
+      { id: 'y', account_id: 'new', date: '2026-09-01', amount: -3000 },
+      { id: 'z', account_id: 'new', date: '2026-09-20', amount: -90 },
+      { id: 'w', account_id: 'new', date: '2026-09-03', amount: -45 },
+    ];
+    const f = findTransferTxns(bt, rows);
+    expect([f.out?.id, f.into?.id, f.fee?.id]).toEqual(['x', 'y', 'z']);
+  });
+  it('Radar: promo ending soon, or ended', () => {
+    expect(radarTransfers([{ id: 'b', to: 'Visa', remaining: 1200, promoEnd: '2026-11-15', daysLeft: 40, perMonth: 600 }])[0].severity).toBe('heads');
+    expect(radarTransfers([{ id: 'b', to: 'Visa', remaining: 1200, promoEnd: '2026-10-01', daysLeft: -5, perMonth: null }])[0].severity).toBe('act');
+    expect(radarTransfers([{ id: 'b', to: 'Visa', remaining: 0, promoEnd: '2026-11-15', daysLeft: 40, perMonth: 0 }])).toEqual([]);
   });
 });

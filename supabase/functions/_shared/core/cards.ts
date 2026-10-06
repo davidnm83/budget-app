@@ -86,3 +86,50 @@ export function monthlyFlow(txns: { date: IsoDate; amount: number }[], today: Is
   return out;
 }
 
+
+// ───────────── balance transfers ─────────────
+
+/** Money moved from one card to another, usually at a low promo rate until `promoEnd`, for a fee. */
+export interface BalanceTransfer {
+  id: string;
+  fromAccountId: string;   // the card paid off
+  toAccountId: string;     // the card now carrying it
+  amount: number;          // positive
+  fee: number;             // positive, charged on the new card
+  date: IsoDate;
+  promoApr: number | null; // yearly %, while the promo lasts
+  promoEnd: IsoDate | null;
+  outTxnId?: string | null; inTxnId?: string | null; feeTxnId?: string | null;
+}
+
+export interface TransferProgress {
+  /** Still on the new card from it: what that card owes, up to the amount moved and its fee. */
+  remaining: number;
+  daysLeft: number | null;
+  monthsLeft: number | null;
+  /** A month, to clear it before the promo rate ends. */
+  perMonth: number | null;
+  ended: boolean;
+}
+
+export function transferProgress(t: BalanceTransfer, owedOnTo: number, today: IsoDate): TransferProgress {
+  const remaining = round2(Math.max(0, Math.min(owedOnTo, t.amount + t.fee)));
+  if (!t.promoEnd) return { remaining, daysLeft: null, monthsLeft: null, perMonth: null, ended: false };
+  const daysLeft = daysBetween(today, t.promoEnd);
+  const monthsLeft = daysLeft <= 0 ? 0 : Math.max(1, Math.ceil(daysLeft / 30.44));
+  return { remaining, daysLeft, monthsLeft, perMonth: monthsLeft ? round2(remaining / monthsLeft) : null, ended: daysLeft < 0 };
+}
+
+/**
+ * The transactions of a balance transfer, among both cards' rows: the credit on the old card and the
+ * charge on the new one for the amount (within 5 days of its date), and the fee on the new card
+ * (within a month). Each null when not found yet.
+ */
+export function findTransferTxns<T extends { id: string; account_id: string; date: IsoDate; amount: number }>(t: BalanceTransfer, txns: T[], taken: Set<string> = new Set()) {
+  const near = (r: T, days: number) => Math.abs(daysBetween(t.date, r.date)) <= days && !taken.has(r.id);
+  const same = (a: number, b: number) => Math.abs(a - b) <= 0.01;
+  const out = txns.find((r) => r.account_id === t.fromAccountId && same(r.amount, t.amount) && near(r, 5)) ?? null;
+  const into = txns.find((r) => r.account_id === t.toAccountId && same(r.amount, -t.amount) && near(r, 5)) ?? null;
+  const fee = t.fee > 0 ? txns.find((r) => r.account_id === t.toAccountId && same(r.amount, -t.fee) && near(r, 35) && r.id !== into?.id) ?? null : null;
+  return { out, into, fee };
+}

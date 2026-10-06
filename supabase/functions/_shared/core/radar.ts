@@ -13,7 +13,7 @@ import type { BudgetLine } from './budget.ts';
 import type { WeekRow, WeekWarning } from './planner.ts';
 
 export type RadarSeverity = 'act' | 'heads' | 'info';
-export type RadarCheck = 'buffer' | 'bill' | 'pace' | 'unusual' | 'cards' | 'runway' | 'bank' | 'goals' | 'subs';
+export type RadarCheck = 'buffer' | 'bill' | 'pace' | 'unusual' | 'cards' | 'runway' | 'bank' | 'goals' | 'subs' | 'transfers';
 export interface RadarCard { id: string; check: RadarCheck; severity: RadarSeverity; title: string; text: string; stake: number; href: string }
 
 /** The checks, in the order Settings lists them. */
@@ -27,6 +27,7 @@ export const RADAR_CHECKS: { key: RadarCheck; label: string; about: string }[] =
   { key: 'bank', label: 'Bank connection', about: 'A bank needs you to sign in again, or stopped syncing' },
   { key: 'goals', label: 'Goals', about: 'A goal with a date is falling behind an even pace' },
   { key: 'subs', label: 'Subscriptions', about: 'A subscription went up in price, charged twice, or just started' },
+  { key: 'transfers', label: 'Balance transfers', about: 'A promo rate ends within two months with some of the balance still owing' },
 ];
 /** What you can change per Radar widget: checks switched off, and the four thresholds. */
 export interface RadarSettings { off?: RadarCheck[]; unusualPct?: number; unusualMin?: number; cardPct?: number; runwayDays?: number }
@@ -182,4 +183,17 @@ export function radarGoals(goals: { id: string; name: string; behind: number; pe
       ? `${g.kind === 'save' ? 'Saving' : 'Paying'} ${money(g.perMonth)} a month from now on still makes the date.`
       : 'Its date has passed; set a new one or close it.',
   }));
+}
+
+/** Balance transfers whose promo rate ends soon (or has ended) with some of it still owing. */
+export function radarTransfers(list: { id: string; to: string; remaining: number; promoEnd: string | null; daysLeft: number | null; perMonth: number | null }[]): RadarCard[] {
+  return list.filter((x) => x.promoEnd && x.daysLeft != null && x.daysLeft <= 60 && x.remaining >= 1).map((x) => x.daysLeft! < 0 ? {
+    id: `bt:${x.id}:ended`, check: 'transfers' as const, severity: 'act' as const, stake: x.remaining, href: '/credit',
+    title: `The promo rate on ${x.to} has ended`,
+    text: `${money(x.remaining)} of the balance transfer is still there, now at the card's usual rate.`,
+  } : {
+    id: `bt:${x.id}:${Math.floor(x.daysLeft! / 15)}`, check: 'transfers' as const, severity: 'heads' as const, stake: x.remaining, href: '/credit',
+    title: `${x.to}'s promo rate ends ${shortDate(x.promoEnd!)}`,
+    text: `${money(x.remaining)} left of the balance transfer${x.perMonth ? `: ${money(x.perMonth)} a month clears it in time` : ''}.`,
+  });
 }

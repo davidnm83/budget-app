@@ -9,7 +9,7 @@ import { backupsToDelete } from './core/index.ts';
 const TABLES = ['accounts', 'categories', 'category_groups', 'category_rules', 'merchant_rules', 'merchant_sites', 'transactions',
   'transaction_splits', 'budgets', 'recurring', 'plan_entries', 'user_prefs', 'plaid_items', 'sync_runs'];
 /** Newer tables, skipped where their migration hasn't run. */
-const LATER_TABLES = ['payment_plans', 'goals', 'goal_entries', 'receipts', 'credit_scores'];
+const LATER_TABLES = ['payment_plans', 'goals', 'goal_entries', 'receipts', 'credit_scores', 'balance_transfers'];
 /** Tables some installs have and others don't; skipped when missing. */
 const EXTRA_TABLES: string[] = [];
 const BUCKET = 'backups';
