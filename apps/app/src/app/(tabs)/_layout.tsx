@@ -22,7 +22,7 @@ const TABS: { name: string; title: string; icon: keyof typeof Ionicons.glyphMap;
   { name: 'accounts', title: 'Accounts', icon: 'wallet-outline', on: 'wallet' },
 ];
 const PAGES: [string, string][] = [
-  ['goals', 'Goals'], ['receipts', 'Receipts'], ['credit', 'Credit cards'], ['watch', 'Spending watch'], ['loans', 'Car & loans'], ['reports', 'Reports'],
+  ['ask', 'Ask'], ['goals', 'Goals'], ['receipts', 'Receipts'], ['credit', 'Credit cards'], ['watch', 'Spending watch'], ['loans', 'Car & loans'], ['reports', 'Reports'],
   ['categories', 'Categories'], ['merchants', 'Merchants'], ['rules', 'Rules'], ['settings', 'Settings'], ['bills', 'Bills & income'], ['page/[id]', 'Page'],
 ];
 // Reached from Settings, so they go back there.

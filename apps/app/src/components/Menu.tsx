@@ -21,6 +21,7 @@ import { afterClose } from '@/lib/useBackToClose';
 
 type Item = { icon?: keyof typeof Ionicons.glyphMap; emoji?: string; label: string; href: string };
 const PAGES: Item[] = [
+  { icon: 'chatbubbles-outline', label: 'Ask', href: '/ask' },
   { icon: 'flag-outline', label: 'Goals', href: '/goals' },
   { icon: 'card-outline', label: 'Credit cards', href: '/credit' },
   { icon: 'car-outline', label: 'Car & loans', href: '/loans' },

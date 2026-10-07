@@ -11,6 +11,7 @@ import { deleteReceipt, photoUrl, pickPhoto, receiptsFor, receiptsMatching, save
 import { useTheme, type Theme } from '@/lib/theme';
 import { toast } from '@/lib/toast';
 import { afterClose } from '@/lib/useBackToClose';
+import { aiOn, readReceiptPhoto, useAiOn } from '@/lib/ai';
 
 /** A receipt's photo, fetched when shown. */
 export function ReceiptPhoto({ path, size, full }: { path: string; size?: number; full?: boolean }) {
@@ -45,7 +46,13 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
   const [note, setNote] = useState(initial?.note ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const changed = useChanged([photo, amount, date, merchant, note]);
+  // Read by AI: the receipt's lines and which model read it; `reading` while it's at it.
+  const [items, setItems] = useState(initial?.items ?? null);
+  const [readBy, setReadBy] = useState(initial?.read_by ?? null);
+  const [reading, setReading] = useState(false);
+  const [showItems, setShowItems] = useState(false);
+  const ai = useAiOn();
+  const changed = useChanged([photo, amount, date, merchant, note, items]);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
   useEffect(() => { if (!photo) { setPreview(null); return; } const u = URL.createObjectURL(photo); setPreview(u); return () => URL.revokeObjectURL(u); }, [photo]);
 
@@ -53,14 +60,35 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
     setError('');
     const f = await pickPhoto(camera);
     if (!f) return;
-    try { setPhoto(await shrinkPhoto(f)); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try {
+      const shrunk = await shrinkPhoto(f);
+      setPhoto(shrunk);
+      if (await aiOn()) await read(shrunk, true);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  // Fills in what's still empty (a fresh photo: the date too, unless it came from the transaction) and keeps the lines.
+  const read = async (img: Blob, fresh: boolean) => {
+    setReading(true); setError('');
+    try {
+      const { receipt: r, model } = await readReceiptPhoto(img);
+      if (!r) { setError('The receipt couldn’t be read. Fill it in yourself.'); return; }
+      if (r.total != null && (!amount.trim() || (fresh && !attachTo))) setAmount(r.total.toFixed(2));
+      if (r.date && (fresh && !attachTo || !date.trim())) setDate(r.date);
+      if (r.merchant && !merchant.trim()) setMerchant(r.merchant);
+      setItems(r.items.length ? r.items : null); setReadBy(model);
+      if (!r.legible) setError('The photo was hard to read; check the figures.');
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setReading(false); }
+  };
+  const readAgain = async () => {
+    try { const url = initial ? await photoUrl(initial.path) : null; const img = photo ?? (url ? await (await fetch(url)).blob() : null); if (img) await read(img, false); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   const save = async () => {
     const a = amount.trim() ? parseMoney(amount) : null;
     if (a != null && (isNaN(a) || a === 0)) { setError('That amount isn’t a number.'); return; }
     const d = date.trim() ? toIsoDate(date) : null;
     if (date.trim() && !d) { setError('That date isn’t a date.'); return; }
-    const fields = { taken_on: d, amount: a == null ? null : Math.abs(a), merchant: merchant.trim() || null, note: note.trim() || null };
+    const fields = { taken_on: d, amount: a == null ? null : Math.abs(a), merchant: merchant.trim() || null, note: note.trim() || null, ...(items || readBy ? { items, read_by: readBy } : {}) };
     setBusy(true); setError('');
     try {
       if (initial) await updateReceipt(initial.id, fields);
@@ -90,7 +118,8 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
             <View style={[styles.photo, { width: '100%', aspectRatio: 0.75, maxHeight: 420, backgroundColor: t.line }]}>
               <Image source={{ uri: preview }} style={StyleSheet.absoluteFill} resizeMode="contain" />
             </View>
-            <Pressable onPress={() => choose(false)} hitSlop={6}><Text style={{ color: t.accent }}>Choose a different photo</Text></Pressable>
+            {reading ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><ActivityIndicator color={t.accent} /><Text style={{ color: t.muted }}>Reading the receipt…</Text></View>
+              : <Pressable onPress={() => choose(false)} hitSlop={6}><Text style={{ color: t.accent }}>Choose a different photo</Text></Pressable>}
           </View>
         ) : (
           <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -107,6 +136,23 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
       </View>
       <Field t={t} label="Store (optional)"><TextInput value={merchant} onChangeText={setMerchant} placeholder="e.g. Loblaws" placeholderTextColor={t.muted} style={input} /></Field>
       <Field t={t} label="Note (optional)"><TextInput value={note} onChangeText={setNote} placeholder="e.g. split: groceries and household" placeholderTextColor={t.muted} style={input} /></Field>
+      {reading ? (initial ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><ActivityIndicator color={t.accent} /><Text style={{ color: t.muted }}>Reading the receipt…</Text></View> : null)
+      : (readBy || items) ? (
+        <View style={{ gap: 4 }}>
+          <Text style={{ color: t.muted, fontSize: 12 }}>
+            Read by {readBy === 'sonnet' ? 'Claude Sonnet (a second, closer look)' : 'Claude Haiku'}; check the figures before saving.{' '}
+            {items?.length ? <Text style={{ color: t.accent }} onPress={() => setShowItems(!showItems)}>{showItems ? 'Hide' : 'Show'} the {items.length} line{items.length === 1 ? '' : 's'}</Text> : null}
+          </Text>
+          {showItems && items?.map((i, k) => (
+            <View key={k} style={{ flexDirection: 'row', gap: 8 }}>
+              <Text style={{ color: t.text, flex: 1, fontSize: 13 }} numberOfLines={1}>{i.name}</Text>
+              <Text style={{ color: i.amount < 0 ? t.positive : t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{formatMoney(i.amount)}</Text>
+            </View>
+          ))}
+        </View>
+      ) : ai && (initial || photo) ? (
+        <Pressable onPress={readAgain} hitSlop={6}><Text style={{ color: t.accent }}>Read it from the photo</Text></Pressable>
+      ) : null}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
     </Sheet>
   );

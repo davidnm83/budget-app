@@ -150,6 +150,25 @@ iPhone, notifications only work from the app added to the home screen (iOS 16.4 
 To use a push key of your own instead, set `VAPID_PUBLIC_KEY` (base64url, uncompressed P-256) and `VAPID_PRIVATE_JWK`
 (the private key as JSON Web Key) as secrets, and optionally `VAPID_SUBJECT` (a `mailto:` or `https:` contact).
 
+## Optional: AI (reading receipts, and Ask)
+
+With a Claude API key, the app reads receipt photos (store, date, total and lines) and answers questions about your
+money on the Ask page. Without one, both stay hidden and everything else works the same.
+
+1. Create an account at [console.anthropic.com](https://console.anthropic.com), add a payment method or credits, and
+   set a monthly spending limit (Settings → Limits). Personal use costs a few cents to a few dollars a month.
+2. Create an API key (Settings → API keys) and give it to the server (never to the app):
+
+   ```
+   npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+   npx supabase functions deploy ai
+   ```
+
+Receipts are read by Claude Haiku; a reading whose lines don't add up to the total is read again by Claude Sonnet.
+Ask uses Haiku (Quick) or Sonnet (Thorough). Ask can only look things up, with your own sign-in, so it sees only
+your data and can't change anything. Each request sends the photo, or the question and the figures it looked up,
+to Anthropic's API. The demo user can't use these features.
+
 ## Updating
 
 ```bash

@@ -48,6 +48,11 @@ export function isCronCall(req: Request): boolean {
   return !!expected && !!given && sameText(given, expected);
 }
 
+/** A client acting as the signed-in user, so row-level security limits it to their own rows. */
+export function userClient(req: Request): Admin {
+  return createClient(Deno.env.get('SUPABASE_URL')!, publishableKey(), { auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${bearer(req)}` } } });
+}
+
 /** The signed-in user's id, or null if the token is missing or invalid. */
 export async function userIdFrom(req: Request): Promise<string | null> {
   const token = bearer(req);

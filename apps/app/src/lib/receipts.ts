@@ -9,6 +9,8 @@ import { supabase } from './supabase';
 export interface Receipt {
   id: string; path: string; taken_on: string | null; amount: number | null; merchant: string | null; note: string | null;
   transaction_id: string | null; created_at: string;
+  /** Read from the photo by AI: its lines, and which model read it. */
+  items?: { name: string; amount: number }[] | null; read_by?: string | null;
 }
 export interface CandidateTxn { id: string; date: string; amount: number; name: string; merchant: string | null; display_name: string; account_name: string | null }
 export interface InboxItem { receipt: Receipt; matches: (ReceiptMatch & { txn: CandidateTxn })[] }
@@ -54,7 +56,7 @@ export function shrinkPhoto(file: File | Blob): Promise<Blob> {
 const uuid = () => (crypto as any).randomUUID?.() ?? `${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
 
 /** Save a receipt: the photo into storage, then its row. Optionally attached straight to a transaction. */
-export async function saveReceipt(photo: Blob, fields: { taken_on: string | null; amount: number | null; merchant: string | null; note: string | null; transaction_id?: string | null }): Promise<Receipt> {
+export async function saveReceipt(photo: Blob, fields: { taken_on: string | null; amount: number | null; merchant: string | null; note: string | null; transaction_id?: string | null; items?: Receipt['items']; read_by?: string | null }): Promise<Receipt> {
   const { data: auth } = await supabase.auth.getUser();
   const uid = auth.user?.id;
   if (!uid) throw new Error('Sign in again to add a receipt.');
@@ -69,7 +71,7 @@ export async function saveReceipt(photo: Blob, fields: { taken_on: string | null
 
 const norm = (r: any): Receipt => ({ ...r, amount: r.amount == null ? null : Number(r.amount) });
 
-export async function updateReceipt(id: string, patch: Partial<Pick<Receipt, 'taken_on' | 'amount' | 'merchant' | 'note' | 'transaction_id'>>) {
+export async function updateReceipt(id: string, patch: Partial<Pick<Receipt, 'taken_on' | 'amount' | 'merchant' | 'note' | 'transaction_id' | 'items' | 'read_by'>>) {
   const { error } = await supabase.from('receipts').update(patch).eq('id', id);
   if (error) throw new Error(error.message);
 }

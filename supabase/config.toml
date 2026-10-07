@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.backup]
 verify_jwt = false
+
+[functions.ai]
+verify_jwt = false

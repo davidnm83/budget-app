@@ -45,3 +45,23 @@ export function receiptMatches(r: ReceiptFacts, txns: TxnFacts[], taken: Set<str
   }
   return out.sort((a, b) => b.score - a.score).slice(0, limit).map(({ score: _s, ...m }) => m);
 }
+
+/** What reading a receipt photo gives back (see supabase/functions/_shared/ai.ts). Amounts are positive; discounts are negative items. */
+export interface ReadReceipt {
+  merchant: string | null; date: IsoDate | null; total: number | null; tax: number | null;
+  items: { name: string; amount: number }[];
+  /** The model could read the receipt clearly. */
+  legible: boolean;
+}
+
+/**
+ * Whether a reading can be trusted as it is: there's a total and a store, and when line items were read
+ * they (with the tax) come to the total, within a few cents for rounding. A reading that fails this is
+ * read again by the stronger model.
+ */
+export function receiptAddsUp(r: ReadReceipt): boolean {
+  if (!r.legible || r.total == null || !(r.total > 0) || !r.merchant?.trim()) return false;
+  if (!r.items.length) return true;
+  const sum = r.items.reduce((s, i) => s + i.amount, 0) + (r.tax ?? 0);
+  return Math.abs(sum - r.total) <= 0.05;
+}

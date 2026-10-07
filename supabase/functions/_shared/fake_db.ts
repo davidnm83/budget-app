@@ -53,6 +53,7 @@ export function fakeDb(tables: Record<string, Row[]>) {
       order: (col: string, o?: { ascending: boolean }) => { order = { col, asc: o?.ascending ?? true }; return q; },
       limit: (n: number) => { limit = n; return q; },
       range: (a: number, b: number) => { skip = a; limit = b - a + 1; return q; },
+      ilike: (c: string, p: string) => { const re = new RegExp('^' + p.split('%').map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$', 'i'); filters.push((r) => re.test(String(r[c] ?? ''))); return q; },
       neq: (c: string, v: any) => { filters.push((r) => r[c] !== v); return q; },
       or: (_f: string) => q, // date windows: the stand-in keeps every row
       maybeSingle: () => { single = true; return q; },
