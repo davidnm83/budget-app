@@ -82,16 +82,40 @@ export async function deleteReceipt(r: Receipt) {
   await supabase.storage.from(BUCKET).remove([r.path]); // the photo; a leftover file does no harm
 }
 
-/** The photo as a local address an <Image> can show (fetched when needed, not saved for offline). */
+/**
+ * The photo as a local address an <Image> can show (fetched when needed, not saved for offline). A page full of
+ * receipts asks for many at once: they're fetched a few at a time, the same photo only once, and a failed fetch
+ * is tried again (a slow connection, or the sign-in still refreshing as the app opens, used to leave them blank).
+ */
 const shown = new Map<string, string>();
-export async function photoUrl(path: string): Promise<string> {
+const fetching = new Map<string, Promise<string>>();
+let running = 0;
+const waiting: (() => void)[] = [];
+const slot = () => (running < 4 ? (running++, Promise.resolve()) : new Promise<void>((go) => waiting.push(() => { running++; go(); })));
+const free = () => { running--; waiting.shift()?.(); };
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export function photoUrl(path: string): Promise<string> {
   const hit = shown.get(path);
-  if (hit) return hit;
-  const { data, error } = await supabase.storage.from(BUCKET).download(path);
-  if (error || !data) throw new Error(error?.message ?? 'The photo couldn’t be loaded.');
-  const url = URL.createObjectURL(data);
-  shown.set(path, url);
-  return url;
+  if (hit) return Promise.resolve(hit);
+  const going = fetching.get(path);
+  if (going) return going;
+  const p = (async () => {
+    await slot();
+    try {
+      let last = 'The photo couldn’t be loaded.';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt) await pause(800 * attempt);
+        const { data, error } = await supabase.storage.from(BUCKET).download(path);
+        if (data && !error) { const url = URL.createObjectURL(data); shown.set(path, url); return url; }
+        last = error?.message ?? last;
+        if (/not.?found|404/i.test(last)) break; // gone for good: no point asking again
+      }
+      throw new Error(last);
+    } finally { free(); fetching.delete(path); }
+  })();
+  fetching.set(path, p);
+  return p;
 }
 
 export async function loadReceipts(): Promise<Receipt[]> {

@@ -11,6 +11,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Sheet } from '@/components/Forms';
 import { NewTransactionForm } from '@/components/AddForms';
 import { toast } from '@/lib/toast';
+import { useConfirm } from '@/components/Confirm';
 import { TransactionEditor } from '@/components/TransactionEditor';
 import { PICTURE_HINT, pickPicture } from '@/lib/imageUpload';
 import { bankLogo, customPicture, fillsCircle, savePicture, setPictureFill, useLogoVersion } from '@/lib/logos';
@@ -399,6 +400,23 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
     apr: account.apr != null ? String(account.apr) : '',
   });
   const [mergeTarget, setMergeTarget] = useState<string | null>(null);
+  const [confirm, confirmUi] = useConfirm();
+  // A manual account and everything in it. (What else pointed at it is removed or cleared by the database.)
+  const askDelete = async () => {
+    const { count } = await supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('account_id', account.id);
+    confirm({
+      title: `Delete ${account.name}?`, action: 'Delete',
+      message: count ? `The account and its ${count} transaction${count === 1 ? '' : 's'} are deleted, with their splits and payment plans. Receipts attached to them go back to the inbox.` : 'The account is deleted. It has no transactions.',
+      run: async () => {
+        setBusy(true);
+        const { error } = await supabase.from('accounts').delete().eq('id', account.id);
+        setBusy(false);
+        if (error) { setMsg(error.message); return; }
+        toast(`${account.name} deleted`);
+        onClose(); onChanged();
+      },
+    });
+  };
   // Some banks (TD) close on the Monday when the closing day falls on a weekend; read with the card's minimum rule.
   const [mondays, setMondays] = useState(false);
   useEffect(() => { if (account.type === 'credit') loadMinimums().then((m) => setMondays(!!m.get(account.id)?.mondays)); }, [account.id]);
@@ -568,7 +586,18 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
           {mergeTarget && <Button kind="danger" busy={busy} onPress={merge} title={`Merge into ${accounts.find((a) => a.id === mergeTarget)?.name} (can't be undone)`} />}
         </Field>
       )}
+      <Field t={t} label="Delete">
+        {account.kind === 'manual' ? (
+          <>
+            <Text style={{ color: t.muted, fontSize: 12 }}>Removes the account and every transaction in it (an import into the wrong account, or one you no longer want). Bills and plans that used it stay, without an account.</Text>
+            <Button title="Delete this account" kind="danger" busy={busy} onPress={askDelete} />
+          </>
+        ) : (
+          <Text style={{ color: t.muted, fontSize: 12 }}>This account comes from the bank, so it would come back at the next sync. Hide it instead, or remove the bank in Settings → Banks (once every account there is closed).</Text>
+        )}
+      </Field>
       {!!msg && <Text style={{ color: t.muted }}>{msg}</Text>}
+      {confirmUi}
     </ScrollView>
   );
 }

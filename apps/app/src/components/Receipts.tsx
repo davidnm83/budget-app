@@ -18,12 +18,13 @@ export function ReceiptPhoto({ path, size, full }: { path: string; size?: number
   const t = useTheme();
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
-  useEffect(() => { let live = true; photoUrl(path).then((u) => live && setUrl(u)).catch(() => live && setFailed(true)); return () => { live = false; }; }, [path]);
+  const [tries, setTries] = useState(0); // a tap on a photo that didn't load asks for it again
+  useEffect(() => { let live = true; setFailed(false); photoUrl(path).then((u) => live && setUrl(u)).catch(() => live && setFailed(true)); return () => { live = false; }; }, [path, tries]);
   const box = full ? { width: '100%' as const, aspectRatio: 0.62, maxHeight: 640 } : { width: size ?? 56, height: (size ?? 56) * 1.3 };
   return (
     <View style={[box, styles.photo, { backgroundColor: t.line }]}>
       {url ? <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode={full ? 'contain' : 'cover'} accessibilityLabel="Receipt photo" />
-        : failed ? <Text style={{ color: t.muted, fontSize: 11, textAlign: 'center' }}>Photo unavailable</Text>
+        : failed ? <Pressable onPress={() => setTries((n) => n + 1)} hitSlop={6}><Text style={{ color: t.muted, fontSize: 11, textAlign: 'center' }}>Photo didn’t load{'\n'}<Text style={{ color: t.accent }}>Tap to retry</Text></Text></Pressable>
         : <ActivityIndicator color={t.muted} />}
     </View>
   );
