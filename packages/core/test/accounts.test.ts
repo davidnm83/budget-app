@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardStatement, fitMinimumRule, minimumPayment, minimumRuleText, statementCharges, transfersOnStatement, findTransferTxns, radarTransfers, transferProgress, cardCycle, cardInterest, cardStatus, loanSummary, monthlyFlow, utilization } from '../src/index.ts';
+import { cardStatement, plansBilled, fitMinimumRule, minimumPayment, minimumRuleText, statementCharges, transfersOnStatement, findTransferTxns, radarTransfers, transferProgress, cardCycle, cardInterest, cardStatus, loanSummary, monthlyFlow, utilization } from '../src/index.ts';
 
 describe('loan payoff', () => {
   const txns = [
@@ -22,7 +22,11 @@ describe('loan payoff', () => {
 
 describe('credit cards', () => {
   it('works out the cycle around today', () => {
-    expect(cardCycle('2026-10-01', 20, 10)).toEqual({ lastClose: '2026-09-20', nextClose: '2026-10-20', due: '2026-10-10', cycleDays: 30, daysToDue: 9 });
+    expect(cardCycle('2026-10-01', 20, 10)).toEqual({ lastClose: '2026-09-20', nextClose: '2026-10-20', prevClose: '2026-08-20', due: '2026-10-10', cycleDays: 30, daysToDue: 9 });
+    // A bank that closes on the Monday when the day falls on a weekend: Aug 16 2026 was a Sunday.
+    expect(cardCycle('2026-10-06', 16, 13, true)).toMatchObject({ lastClose: '2026-09-16', prevClose: '2026-08-17', nextClose: '2026-10-16' });
+    expect(cardCycle('2026-08-16', 16, 13, true).lastClose).toBe('2026-07-16'); // the Sunday itself: August's statement hasn't closed yet
+    expect(cardCycle('2026-10-06', 16, 13).prevClose).toBe('2026-08-16');
     expect(cardCycle('2026-10-25', 20, 10).due).toBe('2026-11-10');
     expect(cardCycle('2026-03-01', 31, 25).lastClose).toBe('2026-02-28');
   });
@@ -125,5 +129,14 @@ describe('card minimums with payment plans', () => {
   });
   it('tries other shares of the balance', () => {
     expect(minimumRuleText(fitMinimumRule([{ close: '2026-09-24', balance: 500, charges: 0, minimum: 11 }, { close: '2026-08-24', balance: 900, charges: 0, minimum: 19.8 }])[0])).toBe('2.2% of the balance, at least $10');
+  });
+});
+
+describe('statement charges and plans', () => {
+  it('leaves a payment plan’s own fee out of the charges and in its instalment', () => {
+    const t = [{ date: '2026-09-01', amount: -9.31, name: 'INTEREST' }, { date: '2026-09-02', amount: -35, name: 'BALANCE TRANSFER FEE' }, { date: '2026-09-10', amount: -8.5, name: 'Phone · plan fee', importId: 'plan:p:fee:3' }];
+    expect(statementCharges(t, '2026-08-17', '2026-09-16')).toBe(44.31);
+    const plan = { id: 'p', description: 'Phone', principal: 1000, months: 5, startDate: '2026-07-10', setupFee: 0, apr: 0, monthlyFee: 8.5 };
+    expect(plansBilled([plan], '2026-08-17', '2026-09-16')).toBe(208.5);
   });
 });

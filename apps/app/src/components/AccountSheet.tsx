@@ -42,7 +42,7 @@ import { afterClose, useBackToClose } from '@/lib/useBackToClose';
 import { useTxnSheet } from '@/components/TxnSheet';
 
 const money0 = (n: number) => formatMoney(Math.round(n)).replace(/\.00$/, '');
-type Txn = { date: string; amount: number; name: string };
+type Txn = { id?: string; date: string; amount: number; name: string; importId?: string | null };
 
 export function statusLine(a: Account): string {
   const ago = (iso: string | null) => {
@@ -79,10 +79,10 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
       const all: Txn[] = [];
       for (let p = 0; ; p += 1000) {
         // Ids too: a card's statement tells plan and transfer movements apart by them.
-        let q = supabase.from('transactions').select('id, date, amount, name').eq('account_id', account.id).eq('pending', false);
+        let q = supabase.from('transactions').select('id, date, amount, name, import_id').eq('account_id', account.id).eq('pending', false);
         if (account.type !== 'loan') q = q.gte('date', from.toISOString().slice(0, 10));
         const { data } = await q.order('date', { ascending: false }).range(p, p + 999);
-        all.push(...(data ?? []).map((r) => ({ id: r.id, date: r.date, amount: Number(r.amount), name: r.name })));
+        all.push(...(data ?? []).map((r: any) => ({ id: r.id, date: r.date, amount: Number(r.amount), name: r.name, importId: r.import_id })));
         if (!data || data.length < 1000) break;
       }
       setHistory(all);
@@ -238,10 +238,10 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
   const bankOwed = Math.max(0, -bankBalance(a));
   const u = utilization(owed, a.credit_limit);
   const set = a.statement_day && a.due_day;
-  const cycle = set ? cardCycle(today(), a.statement_day!, a.due_day!) : null;
+  const [minimum, setMinimum] = useState<CardMinimum>({ rule: null, checks: [] });
+  const cycle = set ? cardCycle(today(), a.statement_day!, a.due_day!, !!minimum.mondays) : null;
   const [plans, setPlans] = useState<CardPlan[]>([]);
   const [transfers, setTransfers] = useState<CardTransfer[]>([]);
-  const [minimum, setMinimum] = useState<CardMinimum>({ rule: null, checks: [] });
   const [checking, setChecking] = useState(false);
   const loadMinimum = () => loadMinimums().then((m) => setMinimum(m.get(a.id) ?? { rule: null, checks: [] }));
   useEffect(() => {
@@ -250,10 +250,10 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
     loadTransfers().then((l) => setTransfers(l.filter((x) => x.toAccountId === a.id && !x.closedOn))).catch(() => {});
   }, [a.id]);
   const tr = cycle ? transfersOnStatement(transfers, owed, cycle.lastClose, today()) : null;
-  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!, minimum.rule ?? undefined) : null;
+  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!, minimum.rule ?? undefined, cycle.prevClose) : null;
   // What the left-to-pay is made of: payment plan instalments billed on this statement, and an estimate of
   // the minimum (on the whole statement, balance transfers included), less what's been paid since.
-  const prevClose = cycle ? cardCycle(addDays(cycle.lastClose, -1), a.statement_day!, a.due_day!).lastClose : null;
+  const prevClose = cycle ? cycle.prevClose : null;
   const onPlans = cycle ? instalmentsBetween(plans, addDays(prevClose!, 1), cycle.lastClose).reduce((s, x) => s + x.inst.total, 0) : 0;
   const minLeft = st?.minimumLeft ?? 0;
   const offBalance = a.off_balance ?? 0;
@@ -300,7 +300,7 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
             <Text style={{ color: t.muted, fontSize: 12 }}>Estimate: daily interest on what's left plus about half of this cycle's spending, for one cycle. Your statement is the final word.</Text>
             <MinimumLine t={t} had={minimum} onCheck={() => setChecking(true)} />
             {checking && <MinimumCheckSheet t={t} accountId={a.id} had={minimum} onClose={() => setChecking(false)} onSaved={loadMinimum}
-              initial={{ close: cycle.lastClose, balance: st.statementOwed + (tr?.held ?? 0), charges: statementCharges(txns, prevClose!, cycle.lastClose), plans: plansBilled(plans, prevClose!, cycle.lastClose) }} />}
+              initial={{ close: cycle.lastClose, balance: st.balanceAtClose ?? st.statementOwed + (tr?.held ?? 0), charges: statementCharges(txns, prevClose!, cycle.lastClose), plans: plansBilled(plans, prevClose!, cycle.lastClose) }} />}
           </>
         )}
       </Section>
@@ -392,6 +392,9 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
     apr: account.apr != null ? String(account.apr) : '',
   });
   const [mergeTarget, setMergeTarget] = useState<string | null>(null);
+  // Some banks (TD) close on the Monday when the closing day falls on a weekend; read with the card's minimum rule.
+  const [mondays, setMondays] = useState(false);
+  useEffect(() => { if (account.type === 'credit') loadMinimums().then((m) => setMondays(!!m.get(account.id)?.mondays)); }, [account.id]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [payMatch, setPayMatch] = useState(account.loan_payment_match ?? '');
@@ -501,6 +504,10 @@ function DetailsTab({ t, account, accounts, onChanged, onClose }: { t: Theme; ac
             <Small t={t} label="Interest rate %" value={card.apr} onChange={(v) => setCard({ ...card, apr: v })} />
             <Small t={t} label="Statement closes on day" value={card.statement_day} onChange={(v) => setCard({ ...card, statement_day: v })} />
             <Small t={t} label="Payment due on day" value={card.due_day} onChange={(v) => setCard({ ...card, due_day: v })} />
+          </View>
+          <View style={styles.between}>
+            <Text style={{ color: t.text, flex: 1, fontSize: 14 }}>When that day is a Saturday or Sunday, the statement closes on the Monday</Text>
+            <Switch value={mondays} onValueChange={(v) => { setMondays(v); save({ close_weekend_monday: v }, v ? 'Weekend closes move to the Monday.' : 'Statements close on the day itself.', 'weekend'); }} accessibilityLabel="Weekend closes move to the Monday" />
           </View>
           <Button title={label('card', 'Save card details')} kind="plain" onPress={saveCard} />
           <Text style={{ color: t.muted, fontSize: 12 }}>The limit fills in from the bank when it reports one. Days are days of the month (e.g. 20 and 10).</Text>

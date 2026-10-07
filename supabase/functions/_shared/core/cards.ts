@@ -12,18 +12,29 @@ function onDay(y: number, m: number, day: number): IsoDate {
   return toIso(new Date(Date.UTC(y, m, Math.min(day, last))));
 }
 
-/** Last and next statement closing dates around `today`, and the payment due date for the last statement. */
-export function cardCycle(today: IsoDate, statementDay: number, dueDay: number) {
+/** A closing date on a Saturday or Sunday moved to the Monday after. */
+function weekday(iso: IsoDate): IsoDate {
+  const d = parseIso(iso), w = d.getUTCDay();
+  return w === 6 ? toIso(new Date(d.getTime() + 2 * 86_400_000)) : w === 0 ? toIso(new Date(d.getTime() + 86_400_000)) : iso;
+}
+
+/**
+ * Last and next statement closing dates around `today`, the one before the last (`prevClose`), and the payment
+ * due date for the last statement. `mondays`: the bank closes on the Monday when the day falls on a weekend.
+ */
+export function cardCycle(today: IsoDate, statementDay: number, dueDay: number, mondays = false) {
   const t = parseIso(today);
+  const close = (y: number, m: number) => (mondays ? weekday(onDay(y, m, statementDay)) : onDay(y, m, statementDay));
   let y = t.getUTCFullYear(), m = t.getUTCMonth();
-  let lastClose = onDay(y, m, statementDay);
-  if (lastClose > today) { m -= 1; if (m < 0) { m = 11; y -= 1; } lastClose = onDay(y, m, statementDay); }
-  const lc = parseIso(lastClose);
-  const nextClose = onDay(lc.getUTCFullYear(), lc.getUTCMonth() + 1, statementDay);
+  let lastClose = close(y, m);
+  if (lastClose > today) { m -= 1; if (m < 0) { m = 11; y -= 1; } lastClose = close(y, m); }
+  const nextClose = close(y, m + 1);
+  const prevClose = close(y, m - 1);
+  const lc = parseIso(onDay(y, m, statementDay));
   // The due day comes after the close: same month if the day is later, otherwise next month.
   let due = onDay(lc.getUTCFullYear(), lc.getUTCMonth(), dueDay);
   if (due <= lastClose) due = onDay(lc.getUTCFullYear(), lc.getUTCMonth() + 1, dueDay);
-  return { lastClose, nextClose, due, cycleDays: daysBetween(lastClose, nextClose), daysToDue: daysBetween(today, due) };
+  return { lastClose, nextClose, prevClose, due, cycleDays: daysBetween(lastClose, nextClose), daysToDue: daysBetween(today, due) };
 }
 
 /** The closing date before `close`: the same day a month earlier (a cycle's length back is close enough when the day is short). */
@@ -49,6 +60,8 @@ export interface CardStatus {
   interestIfUnpaid: number | null; // one cycle of interest on what's left, if APR is known
   /** An estimate of the minimum still to pay: on the whole statement, balance transfers included, less payments since. */
   minimumLeft?: number;
+  /** The card's balance as the bank had it when the statement closed (what the statement prints as its new balance). */
+  balanceAtClose?: number;
 }
 
 /** `owedNow` positive; txns in app sign (charges negative, payments positive). */
@@ -68,8 +81,8 @@ export function cardStatus(owedNow: number, txns: { date: IsoDate; amount: numbe
  * statement doesn't ask for that. The purchase and the bank's plan credit are plan movements: they
  * count as neither spending nor payments, so a $1,800 plan credit no longer looks like a payment.
  */
-export function cardStatement(owedNow: number, txns: { id?: string; date: IsoDate; amount: number; name?: string | null }[], lastClose: IsoDate, cycleDays: number, apr: number | null, plans: PlanOnCard[] = [],
-  transfers: { held: number; moves: (string | null | undefined)[] } = { held: 0, moves: [] }, rule: MinimumRule = DEFAULT_MINIMUM): CardStatus {
+export function cardStatement(owedNow: number, txns: { id?: string; date: IsoDate; amount: number; name?: string | null; importId?: string | null }[], lastClose: IsoDate, cycleDays: number, apr: number | null, plans: PlanOnCard[] = [],
+  transfers: { held: number; moves: (string | null | undefined)[] } = { held: 0, moves: [] }, rule: MinimumRule = DEFAULT_MINIMUM, prevCloseAt?: IsoDate): CardStatus {
   // `transfers`: the promo balance transfers on this card that were already on it when the statement
   // closed (left out like a plan), and their charges (moved money, not spending).
   const moves = new Set([...plans.flatMap((p) => [p.purchaseTxnId, p.creditTxnId]), ...transfers.moves].filter(Boolean) as string[]);
@@ -81,11 +94,11 @@ export function cardStatement(owedNow: number, txns: { id?: string; date: IsoDat
   const spentThisCycle = round2(real.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0));
   const leftToPay = round2(Math.max(0, statementOwed - paidSince));
   // The interest and fees on this statement count toward the minimum for banks that add them.
-  const prevClose = prevCloseOf(lastClose, cycleDays);
+  const prevClose = prevCloseAt ?? prevCloseOf(lastClose, cycleDays);
   const charges = rule.plusCharges ? statementCharges(txns, prevClose, lastClose) : 0;
   const billed = rule.plusPlans ? plansBilled(plans, prevClose, lastClose) : 0;
   const minimumLeft = round2(Math.max(0, minimumPayment(statementOwed + Math.max(0, transfers.held), rule, charges, billed) - paidSince));
-  return { statementOwed, paidSince, leftToPay, spentThisCycle, minimumLeft, interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
+  return { statementOwed, paidSince, leftToPay, spentThisCycle, minimumLeft, balanceAtClose: round2(Math.max(0, atClose)), interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
 }
 
 /** Money in and out per month for the last `months` months (oldest first). */
@@ -216,13 +229,17 @@ export function fitMinimumRule(checks: MinimumCheck[]): MinimumRule[] {
   return out;
 }
 
-/** The purchase part of the payment plan instalments billed on a statement (dated after `prevClose`, up to `close`). */
+/**
+ * The payment plan instalments billed on a statement (dated after `prevClose`, up to `close`), as a statement shows
+ * them: the purchase part with the plan's own interest and fees. Those are left out of `statementCharges`.
+ */
 export function plansBilled(plans: PlanOnCard[], prevClose: IsoDate, close: IsoDate): number {
-  return round2(plans.flatMap((p) => planSchedule(p)).filter((x) => x.date > prevClose && x.date <= close).reduce((s, x) => s + x.principal, 0));
+  return round2(plans.flatMap((p) => planSchedule(p)).filter((x) => x.date > prevClose && x.date <= close).reduce((s, x) => s + x.total, 0));
 }
 
-/** Interest and fees billed on a statement: the card's charges between the two closing dates that say so. */
-export function statementCharges(txns: { date: IsoDate; amount: number; name?: string | null }[], prevClose: IsoDate, close: IsoDate): number {
-  return round2(txns.filter((t) => t.date > prevClose && t.date <= close && t.amount < 0 && /interest|int[ée]r[êe]t|\bfee\b|\bfees\b|frais|charge annuelle|annual/i.test(t.name ?? ''))
+/** Interest and fees billed on a statement: the card's charges between the two closing dates that say so (not a payment plan's own). */
+export function statementCharges(txns: { date: IsoDate; amount: number; name?: string | null; importId?: string | null }[], prevClose: IsoDate, close: IsoDate): number {
+  // A payment plan's own interest and fees (written by the app, import_id "plan:…") are part of its instalment.
+  return round2(txns.filter((t) => t.date > prevClose && t.date <= close && t.amount < 0 && !t.importId?.startsWith('plan:') && /interest|int[ée]r[êe]t|\bfee\b|\bfees\b|frais|charge annuelle|annual/i.test(t.name ?? ''))
     .reduce((s, t) => s - t.amount, 0));
 }

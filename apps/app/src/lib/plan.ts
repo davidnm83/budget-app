@@ -38,7 +38,7 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
   const now = today();
   const [{ data: accts }, { data: txns }] = await Promise.all([
     supabase.from('account_balances').select('id, type, balance, statement_day, due_day').in('id', cards),
-    supabase.from('transactions').select('id, account_id, date, amount, name').in('account_id', cards).gte('date', addDays(now, -70)).eq('pending', false),
+    supabase.from('transactions').select('id, account_id, date, amount, name, import_id').in('account_id', cards).gte('date', addDays(now, -70)).eq('pending', false),
   ]);
   const minimums = await import('./cardMinimums').then((m) => m.loadMinimums()).catch(() => new Map());
   const ruleOf = (id: string) => minimums.get(id)?.rule ?? undefined;
@@ -56,9 +56,9 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
     const bts = transfers.filter((x) => x.toAccountId === a.id && !x.closedOn);
     let amount = Math.max(0, owed - mine.reduce((s, p) => s + planHeld(p, now), 0) - transfersOnStatement(bts, owed, now, now).held);
     if (a.statement_day && a.due_day) {
-      const c = cardCycle(now, a.statement_day, a.due_day);
-      const st = cardStatement(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ id: x.id, date: x.date, amount: Number(x.amount), name: x.name })), c.lastClose, c.cycleDays, null, mine,
-        transfersOnStatement(bts, owed, c.lastClose, now), ruleOf(a.id));
+      const c = cardCycle(now, a.statement_day, a.due_day, !!minimums.get(a.id)?.mondays);
+      const st = cardStatement(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ id: x.id, date: x.date, amount: Number(x.amount), name: x.name, importId: x.import_id })), c.lastClose, c.cycleDays, null, mine,
+        transfersOnStatement(bts, owed, c.lastClose, now), ruleOf(a.id), c.prevClose);
       // A statement that's all on a balance transfer still asks for its minimum.
       if (st.leftToPay > 0 || st.minimumLeft) amount = Math.max(st.leftToPay, st.minimumLeft ?? 0);
       if (st.leftToPay > 0 || st.minimumLeft) mins.set(a.id, st.minimumLeft ?? 0);

@@ -3,14 +3,16 @@
 import { DEFAULT_MINIMUM, fitMinimumRule, type MinimumCheck, type MinimumRule } from '@budget-app/core';
 import { supabase } from './supabase';
 
-export interface CardMinimum { rule: MinimumRule | null; checks: MinimumCheck[] }
+export interface CardMinimum { rule: MinimumRule | null; checks: MinimumCheck[]; /** The bank closes on the Monday when the closing day falls on a weekend. */ mondays?: boolean }
 
 /** Every card's rule and checks, by account id. Empty before the migration has run. */
 export async function loadMinimums(): Promise<Map<string, CardMinimum>> {
   const out = new Map<string, CardMinimum>();
-  const { data, error } = await supabase.from('accounts').select('id, minimum_rule, minimum_checks').eq('type', 'credit');
-  if (error) return out;
-  for (const r of (data ?? []) as any[]) out.set(r.id, { rule: r.minimum_rule ?? null, checks: Array.isArray(r.minimum_checks) ? r.minimum_checks : [] });
+  // Without the newest migration the weekend column isn't there yet: the rest still loads.
+  let res: any = await supabase.from('accounts').select('id, minimum_rule, minimum_checks, close_weekend_monday').eq('type', 'credit');
+  if (res.error) res = await supabase.from('accounts').select('id, minimum_rule, minimum_checks').eq('type', 'credit');
+  if (res.error) return out;
+  for (const r of (res.data ?? []) as any[]) out.set(r.id, { rule: r.minimum_rule ?? null, checks: Array.isArray(r.minimum_checks) ? r.minimum_checks : [], mondays: !!r.close_weekend_monday });
   return out;
 }
 export const ruleFor = (m: Map<string, CardMinimum>, id: string): MinimumRule => m.get(id)?.rule ?? DEFAULT_MINIMUM;
