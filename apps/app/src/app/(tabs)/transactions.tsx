@@ -29,7 +29,10 @@ import { FlatList, Modal, Platform, Pressable, RefreshControl, ScrollView, Secti
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MultiPicker } from '@/components/Picker';
 import { IconButton, TopBar } from '@/components/TopBar';
-import { Bar, Card, Button, Chip, Empty } from '@/components/ui';
+import { Bar, Card, Button, Chip, Empty, Fab } from '@/components/ui';
+import { NewTransactionForm } from '@/components/AddForms';
+import { loadAccounts } from '@/lib/plan';
+import type { Account } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
 import { accountGroup, byAccountGroup } from '@/lib/types';
 import { useBackToClose } from '@/lib/useBackToClose';
@@ -76,6 +79,7 @@ export default function Transactions() {
   const [room, setRoom] = useState(1200); // width available to the list and the pane beside it
   const twoPane = wide && splitFits(room);
   const [sel, setSel] = useState<string | null>(null);
+  const [adding, setAdding] = useState<Account[] | null>(null);
   const searchRef = useRef<TextInput>(null);
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState<Filters>(DEFAULTS);
@@ -253,6 +257,8 @@ export default function Transactions() {
         />
       )}
       </View>
+      {!sel && <Fab label="Add a transaction" onPress={() => loadAccounts().then(setAdding, (e) => toast(e instanceof Error ? e.message : String(e), { error: true }))} />}
+      {adding && <NewTransactionForm accounts={adding} onClose={() => setAdding(null)} onSaved={() => { toast('Added'); reload(); }} />}
       {!twoPane && sel && (
         <Sheet title="Transaction" scroll={false} onClose={() => setSel(null)}>
           <TransactionEditor key={sel} id={sel} onOpen={setSel} onDone={() => { setSel(null); reload(); }} />

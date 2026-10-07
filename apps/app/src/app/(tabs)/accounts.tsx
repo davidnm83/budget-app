@@ -15,7 +15,8 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import { AccountSheet } from '@/components/AccountSheet';
 import { IconButton, TopBar } from '@/components/TopBar';
-import { Empty } from '@/components/ui';
+import { Empty, Fab } from '@/components/ui';
+import { NewAccountForm } from '@/components/AddForms';
 import { callFunction, supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
@@ -32,6 +33,7 @@ export default function Accounts() {
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
 
   const [refresh, setRefresh] = useState(0);
@@ -121,6 +123,8 @@ export default function Accounts() {
           {accounts.length > 0 && <View style={{ paddingHorizontal: 12, paddingTop: 12, gap: 10 }}><PageBoard page="accounts" refresh={refresh} defaults={[]} blocks={[]} quiet /></View>}
         </>}
       />
+      <Fab label="Add an account" onPress={() => setAdding(true)} />
+      {adding && <NewAccountForm onClose={() => setAdding(false)} onSaved={async (id) => { await load(); setOpenId(id); }} />}
       <AccountSheet account={open} accounts={accounts} onClose={() => setOpenId(null)} onChanged={load} />
     </View>
   );

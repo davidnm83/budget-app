@@ -9,6 +9,8 @@ import { openTransactions } from '@/lib/txnLinks';
 import { LIST } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Sheet } from '@/components/Forms';
+import { NewTransactionForm } from '@/components/AddForms';
+import { toast } from '@/lib/toast';
 import { TransactionEditor } from '@/components/TransactionEditor';
 import { PICTURE_HINT, pickPicture } from '@/lib/imageUpload';
 import { bankLogo, customPicture, fillsCircle, savePicture, setPictureFill, useLogoVersion } from '@/lib/logos';
@@ -68,10 +70,12 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
   useBackToClose(!!account, onClose);
   const [showTxns, txnSheet] = useTxnSheet();
   const [txnOpen, setTxnOpen] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [bump, setBump] = useState(0); // a transaction was added here: load the list again
 
   useEffect(() => {
     if (!account) return;
-    setTab('overview'); setHistory(null); setList([]); setSnaps([]);
+    if (!bump) { setTab('overview'); setHistory(null); setList([]); setSnaps([]); }
     if (followsSnapshots(account)) loadSnapshots([account.id], addDays(today(), -371)).then((m) => setSnaps(m.get(account.id) ?? []));
     (async () => {
       // Loans: all history (payments and interest to date). Others: the past year.
@@ -90,7 +94,8 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
         .eq('account_id', account.id).order('date', { ascending: false }).limit(100);
       setList((data ?? []).map((r: any) => ({ ...r, amount: Number(r.amount) })));
     })();
-  }, [account?.id]);
+  }, [account?.id, bump]);
+  useEffect(() => setBump(0), [account?.id]);
 
   if (!account) return null;
   return (
@@ -134,11 +139,13 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
             <TransactionEditor key={txnOpen} id={txnOpen} onOpen={setTxnOpen} onDone={() => { setTxnOpen(null); onChanged(); }} />
           </Sheet>
         )}
+        {adding && <NewTransactionForm accounts={accounts} accountId={account.id} onClose={() => setAdding(false)} onSaved={() => { toast('Added'); setBump((b) => b + 1); onChanged(); }} />}
         {tab === 'details' && <DetailsTab t={t} account={account} accounts={accounts} onChanged={onChanged} onClose={onClose} />}
         {tab === 'txns' && (
           <FlatList {...LIST}
             data={list}
             keyExtractor={(r) => r.id}
+            ListHeaderComponent={<Pressable onPress={() => setAdding(true)} style={{ paddingHorizontal: 16, paddingBottom: 8 }} hitSlop={6}><Text style={{ color: t.accent }}>+ Add a transaction</Text></Pressable>}
             ListFooterComponent={list.length >= 100 ? <Button title="See all in Transactions" kind="plain" style={{ margin: 16 }} onPress={() => { onClose(); afterClose(() => openTransactions({ account: account.id })); }} /> : null}
             renderItem={({ item }) => (
               <Pressable onPress={() => { seedTxn(item); setTxnOpen(item.id); }}
