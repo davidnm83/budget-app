@@ -141,6 +141,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   const partsSum = round2((parts ?? []).reduce((s2, p) => s2 + partValue(p.amount), 0));
   const remaining = round2(total - partsSum);
   const owedId = cats.find((c) => c.name === OWED_CATEGORY)?.id ?? null;
+  // Moving all of a "Money owed" transaction to another category: nobody owes it any more.
+  const pickCategory = (cid: string) => { picked.current = true; if (categoryId === owedId && owedId && cid !== owedId) { setIouPerson(''); setIouAmount(''); } setCategoryId(cid); };
   const catName = (cid: string | null) => { const c = cats.find((x: any) => x.id === cid) as any; return c ? `${categoryIcon(c.name, c.icon)} ${c.name}` : 'Choose category'; };
   const startSplit = () => setParts([
     { category_id: categoryId, amount: total.toFixed(2), notes: '' },
@@ -200,6 +202,12 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     // becomes a split, your part under the category chosen and theirs under "Money owed".
     const who = iouPerson.trim();
     const typed = !split && who && iouAmount.trim() ? Math.abs(parseMoney(iouAmount)) : NaN;
+    // All of it was theirs and now only part is: it becomes a split, theirs under "Money owed" and yours to choose a category for.
+    if (who && categoryId === owedId && owedId && Number.isFinite(typed) && typed > 0 && typed < Math.abs(newAmount) - 0.004) {
+      const theirs = round2(Math.sign(newAmount) * typed);
+      setParts([{ category_id: null, amount: round2(newAmount - theirs).toFixed(2), notes: '', touched: true }, { category_id: owedId, amount: theirs.toFixed(2), notes: '', person: who, touched: true }]);
+      setIouAmount(''); setBusy(false); setError('Choose a category for your part, then save.'); return;
+    }
     const share = Number.isFinite(typed) && typed > 0 && typed < Math.abs(newAmount) - 0.004 && categoryId !== owedId ? round2(Math.sign(newAmount) * typed) : null;
     if (share != null && !categoryId) { setBusy(false); setError(`Choose a category for your part first (the ${formatMoney(Math.abs(newAmount) - typed)} that isn't ${who}'s).`); return; }
     let owed = owedId;
@@ -364,7 +372,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
         {shownSuggested.filter((x) => x !== categoryId).length > 0 && (
           <View style={[styles.chips, { paddingHorizontal: 10, paddingBottom: 10 }]}>
             {shownSuggested.filter((x) => x !== categoryId).slice(0, 4).map((cid) => (
-              <Pressable key={cid} onPress={() => { picked.current = true; setCategoryId(cid); }} style={[styles.chip, { borderColor: t.line }]}>
+              <Pressable key={cid} onPress={() => pickCategory(cid)} style={[styles.chip, { borderColor: t.line }]}>
                 <Text style={{ color: t.text, fontSize: 13 }}>{catName(cid)}</Text>
               </Pressable>
             ))}
@@ -400,7 +408,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
           <>
             <Text style={[styles.label, { color: t.muted }]}>Money owed</Text>
             <SuggestInput style={input} value={iouPerson} onChange={setIouPerson} options={known.people} placeholder={whole ? 'Who?' : 'Who? e.g. Mum (leave empty if nobody)'} />
-            {!!name && !whole && (
+            {!!name && (
               <View style={{ gap: 4, marginTop: 6 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Text style={{ color: t.text, flex: 1 }}>{out ? `${name}’s share` : `Paid back by ${name}`}</Text>
@@ -411,7 +419,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
             )}
             {(!!name || whole) && (
               <Text style={{ color: t.muted, fontSize: 12, marginTop: 4 }}>
-                {whole ? `All of it is under “${OWED_CATEGORY}”, so it stays out of your budget${name ? `, and ${out ? `${name} owes you it` : `it counts against what ${name} owes you`}` : '. Add who it’s for'}.`
+                {whole ? `All of it is under “${OWED_CATEGORY}”, so it stays out of your budget${name ? `, and ${out ? `${name} owes you it` : `it counts against what ${name} owes you`}` : '. Add who it’s for'}. For only part of it, enter their share; to take it off, choose another category.`
                   : `${out ? 'Money you paid for them or lent them.' : 'Money they paid you back, or lent you (then you owe them).'} Leave the amount empty for all of it; a share splits the transaction, with their part under “${OWED_CATEGORY}”. Either way it stays out of your budget.`}
               </Text>
             )}
@@ -431,7 +439,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       <SinglePicker visible={picking || pickFor != null} title="Category" onClose={() => { setPicking(false); setPickFor(null); }}
         selected={pickFor != null ? parts?.[pickFor]?.category_id ?? null : categoryId} suggested={shownSuggested}
         items={cats.map((c: any) => ({ id: c.id, label: `${categoryIcon(c.name, c.icon)}  ${c.name}`, group: c.group_name }))}
-        onPick={(cid) => { if (pickFor != null) setPart(pickFor, { category_id: cid }); else { picked.current = true; setCategoryId(cid); } setPicking(false); setPickFor(null); }} />
+        onPick={(cid) => { if (pickFor != null) setPart(pickFor, { category_id: cid }); else pickCategory(cid); setPicking(false); setPickFor(null); }} />
     </ScrollView>
   );
 }
