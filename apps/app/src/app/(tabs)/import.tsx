@@ -8,7 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button, Card } from '@/components/ui';
-import { findDuplicates, importRows } from '@/lib/csvImport';
+import { fileCategories, findDuplicates, importRows } from '@/lib/csvImport';
 import { canPickFiles, pickCsvTexts } from '@/lib/pickFile';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
@@ -32,6 +32,8 @@ export default function ImportScreen() {
   const [balance, setBalance] = useState('');
   const [preview, setPreview] = useState<{ add: CsvRow[]; duplicates: CsvRow[] } | null>(null);
   const [showDupes, setShowDupes] = useState(false);
+  // A budgeting app's export: how many of its categories you have here (by name).
+  const [named, setNamed] = useState<Awaited<ReturnType<typeof fileCategories>>>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState<string[]>([]);
@@ -50,6 +52,11 @@ export default function ImportScreen() {
   // Opened from the import reminder: the files go into that account unless you pick another.
   const want = useLocalSearchParams<{ account?: string }>().account;
   const wanted = want ? accounts.find((a) => a.id === want) ?? null : null;
+
+  useEffect(() => {
+    setNamed(null);
+    if (file) fileCategories(file.parsed.rows).then(setNamed, () => {});
+  }, [file]);
 
   // Re-check duplicates whenever the file or the chosen account changes.
   useEffect(() => {
@@ -149,7 +156,7 @@ export default function ImportScreen() {
       <Card style={{ gap: 8 }}>
         <Text style={[styles.h, { color: t.text }]}>1. Choose the file{total > 1 ? 's' : ''}</Text>
         {wanted && !file && <Text style={{ color: t.text, fontWeight: '600' }}>For {wanted.name}{wanted.mask ? ` ••${wanted.mask}` : ''}</Text>}
-        <Text style={{ color: t.muted }}>Download the transactions as CSV from your bank's website. Rogers, PC Financial and American Express are recognised; most other CSVs with date, description and amount columns work too. You can choose several files at once; they are taken one at a time.</Text>
+        <Text style={{ color: t.muted }}>Download the transactions as CSV from your bank's website. Rogers, PC Financial and American Express are recognised, and exports from budgeting apps such as Mint keep the category you gave each one; most other CSVs with date, description and amount columns work too. You can choose several files at once; they are taken one at a time.</Text>
         <Button title={file ? 'Choose different files' : 'Choose CSV files'} kind={file ? 'plain' : 'primary'} onPress={choose} />
         {file && total > 1 && <Text style={{ color: t.muted, fontWeight: '600' }}>File {total - rest.length} of {total}</Text>}
         {file && (
@@ -191,6 +198,13 @@ export default function ImportScreen() {
               <Text style={{ color: t.text }}>
                 {preview.add.length} new · {preview.duplicates.length} already in this account
               </Text>
+              {named && (
+                <Text style={{ color: t.muted, fontSize: 13 }}>
+                  {named.missing.length
+                    ? `Categories from the file: ${named.matched} row${named.matched === 1 ? ' matches' : 's match'} yours and keep them (marked reviewed). Not found here: ${named.missing.slice(0, 12).map((m) => `${m.name} (${m.count})`).join(', ')}${named.missing.length > 12 ? `, and ${named.missing.length - 12} more` : ''}; those rows get the usual suggestions. Add or rename a category first to keep them.`
+                    : `All ${named.matched} rows keep the category from the file (marked reviewed).`}
+                </Text>
+              )}
               {preview.add.slice(0, 100).map((r, i) => <Row key={i} r={r} />)}
               {preview.add.length > 100 && <Text style={{ color: t.muted }}>…and {preview.add.length - 100} more</Text>}
               {!!preview.duplicates.length && (
@@ -225,7 +239,7 @@ function Row({ r, muted }: { r: CsvRow; muted?: boolean }) {
   return (
     <View style={[styles.row, { borderColor: t.line }]}>
       <Text style={{ color: t.muted, width: 52 }}>{shortDate(r.date)}</Text>
-      <Text style={{ color, flex: 1 }} numberOfLines={1}>{r.name}</Text>
+      <Text style={{ color, flex: 1 }} numberOfLines={1}>{r.merchant || r.name}{r.category ? <Text style={{ color: t.muted }}> · {r.category}</Text> : null}</Text>
       <Text style={{ color: r.amount > 0 && !muted ? t.positive : color, fontVariant: ['tabular-nums'] }}>{formatMoney(r.amount)}</Text>
     </View>
   );

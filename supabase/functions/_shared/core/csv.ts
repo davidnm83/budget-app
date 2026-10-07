@@ -2,7 +2,9 @@
 /**
  * Bank CSV import for accounts Plaid can't reach.
  * Known formats: Rogers Bank Mastercard, PC Financial Mastercard, American Express
- * (Canada). Anything else
+ * (Canada), and exports from budgeting apps: Mint (amounts with a debit/credit column) and
+ * the date,description,amount,…,transactionCategory,…,isTransfer layout. Those two carry your
+ * category, merchant and notes, which the import keeps. Anything else
  * with date + description + amount (or debit/credit) columns also works,
  * including headerless CIBC-style files (date, description, debit, credit).
  */
@@ -13,10 +15,16 @@ export interface CsvRow {
   date: IsoDate;
   name: string;
   amount: number; // app sign: spending negative
+  /** From a budgeting app's export: what you filed it under there. */
+  category?: string;
+  merchant?: string;
+  notes?: string;
+  tags?: string[];
+  transfer?: boolean;
 }
 
 export interface ParsedCsv {
-  format: 'rogers' | 'pcf' | 'amex' | 'headerless' | 'generic';
+  format: 'rogers' | 'pcf' | 'amex' | 'mint' | 'budgetapp' | 'headerless' | 'generic';
   label: string;
   rows: CsvRow[];
   skipped: number;
@@ -53,12 +61,44 @@ export function parseBankCsv(text: string): ParsedCsv {
   const col = (re: RegExp) => head.findIndex((h) => re.test(h));
   const rows: CsvRow[] = [];
   let skipped = 0;
-  const push = (date: unknown, name: unknown, amount: number) => {
+  const push = (date: unknown, name: unknown, amount: number, extra: Omit<CsvRow, 'date' | 'name' | 'amount'> = {}) => {
     const iso = toIsoDate(date);
     const n = String(name ?? '').trim();
     if (!iso || isNaN(amount) || !n) { skipped++; return; }
-    rows.push({ date: iso, name: n, amount: round2(amount) });
+    const more = Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== undefined && v !== '' && !(Array.isArray(v) && !v.length)));
+    rows.push({ date: iso, name: n, amount: round2(amount), ...more });
   };
+  const str = (v: unknown) => String(v ?? '').trim() || undefined;
+
+  // Mint: every amount positive, "Transaction Type" says debit (money out) or credit (money in).
+  if (head.includes('original description') && head.includes('transaction type') && head.includes('amount')) {
+    const d = head.indexOf('date'), n = head.indexOf('original description'), m = head.indexOf('description'), a = head.indexOf('amount'),
+      ty = head.indexOf('transaction type'), c = head.indexOf('category'), lb = head.indexOf('labels'), no = head.indexOf('notes');
+    for (const r of data.slice(1)) {
+      const way = String(r[ty] ?? '').trim().toLowerCase();
+      if (way !== 'debit' && way !== 'credit') { skipped++; continue; }
+      const amt = Math.abs(parseMoney(r[a]));
+      push(r[d], r[n] || r[m], way === 'debit' ? -amt : amt, {
+        merchant: str(r[m]), category: str(r[c]), notes: no >= 0 ? str(r[no]) : undefined,
+        tags: lb >= 0 ? String(r[lb] ?? '').split(/[,;]/).map((x) => x.trim().toLowerCase()).filter(Boolean) : undefined,
+      });
+    }
+    return { format: 'mint', label: 'Mint export (with categories)', rows, skipped };
+  }
+  // A budgeting app's export: amounts already signed (money out negative), with category, merchant and transfer flag.
+  // Some saved copies lost the first heading ("date"); the dates are still in the first column.
+  if (head.includes('transactioncategory') && head.includes('amount') && head.includes('description')) {
+    const d = head.indexOf('date') >= 0 ? head.indexOf('date') : 0, n = head.indexOf('description'), a = head.indexOf('amount'),
+      c = head.indexOf('transactioncategory'), m = head.indexOf('merchant'), tr = head.indexOf('istransfer'), no = head.indexOf('notes'), tg = head.indexOf('tags');
+    for (const r of data.slice(1)) {
+      push(r[d], r[n], parseMoney(r[a]), {
+        category: str(r[c]), merchant: m >= 0 ? str(r[m]) : undefined, notes: no >= 0 ? str(r[no]) : undefined,
+        transfer: tr >= 0 && /^(yes|true|1)$/i.test(String(r[tr] ?? '').trim()) ? true : undefined,
+        tags: tg >= 0 ? String(r[tg] ?? '').split(/[,;]/).map((x) => x.trim().toLowerCase()).filter(Boolean) : undefined,
+      });
+    }
+    return { format: 'budgetapp', label: 'Budgeting app export (with categories)', rows, skipped };
+  }
 
   if (head.includes('merchant name') && head.includes('activity status')) {
     const d = head.indexOf('date'), n = head.indexOf('merchant name'), a = head.indexOf('amount'), st = head.indexOf('activity status');

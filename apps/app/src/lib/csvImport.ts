@@ -40,7 +40,10 @@ export async function importRows(account: { id: string; type: string | null }, r
   const kindById = new Map((cats.data ?? []).map((r: any) => [r.id as string, r.kind as string]));
   const cardPaymentId = (cats.data ?? []).find((r: any) => r.kind === 'transfer' && /^credit card payment$/i.test(r.name))?.id ?? null;
 
-  const withMerchant = rows.map((r) => ({ r, merchant: merchantFor(merchantRules, r.name) || guessMerchant(r.name) }));
+  const withMerchant = rows.map((r) => ({ r, merchant: r.merchant || merchantFor(merchantRules, r.name) || guessMerchant(r.name) }));
+  // A budgeting app's export says what you filed each one under: a category with the same name here is used
+  // as it is (and the row counts as reviewed); the rest get the usual suggestions.
+  const byName = categoryNames(cats.data ?? []);
 
   // The category you used most recently for each merchant (from reviewed transactions).
   const learned: Record<string, string> = {};
@@ -54,9 +57,14 @@ export async function importRows(account: { id: string; type: string | null }, r
   }
 
   const inserts = withMerchant.map(({ r, merchant }) => {
-    let s = suggestCategory({ name: r.name, merchant, amount: r.amount, accountId: account.id }, categoryRules, learned);
+    const own = r.category ? byName.get(r.category.trim().toLowerCase()) ?? null : null;
+    let s: { categoryId: string | null; source: string | null } = own ? { categoryId: own, source: 'manual' }
+      : suggestCategory({ name: r.name, merchant, amount: r.amount, accountId: account.id }, categoryRules, learned);
     const isCardPayment = account.type === 'credit' && r.amount > 0 && CARD_PAYMENT.test(r.name);
     if (!s.categoryId && isCardPayment && cardPaymentId) s = { categoryId: cardPaymentId, source: 'rule' };
+    // Marked a transfer in the file but with no category of yours to say so: kept a transfer, and a
+    // suggested spending category isn't used.
+    if (!own && r.transfer && s.categoryId && kindById.get(s.categoryId) !== 'transfer') s = { categoryId: null, source: null };
     return {
       account_id: account.id,
       source: 'csv',
@@ -66,8 +74,11 @@ export async function importRows(account: { id: string; type: string | null }, r
       merchant: merchant || null,
       category_id: s.categoryId,
       category_source: s.source,
-      is_transfer: isCardPayment || (s.categoryId ? kindById.get(s.categoryId) === 'transfer' : false),
-      reviewed: false,
+      is_transfer: s.categoryId ? kindById.get(s.categoryId) === 'transfer' : isCardPayment || !!r.transfer,
+      ...(r.notes ? { notes: r.notes } : {}),
+      ...(r.tags?.length ? { tags: r.tags } : {}),
+      reviewed: !!own,
+      ...(own ? { reviewed_at: new Date().toISOString() } : {}),
     };
   });
   for (let i = 0; i < inserts.length; i += 500) {
@@ -75,4 +86,25 @@ export async function importRows(account: { id: string; type: string | null }, r
     if (error) throw new Error('Saving transactions failed: ' + error.message);
   }
   return inserts.length;
+}
+
+/** Your categories by lower-case name. */
+function categoryNames(cats: { id: string; name: string }[]): Map<string, string> {
+  return new Map(cats.map((c) => [c.name.trim().toLowerCase(), c.id]));
+}
+
+/** The categories a file names, split into those you have (by name) and those you don't, most used first. */
+export async function fileCategories(rows: CsvRow[]): Promise<{ matched: number; missing: { name: string; count: number }[] } | null> {
+  const named = rows.filter((r) => r.category);
+  if (!named.length) return null;
+  const { data, error } = await supabase.from('categories').select('id, name');
+  if (error) throw new Error(error.message);
+  const have = categoryNames((data ?? []) as any[]);
+  const missing = new Map<string, number>();
+  let matched = 0;
+  for (const r of named) {
+    if (have.has(r.category!.trim().toLowerCase())) matched++;
+    else missing.set(r.category!.trim(), (missing.get(r.category!.trim()) ?? 0) + 1);
+  }
+  return { matched, missing: [...missing.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count) };
 }

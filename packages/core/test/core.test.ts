@@ -129,6 +129,32 @@ describe('csv import', () => {
     expect(p.format).toBe('amex');
     expect(p.rows.map((r) => [r.date, r.amount])).toEqual([['2026-09-20', -6.63], ['2026-09-19', 21.46], ['2026-09-10', 100]]);
   });
+  it('reads Mint exports (debit is money out) and keeps category, merchant, notes and labels', () => {
+    const mint = '"Date","Description","Original Description","Amount","Transaction Type","Category","Account Name","Labels","Notes"\n' +
+      '"1/11/2024","Corner Shop","CORNER SHOP #12 TORONTO","4.50","debit","Groceries","Sample Card","trip","for the party"\n' +
+      '"1/10/2024","PAYMENT RECEIVED","PAYMENT RECEIVED","120.00","credit","Credit Card Payment","Sample Card","",""\n' +
+      '"1/09/2024","Odd","ODD","1.00","pending","Other","Sample Card","",""\n';
+    const p = parseBankCsv(mint);
+    expect(p.format).toBe('mint');
+    expect(p.skipped).toBe(1);
+    expect(p.rows).toEqual([
+      { date: '2024-01-11', name: 'CORNER SHOP #12 TORONTO', amount: -4.5, merchant: 'Corner Shop', category: 'Groceries', notes: 'for the party', tags: ['trip'] },
+      { date: '2024-01-10', name: 'PAYMENT RECEIVED', amount: 120, merchant: 'PAYMENT RECEIVED', category: 'Credit Card Payment' },
+    ]);
+  });
+  it('reads budgeting-app exports (signed amounts, transfer flag, dates with times, a lost date heading)', () => {
+    const app = 'date,description,amount,currencyCode,account,transactionCategory,transactionCategoryGroup,merchant,isTransfer,notes,tags,,\n' +
+      '2024-02-05T08:00:00.000Z,SAMPLE GROCER 22,-26.82,CAD,Card,Groceries,,Sample Grocer,,,,,\n' +
+      '2024-02-04,PAYMENT - THANK YOU,10.78,CAD,Card,Credit Card Payment,,,Yes,,,,\n';
+    const p = parseBankCsv(app);
+    expect(p.format).toBe('budgetapp');
+    expect(p.rows).toEqual([
+      { date: '2024-02-05', name: 'SAMPLE GROCER 22', amount: -26.82, category: 'Groceries', merchant: 'Sample Grocer' },
+      { date: '2024-02-04', name: 'PAYMENT - THANK YOU', amount: 10.78, category: 'Credit Card Payment', transfer: true },
+    ]);
+    const noDate = ',description,amount,currencyCode,,transactionCategory,transactionCategoryGroup,merchant,isTransfer,notes,tags\n2023-12-03,Interest Paid,0.01,CAD,Chequing,Interest Income,Income,,,,\n';
+    expect(parseBankCsv(noDate).rows).toEqual([{ date: '2023-12-03', name: 'Interest Paid', amount: 0.01, category: 'Interest Income' }]);
+  });
   it('skips rows already present, allowing a few days of date drift', () => {
     const rows = [
       { date: '2026-08-31', name: 'Payment', amount: 202 },     // sheet has it on 09-01
