@@ -129,8 +129,8 @@ function KindsSheet({ t, initial, onClose }: { t: Theme; initial: NotifySettings
       <View style={styles.row}><Text style={{ color: t.text, flex: 1 }}>Morning ones from</Text><Stepper k="morning" min={0} max={23} text={hourText} /></View>
       <Text style={{ color: t.muted, fontSize: 12 }}>Nothing is sent in quiet hours; it waits until they end. Bills, low balances, the check-in and the like go out from the morning hour. The run is hourly, in the server’s time zone.</Text>
       <View style={styles.row}>
-        <View style={{ flex: 1 }}><Text style={{ color: t.text }}>One notification at a time</Text><Text style={{ color: t.muted, fontSize: 12 }}>Off: everything due in the same hour comes as one list</Text></View>
-        <Switch value={!s.digest} onValueChange={(v) => change({ digest: !v })} accessibilityLabel="One notification at a time" />
+        <View style={{ flex: 1 }}><Text style={{ color: t.text }}>Everything in one notification</Text><Text style={{ color: t.muted, fontSize: 12 }}>Off: several of the same kind (banks to fix, bills due…) still come as one, with a line each</Text></View>
+        <Switch value={!!s.digest} onValueChange={(v) => change({ digest: v })} accessibilityLabel="Everything in one notification" />
       </View>
       <View style={styles.row}>
         <View style={{ flex: 1 }}><Text style={{ color: t.text }}>Hide amounts</Text><Text style={{ color: t.muted, fontSize: 12 }}>Shows $••• instead, so they aren’t on the lock screen</Text></View>

@@ -27,6 +27,20 @@ describe('notifications', () => {
     const notes: Note[] = [{ key: 'a', kind: 'bill', title: 'Rent $1,450 due Thursday', body: 'x', url: '/planner' }, { key: 'b', kind: 'low', title: 'Chequing dips to −$35.20 Fri', body: 'y', url: '/planner' }];
     expect(toMessages(notes, { digest: true, hideAmounts: true })).toEqual([{ title: '2 things today', body: '• Rent $••• due Thursday\n• Chequing dips to $••• Fri', url: '/', tag: 'digest' }]);
     expect(toMessages(notes.slice(0, 1), {})[0]).toMatchObject({ title: 'Rent $1,450 due Thursday', url: '/planner', tag: 'a' });
+    // Two of one kind come as one, with a line each.
+    const banks: Note[] = [
+      { key: 'bank:1', kind: 'bank', title: 'Sample Bank needs fixing', body: 'The bank needs you to sign in again. Open Settings → Banks and tap Fix.', url: '/settings' },
+      { key: 'bank:2', kind: 'bank', title: 'Other Bank needs fixing', body: 'The last sync failed. Open Settings → Banks to try again.', url: '/settings' },
+    ];
+    const bills: Note[] = [
+      { key: 'bill:1', kind: 'bill', title: 'Rent $1,450 due Thursday', body: 'Planned for Oct 8. Not paid yet.', url: '/planner' },
+      { key: 'bill:2', kind: 'bill', title: 'Phone $55 due Friday', body: 'Planned for Oct 9. Not paid yet.', url: '/planner' },
+    ];
+    expect(toMessages([...banks, ...bills], {})).toEqual([
+      { title: '2 banks need fixing', body: '• Sample Bank: sign in again\n• Other Bank: the last sync failed\nOpen Settings → Banks and tap Fix.', url: '/settings', tag: 'kind:bank' },
+      { title: '2 bills due soon', body: '• Rent $1,450 due Thursday\n• Phone $55 due Friday', url: '/planner', tag: 'kind:bill' },
+    ]);
+    expect(toMessages([...bills, notes[1]], { digest: true })[0]).toMatchObject({ title: '3 things today', body: '2 bills due soon:\n• Rent $1,450 due Thursday\n• Phone $55 due Friday\n• Chequing dips to −$35.20 Fri' });
     expect(hideAmounts('$12.99 then -$3')).toBe('$••• then $•••');
   });
   it('words the notes', () => {

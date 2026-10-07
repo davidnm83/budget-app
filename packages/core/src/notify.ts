@@ -86,14 +86,42 @@ export function pickNotes(notes: Note[], sent: Set<string>, hour: number, s: Not
 export const hideAmounts = (text: string) => text.replace(/[−-]?\$\d[\d,]*(\.\d+)?/g, '$•••');
 
 export interface PushMessage { title: string; body: string; url: string; tag: string }
-/** The notes as the phone shows them: one each, or one digest. */
+
+/** Several notes of one kind in the same run come as one: a heading, then a line each with the details. */
+const GROUP: Partial<Record<NotifyKind, { title: (n: number) => string; line?: (n: Note) => string; after?: (ns: Note[]) => string }>> = {
+  bank: {
+    title: (n) => `${n} banks need fixing`,
+    line: (x) => `${x.title.replace(/ needs fixing$/, '')}: ${/sign in/i.test(x.body) ? 'sign in again' : 'the last sync failed'}`,
+    after: () => 'Open Settings → Banks and tap Fix.',
+  },
+  csv: { title: (n) => `${n} accounts due a CSV import` },
+  bill: { title: (n) => `${n} bills due soon` },
+  low: { title: (n) => `${n} accounts dip below their buffer` },
+  subs: { title: (n) => `${n} subscription changes` },
+  budget: { title: (n) => `${n} budget lines nearly spent` },
+  large: { title: (n) => `${n} large transactions` },
+  goal: { title: (n) => `${n} goals passed a milestone` },
+  radar: { title: (n) => `${n} Radar alerts` },
+};
+
+/** The notes as the phone shows them: one per note, those of the same kind together, or everything as one digest. */
 export function toMessages(notes: Note[], s: NotifySettings): PushMessage[] {
   const hide = (t: string) => (s.hideAmounts ? hideAmounts(t) : t);
   if (!notes.length) return [];
-  if (s.digest && notes.length > 1) {
-    return [{ title: `${notes.length} things today`, body: notes.map((n) => `• ${hide(n.title)}`).join('\n'), url: '/', tag: 'digest' }];
+  const byKind = new Map<NotifyKind, Note[]>();
+  for (const n of notes) (byKind.get(n.kind) ?? byKind.set(n.kind, []).get(n.kind)!).push(n);
+  const out: PushMessage[] = [];
+  for (const [kind, ns] of byKind) {
+    const g = GROUP[kind];
+    if (ns.length === 1 || !g) { for (const n of ns) out.push({ title: hide(n.title), body: hide(n.body), url: n.url, tag: n.key }); continue; }
+    const lines = ns.map((n) => `• ${hide(g.line ? g.line(n) : n.title)}`);
+    const urls = new Set(ns.map((n) => n.url));
+    out.push({ title: g.title(ns.length), body: [...lines, ...(g.after ? [g.after(ns)] : [])].join('\n'), url: urls.size === 1 ? ns[0].url : '/', tag: `kind:${kind}` });
   }
-  return notes.map((n) => ({ title: hide(n.title), body: hide(n.body), url: n.url, tag: n.key }));
+  if (s.digest && out.length > 1) {
+    return [{ title: `${notes.length} things today`, body: out.map((m) => (m.tag.startsWith('kind:') ? `${m.title}:\n${m.body}` : `• ${m.title}`)).join('\n'), url: '/', tag: 'digest' }];
+  }
+  return out;
 }
 
 const money = (n: number) => formatMoney(Math.round(Math.abs(n) * 100) / 100).replace(/\.00$/, '');
