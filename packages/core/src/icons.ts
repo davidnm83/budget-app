@@ -28,7 +28,7 @@ const CATEGORY: Record<string, string> = {
   'student loan': '🎓', tuition: '🏫', 'books & supplies': '📚', education: '🏫', 'gifts & donations': '🎁', gifts: '🎁',
   investments: '📈', taxes: '🧾', insurance: '🛡️', 'other expenses': '🔸', 'moving expenses': '🚚', 'work expenses': '🧰', savings: '🐷',
   // transfers
-  transfer: '🔄', 'credit card payment': '💳', 'buy & trade': '🔄', 'sell & trade': '🔄',
+  transfer: '🔄', 'money owed': '🤝', 'credit card payment': '💳', 'buy & trade': '🔄', 'sell & trade': '🔄',
 };
 
 const GROUP: Record<string, string> = {

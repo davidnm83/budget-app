@@ -27,10 +27,13 @@ export async function knownTags(): Promise<string[]> {
 /** People with money owed (IDEA-9), most used first. None before the migration. */
 export async function knownPeople(): Promise<string[]> {
   if (!people) {
-    const { data, error } = await supabase.from('transactions').select('iou_person').not('iou_person', 'is', null).order('date', { ascending: false }).limit(1000);
+    const [{ data, error }, splits] = await Promise.all([
+      supabase.from('transactions').select('iou_person').not('iou_person', 'is', null).order('date', { ascending: false }).limit(1000),
+      supabase.from('transaction_splits').select('iou_person').not('iou_person', 'is', null).limit(1000),
+    ]);
     if (error) return [];
     const count = new Map<string, number>();
-    for (const r of (data ?? []) as { iou_person: string }[]) count.set(r.iou_person, (count.get(r.iou_person) ?? 0) + 1);
+    for (const r of [...(data ?? []), ...(splits.data ?? [])] as { iou_person: string }[]) count.set(r.iou_person, (count.get(r.iou_person) ?? 0) + 1);
     people = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([x]) => x);
   }
   return people;

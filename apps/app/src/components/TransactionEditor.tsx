@@ -17,6 +17,7 @@ import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from
 import { SinglePicker } from '@/components/Picker';
 import { SuggestInput } from '@/components/SuggestInput';
 import { forgetKnown, knownMerchants, knownPeople, knownTags } from '@/lib/known';
+import { OWED_CATEGORY, owedCategory } from '@/lib/iou';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { TxnReceipts } from '@/components/Receipts';
 import { Button, Card } from '@/components/ui';
@@ -46,7 +47,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   const [tags, setTags] = useState((seed?.tags ?? []).join(', '));
   const [known, setKnown] = useState<{ merchants: string[]; tags: string[]; people: string[] }>({ merchants: [], tags: [], people: [] });
   useEffect(() => { Promise.all([knownMerchants(), knownTags(), knownPeople()]).then(([m, g, p]) => setKnown({ merchants: m, tags: g, people: p })).catch(() => {}); }, []);
-  // Money owed (IDEA-9): who, and how much of this transaction counts (a share of a split bill, or all of it).
+  // Money owed (IDEA-9): who, and how much of this transaction is theirs (a share of a shared bill, or all of it).
+  // Saved under the "Money owed" category, so it stays out of the budget: all of it, or their share as a split.
   const [iouPerson, setIouPerson] = useState('');
   const [iouAmount, setIouAmount] = useState('');
   const [date, setDate] = useState(seed?.date ?? '');
@@ -57,7 +59,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   const [matching, setMatching] = useState<number | null>(null);
   // Split editor (TXN-6): null = not split; otherwise the parts being edited.
   // `touched`: you typed this part's amount yourself, so it is left alone when the rest is filled in.
-  const [parts, setParts] = useState<{ category_id: string | null; amount: string; notes: string; touched?: boolean }[] | null>(null);
+  // `person`: on a part under "Money owed", who owes it.
+  const [parts, setParts] = useState<{ category_id: string | null; amount: string; notes: string; person?: string; touched?: boolean }[] | null>(null);
   const [pickFor, setPickFor] = useState<number | null>(null);
   const [picking, setPicking] = useState(false);
   const [suggested, setSuggested] = useState<string[]>([]);
@@ -68,7 +71,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   useEffect(() => {
     (async () => {
       const [{ data: tx }, { data: c }] = await Promise.all([
-        supabase.from('transactions').select('*, accounts(name, mask, type), transaction_splits(id, amount, notes, category_id, categories(name))').eq('id', id).single(),
+        supabase.from('transactions').select('*, accounts(name, mask, type), transaction_splits(id, amount, notes, category_id, iou_person, categories(name))').eq('id', id).single(),
         supabase.from('categories').select('id, name, group_name, kind, sort, icon').eq('is_hidden', false).order('sort'),
       ]);
       if (tx) {
@@ -78,7 +81,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
         setNotes(tx.notes ?? '');
         setTags((tx.tags ?? []).join(', '));
         setIouPerson((tx as any).iou_person ?? '');
-        setIouAmount((tx as any).iou_amount != null ? Math.abs(Number((tx as any).iou_amount)).toFixed(2) : '');
+        setIouAmount('');
         setDate(tx.date);
         setAmount(Number(tx.amount).toFixed(2));
         if (tx.transfer_pair_id) {
@@ -86,7 +89,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
           if (p) setPair({ id: p.id, date: p.date, amount: Number(p.amount), account: p.account_name });
         }
         const sp = (tx.transaction_splits ?? []) as any[];
-        setParts(sp.length ? sp.map((p) => ({ category_id: p.category_id, amount: Number(p.amount).toFixed(2), notes: p.notes ?? '', touched: true })) : null);
+        setParts(sp.length ? sp.map((p) => ({ category_id: p.category_id, amount: Number(p.amount).toFixed(2), notes: p.notes ?? '', person: p.iou_person ?? '', touched: true })) : null);
       }
       setCats((c ?? []) as Category[]); storeCategories((c ?? []) as Category[]);
     })();
@@ -121,11 +124,11 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   }, [makeRule, ruleText, txn?.id]);
 
   // Changes not saved yet, against the transaction as loaded: closing the pop-up by accident asks first.
-  const savedParts = ((txn as any)?.transaction_splits ?? []).map((p: any) => [p.category_id, Number(p.amount).toFixed(2), p.notes ?? '']);
+  const savedParts = ((txn as any)?.transaction_splits ?? []).map((p: any) => [p.category_id, Number(p.amount).toFixed(2), p.notes ?? '', p.iou_person ?? '']);
   useUnsaved(ready && !!txn && !busy && (merchant !== (txn.merchant ?? '') || categoryId !== txn.category_id || notes !== (txn.notes ?? '') || tags !== (txn.tags ?? []).join(', ')
     || date !== txn.date || amount !== Number(txn.amount).toFixed(2) || makeRule
-    || iouPerson !== ((txn as any).iou_person ?? '') || (!!iouPerson && iouAmount !== ((txn as any).iou_amount != null ? Math.abs(Number((txn as any).iou_amount)).toFixed(2) : ''))
-    || JSON.stringify(parts?.map((p) => [p.category_id, p.amount, p.notes]) ?? []) !== JSON.stringify(savedParts)));
+    || iouPerson !== ((txn as any).iou_person ?? '') || (!!iouPerson && !!iouAmount.trim())
+    || JSON.stringify(parts?.map((p) => [p.category_id, p.amount, p.notes, p.person ?? '']) ?? []) !== JSON.stringify(savedParts)));
   // Every hook above the early returns below (a hook after one breaks a transaction opened by its link).
   const [planFor, setPlanFor] = useState<{ accounts: Account[]; seed: PlanSeed } | null>(null);
   if (!txn) return <View style={{ flex: 1, backgroundColor: t.bg }} />;
@@ -137,12 +140,13 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   const partValue = (v: string) => { const n = parseMoney(v); return isNaN(n) ? 0 : total < 0 && n > 0 && !v.trim().startsWith('+') ? -n : n; };
   const partsSum = round2((parts ?? []).reduce((s2, p) => s2 + partValue(p.amount), 0));
   const remaining = round2(total - partsSum);
+  const owedId = cats.find((c) => c.name === OWED_CATEGORY)?.id ?? null;
   const catName = (cid: string | null) => { const c = cats.find((x: any) => x.id === cid) as any; return c ? `${categoryIcon(c.name, c.icon)} ${c.name}` : 'Choose category'; };
   const startSplit = () => setParts([
     { category_id: categoryId, amount: total.toFixed(2), notes: '' },
     { category_id: null, amount: '0.00', notes: '' },
   ]);
-  const setPart = (i: number, patch: Partial<{ category_id: string | null; amount: string; notes: string }>) =>
+  const setPart = (i: number, patch: Partial<{ category_id: string | null; amount: string; notes: string; person: string }>) =>
     setParts((ps) => ps!.map((p, j) => (j === i ? { ...p, ...patch } : p)));
   // Typing an amount: the last part you haven't typed in yourself takes whatever is left of the total.
   const setPartAmount = (i: number, v: string) => setParts((ps) => {
@@ -177,20 +181,9 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     if (err) setError(err); else onDone();
   };
   // Saving marks it reviewed; "Mark as not reviewed" (on one already reviewed) saves and puts it back in the list to review.
-  // Money out counts toward what they owe you; money in (they paid you back, or lent you money) counts against it.
-  // Left out of the update when the column isn't there yet (before the migration) and nothing was entered.
-  const iouFields = (amt: number) => {
-    const who = iouPerson.trim();
-    if (!who && !('iou_person' in (txn ?? {}))) return {};
-    const typed = iouAmount.trim() ? parseMoney(iouAmount) : NaN;
-    const part = Math.abs(Number.isFinite(typed) ? typed : amt);
-    return { iou_person: who || null, iou_amount: who ? round2((amt < 0 ? 1 : -1) * Math.min(part, Math.abs(amt))) : null };
-  };
   const save = async (markReviewed = true) => {
     setBusy(true);
     setError('');
-    const cat = cats.find((c) => c.id === categoryId);
-    const changedCategory = categoryId !== txn.category_id;
     const newDate = toIsoDate(date);
     const newAmount = round2(parseMoney(amount));
     if (!newDate || isNaN(newAmount)) { setBusy(false); setError('Check the date and amount.'); return; }
@@ -203,14 +196,32 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     if (split && (parts!.length < 2 || Math.abs(remaining) > 0.004 || parts!.some((p) => !p.category_id))) {
       setBusy(false); setError(`Each part needs a category, and the parts must add up to ${formatMoney(newAmount)} (${formatMoney(remaining)} left).`); return;
     }
+    // Money owed on a transaction that isn't split: all of it goes under "Money owed"; a share of it
+    // becomes a split, your part under the category chosen and theirs under "Money owed".
+    const who = iouPerson.trim();
+    const typed = !split && who && iouAmount.trim() ? Math.abs(parseMoney(iouAmount)) : NaN;
+    const share = Number.isFinite(typed) && typed > 0 && typed < Math.abs(newAmount) - 0.004 && categoryId !== owedId ? round2(Math.sign(newAmount) * typed) : null;
+    if (share != null && !categoryId) { setBusy(false); setError(`Choose a category for your part first (the ${formatMoney(Math.abs(newAmount) - typed)} that isn't ${who}'s).`); return; }
+    let owed = owedId;
+    if (!owed && !split && who) {
+      try { owed = await owedCategory(); } catch (e) { setBusy(false); setError(e instanceof Error ? e.message : String(e)); return; }
+    }
+    const rows = split ? parts!.map((p) => ({ category_id: p.category_id, amount: round2(partValue(p.amount)), notes: p.notes.trim() || null, iou_person: p.category_id === owedId ? p.person?.trim() || null : null }))
+      : share != null ? [{ category_id: categoryId, amount: round2(newAmount - share), notes: null, iou_person: null }, { category_id: owed, amount: share, notes: null, iou_person: who }]
+      : null;
+    const useSplit = !!rows;
+    const catNow = !useSplit && who ? owed : categoryId;
+    const cat = cats.find((c) => c.id === catNow) ?? (catNow && catNow === owed ? { kind: 'transfer' } as Category : undefined);
+    const changedCategory = catNow !== txn.category_id;
+    const kindOf = (cid: string | null) => (cid && cid === owed ? 'transfer' : cats.find((c) => c.id === cid)?.kind);
     // Splits: replace the parts (or remove them when the split was undone).
     const hadSplit = (txn.transaction_splits ?? []).length > 0;
-    if (split || hadSplit) {
+    if (useSplit || hadSplit) {
       const del = await supabase.from('transaction_splits').delete().eq('transaction_id', txn.id);
       if (del.error) { setBusy(false); setError(del.error.message); return; }
     }
-    if (split) {
-      const ins = await supabase.from('transaction_splits').insert(parts!.map((p) => ({ transaction_id: txn.id, category_id: p.category_id, amount: round2(partValue(p.amount)), notes: p.notes.trim() || null })));
+    if (rows) {
+      const ins = await supabase.from('transaction_splits').insert(rows.map((r) => ({ transaction_id: txn.id, ...r })));
       if (ins.error) { setBusy(false); setError(ins.error.message); return; }
     }
     const { error } = await supabase.from('transactions').update({
@@ -218,15 +229,15 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       date: newDate,
       amount: newAmount,
       merchant: merchant.trim() || null,
-      ...(split ? { category_id: null, category_source: 'manual', is_transfer: parts!.every((p) => cats.find((c) => c.id === p.category_id)?.kind === 'transfer') }
-        : { category_id: categoryId, category_source: changedCategory || hadSplit ? 'manual' : txn.category_source, is_transfer: cat?.kind === 'transfer' }),
+      ...(useSplit ? { category_id: null, category_source: 'manual', is_transfer: rows.every((r) => kindOf(r.category_id) === 'transfer') }
+        : { category_id: catNow, category_source: changedCategory || hadSplit ? 'manual' : txn.category_source, is_transfer: cat?.kind === 'transfer' }),
       notes: notes.trim() || null,
       tags: [...new Set(tags.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean))],
-      ...iouFields(newAmount),
+      ...(who || 'iou_person' in txn ? { iou_person: !useSplit && who ? who : null } : {}),
       reviewed: markReviewed,
       reviewed_at: markReviewed ? new Date().toISOString() : null,
     }).eq('id', txn.id);
-    if (!error && makeRule && categoryId && !split) {
+    if (!error && makeRule && categoryId && !useSplit && catNow === categoryId) {
       await supabase.from('category_rules').insert({ match_text: ruleText, category_id: categoryId });
       const p = searchPattern(ruleText);
       if (backfill && p) {
@@ -240,17 +251,17 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       }
     }
     // A transfer pair only holds while this side is a transfer: a spending or income category ends it.
-    const nowTransfer = split ? parts!.every((p) => cats.find((c) => c.id === p.category_id)?.kind === 'transfer') : categoryId ? cat?.kind === 'transfer' : txn.is_transfer;
+    const nowTransfer = useSplit ? rows.every((r) => kindOf(r.category_id) === 'transfer') : catNow ? cat?.kind === 'transfer' : txn.is_transfer;
     if (!error && txn.transfer_pair_id && !nowTransfer) await unpair(txn.id, txn.transfer_pair_id);
     setBusy(false);
     if (error) { setError(error.message); return; }
     // Undo puts the transaction's own fields back. Splits and newly made rules are left as they are.
     const before = { merchant: txn.merchant, category_id: txn.category_id, category_source: txn.category_source, notes: txn.notes, tags: txn.tags ?? [], date: txn.date, amount: txn.amount,
       reviewed: txn.reviewed, is_transfer: txn.is_transfer, original_date: txn.original_date ?? null, original_amount: txn.original_amount ?? null,
-      ...('iou_person' in txn ? { iou_person: (txn as any).iou_person ?? null, iou_amount: (txn as any).iou_amount ?? null } : {}) };
+      ...('iou_person' in txn ? { iou_person: (txn as any).iou_person ?? null } : {}) };
     const id = txn.id;
     forgetKnown();
-    toast('Saved', split || hadSplit ? {} : { undo: async () => { const r = await supabase.from('transactions').update(before).eq('id', id); if (r.error) throw new Error(r.error.message); } });
+    toast('Saved', useSplit || hadSplit ? {} : { undo: async () => { const r = await supabase.from('transactions').update(before).eq('id', id); if (r.error) throw new Error(r.error.message); } });
     onDone();
   };
 
@@ -324,6 +335,10 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
                   style={[styles.input, { width: 110, textAlign: 'right', color: t.text, borderColor: t.line, paddingVertical: 9 }]} />
                 {parts!.length > 2 && <Pressable onPress={() => setParts(parts!.filter((_, j) => j !== i))} hitSlop={8}><Text style={{ color: t.danger, fontSize: 18 }}>×</Text></Pressable>}
               </View>
+              {!!owedId && p.category_id === owedId && (
+                <SuggestInput style={[styles.input, { color: t.text, borderColor: t.line, paddingVertical: 9 }]} value={p.person ?? ''} onChange={(v) => setPart(i, { person: v })}
+                  options={known.people} placeholder={partValue(p.amount) < 0 ? 'Who owes you this part?' : 'Who paid you back?'} />
+              )}
               <TextInput value={p.notes} onChangeText={(v) => setPart(i, { notes: v })} placeholder="Note for this part (optional)" placeholderTextColor={t.muted}
                 style={{ color: t.text, fontSize: 13, paddingHorizontal: 4 }} />
             </View>
@@ -337,6 +352,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
             </Text>
           </View>
           {total < 0 && <Text style={{ color: t.muted, fontSize: 12 }}>Type amounts without the minus sign; the last part fills in with what’s left. Start a part with + if it’s money back.</Text>}
+          <Text style={{ color: t.muted, fontSize: 12 }}>Someone’s share: put that part under “{OWED_CATEGORY}” and add their name. It stays out of your budget.</Text>
         </Card>
       )}
       {!split && <Card style={{ padding: 0 }}>
@@ -375,18 +391,33 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       <Text style={[styles.label, { color: t.muted }]}>Tags (comma-separated)</Text>
       <SuggestInput multi style={input} value={tags} onChange={setTags} options={known.tags} placeholder="e.g. trip, reimbursable" />
 
-      <Text style={[styles.label, { color: t.muted }]}>Money owed</Text>
-      <SuggestInput style={input} value={iouPerson} onChange={setIouPerson} options={known.people} placeholder="Who? e.g. Mum (leave empty if nobody)" />
-      {!!iouPerson.trim() && (
-        <View style={{ gap: 4, marginTop: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ color: t.text, flex: 1 }}>{Number(txn.amount) < 0 ? `${iouPerson.trim()} owes you` : `Counts against what ${iouPerson.trim()} owes you`}</Text>
-            <TextInput style={[input, { width: 120, textAlign: 'right' }]} value={iouAmount} onChangeText={setIouAmount} keyboardType="decimal-pad"
-              placeholder={Math.abs(Number(txn.amount)).toFixed(2)} placeholderTextColor={t.muted} accessibilityLabel="Amount owed" />
-          </View>
-          <Text style={{ color: t.muted, fontSize: 12 }}>{Number(txn.amount) < 0 ? 'Money you paid for them or lent them. For a shared bill, enter their share.' : 'Money they paid you back, or lent you (then you owe them).'} Leave the amount empty for all of it.</Text>
-        </View>
-      )}
+      {!split && (() => {
+        // Money owed: all of it (filed under "Money owed"), or their share (split off under "Money owed").
+        const whole = categoryId === owedId && !!owedId;
+        const out = Number(txn.amount) < 0;
+        const name = iouPerson.trim();
+        return (
+          <>
+            <Text style={[styles.label, { color: t.muted }]}>Money owed</Text>
+            <SuggestInput style={input} value={iouPerson} onChange={setIouPerson} options={known.people} placeholder={whole ? 'Who?' : 'Who? e.g. Mum (leave empty if nobody)'} />
+            {!!name && !whole && (
+              <View style={{ gap: 4, marginTop: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ color: t.text, flex: 1 }}>{out ? `${name}’s share` : `Paid back by ${name}`}</Text>
+                  <TextInput style={[input, { width: 120, textAlign: 'right' }]} value={iouAmount} onChangeText={setIouAmount} keyboardType="decimal-pad"
+                    placeholder={Math.abs(Number(txn.amount)).toFixed(2)} placeholderTextColor={t.muted} accessibilityLabel="Amount owed" />
+                </View>
+              </View>
+            )}
+            {(!!name || whole) && (
+              <Text style={{ color: t.muted, fontSize: 12, marginTop: 4 }}>
+                {whole ? `All of it is under “${OWED_CATEGORY}”, so it stays out of your budget${name ? `, and ${out ? `${name} owes you it` : `it counts against what ${name} owes you`}` : '. Add who it’s for'}.`
+                  : `${out ? 'Money you paid for them or lent them.' : 'Money they paid you back, or lent you (then you owe them).'} Leave the amount empty for all of it; a share splits the transaction, with their part under “${OWED_CATEGORY}”. Either way it stays out of your budget.`}
+              </Text>
+            )}
+          </>
+        );
+      })()}
 
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       <Button title={txn.reviewed ? 'Save' : 'Save and mark reviewed'} onPress={() => save()} busy={busy || !ready} style={{ marginTop: 16 }} />

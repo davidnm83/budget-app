@@ -217,7 +217,7 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
     const settled = fresh.filter((t) => !t.pending);
     if (settled.length) {
       const dates = settled.map((t) => t.date).sort();
-      const { data: unlinked } = await admin.from('transactions').select('id, account_id, date, amount, name, category_id, notes, import_id')
+      const { data: unlinked } = await admin.from('transactions').select('id, account_id, date, amount, name, category_id, notes, import_id, iou_person')
         .eq('user_id', item.user_id).is('plaid_transaction_id', null)
         .in('account_id', [...new Set(settled.map((t) => accounts.get(t.account_id)!))])
         .gte('date', addDays(dates[0], -3)).lte('date', addDays(dates[dates.length - 1], 3));
@@ -243,7 +243,7 @@ export async function syncItem(admin: Admin, item: PlaidItemRow): Promise<SyncRe
           const parts = mine.filter((u: any) => g.manualIds.includes(u.id));
           const [keep, ...rest] = parts;
           await admin.from('transaction_splits').insert(parts.map((u: any) => ({
-            user_id: item.user_id, transaction_id: keep.id, category_id: u.category_id, amount: u.amount, notes: u.notes,
+            user_id: item.user_id, transaction_id: keep.id, category_id: u.category_id, amount: u.amount, notes: u.notes, iou_person: u.iou_person ?? null,
           })));
           // Remove the other parts first; their import ids move to the kept row (they must stay unique).
           await admin.from('transactions').delete().in('id', rest.map((u: any) => u.id));
