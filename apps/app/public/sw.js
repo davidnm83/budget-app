@@ -41,7 +41,7 @@ self.addEventListener('push', (e) => {
   let m = {};
   try { m = e.data ? e.data.json() : {}; } catch { m = { title: 'Budget', body: e.data ? e.data.text() : '' }; }
   e.waitUntil(self.registration.showNotification(m.title || 'Budget', {
-    body: m.body || '', tag: m.tag, data: { url: m.url || '/' }, icon: '/icon-192.png', badge: '/icon-192.png',
+    body: m.body || '', tag: m.tag, data: { url: m.url || '/' }, icon: '/icon-192.png', badge: '/badge-96.png',
   }));
 });
 // A tap opens the screen it is about: in the app if it is open, else a new window.
