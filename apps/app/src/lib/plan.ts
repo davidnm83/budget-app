@@ -141,7 +141,7 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
     loadRecurring(), loadEntries(addDays(from, -31), addDays(to, 31)), loadPosted(ids, addDays(from, -4), addDays(to > now ? to : now, 4)),
   ]);
   // Planned items for a week: bills, income and one-offs.
-  const plannedFor = (w: string) => expandPlan(recurring, entries, w, addDays(w, 6));
+  const plannedFor = (w: string, from = w) => expandPlan(recurring, entries, from, addDays(w, 6));
 
   const balanceOn = (d: string) => Object.fromEntries(planAccounts.map((a) => [a.id, balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), d)]));
   const shown = only ? planAccounts.filter((a) => a.id === only) : planAccounts;
@@ -160,7 +160,7 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   const last = week > aheadEnd ? week : aheadEnd;
   for (let w = thisWeek; w <= last; w = addDays(w, 7)) {
     starts.set(w, roll);
-    const v = buildWeek({ weekStart: w, today: now, planned: w === thisWeek ? expandPlan(recurring, entries, addDays(now, -10), addDays(w, 6)) : plannedFor(w), actuals: posted, accounts: accountsFor(roll), unlisted });
+    const v = buildWeek({ weekStart: w, today: now, planned: plannedFor(w, w === thisWeek ? addDays(now, -10) : w), actuals: posted, accounts: accountsFor(roll), unlisted });
     if (w <= aheadEnd) strip.push({ week: w, end: total(v.endBalanceByAccount), warning: v.warnings.find((x) => shownIds.has(x.accountId)) ?? null, past: false });
     if (ahead.length < 4) {
       ahead.push({ week: w, end: Math.round(shown.reduce((s2, a) => s2 + v.endBalanceByAccount[a.id], 0) * 100) / 100, warning: v.warnings.find((x) => shownIds.has(x.accountId)) ?? null });
@@ -170,7 +170,7 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   // Past weeks start from the real balance back then.
   const start = week < thisWeek ? balanceOn(week) : starts.get(week)!;
   const view = buildWeek({
-    weekStart: week, today: now, planned: week === thisWeek ? expandPlan(recurring, entries, addDays(now, -10), addDays(week, 6)) : plannedFor(week), actuals: posted, unlisted,
+    weekStart: week, today: now, planned: plannedFor(week, week === thisWeek ? addDays(now, -10) : week), actuals: posted, unlisted,
     accounts: shown.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })),
   });
   // What the accounts really held at the end of each day so far, to set against the plan's running balance.
