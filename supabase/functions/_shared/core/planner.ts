@@ -81,6 +81,8 @@ export interface WeekRow {
   actual: number | null;
   counted: number;         // what the running balance uses
   overdue: boolean;
+  /** Already in the bank's balance but not listed by the bank yet (see `unlisted` in buildWeek): counts as done. */
+  unlisted?: boolean;
   item: PlannedItem | null;
   txn: PostedTxn | null;
   balanceAfter: number;    // running balance of the view (one account or the combined group)
@@ -112,6 +114,12 @@ export function buildWeek(opts: {
   accounts: { id: string; startBalance: number; buffer: number; name: string }[];
   planned: PlannedItem[];
   actuals: PostedTxn[];
+  /**
+   * Per account, money the bank has already counted in its balance but not listed as transactions yet
+   * (accounts.balance_gap). When planned entries from the last days add up to exactly that, the bank has done
+   * them: they count as done, so today's balance (which already has them) doesn't lose them a second time.
+   */
+  unlisted?: Record<string, number>;
 }): WeekView {
   const ids = new Set(opts.accounts.map((a) => a.id));
   const span = opts.days ?? 7;
@@ -127,16 +135,22 @@ export function buildWeek(opts: {
     3,
   );
   const match = new Map([...auto, ...manual]);
+  // Entries from before this view (yesterday's, when the view starts today) can be part of what the bank counted
+  // too; ones already paid by a listed transaction aren't.
+  const earlier = opts.planned.filter((p) => p.accountId && ids.has(p.accountId) && p.date < opts.weekStart && p.date >= addDays(opts.today, -10));
+  const earlierPaid = earlier.length ? matchDues(earlier.filter((p) => !p.matchedTxnId).map((p) => ({ key: p.key, date: p.date, amount: p.amount, accountId: p.accountId, matchText: p.matchText, estimated: p.estimated })), actuals, 3) : new Map();
+  const unlisted = unlistedPlanned([...earlier.filter((p) => !p.matchedTxnId && !earlierPaid.has(p.key)), ...planned.filter((p) => !match.has(p.key))], opts.unlisted ?? {}, opts.today);
   const txnById = new Map(actuals.map((t) => [t.id, t]));
   const usedTxn = new Set(match.values());
 
   const rows: Omit<WeekRow, 'balanceAfter'>[] = [];
   for (const p of planned) {
     const t = match.has(p.key) ? txnById.get(match.get(p.key)!) ?? null : null;
+    const done = !t && unlisted.has(p.key);
     rows.push({
       key: p.key, date: p.date, kind: 'planned', description: p.description, accountId: p.accountId,
-      planned: p.amount, actual: t ? t.amount : null, counted: t ? t.amount : p.amount,
-      overdue: !t && p.date < opts.today, item: p, txn: t,
+      planned: p.amount, actual: t ? t.amount : null, counted: t ? t.amount : done ? 0 : p.amount,
+      overdue: !t && !done && p.date < opts.today, ...(done ? { unlisted: true } : {}), item: p, txn: t,
     });
   }
   for (const t of actuals.filter((x) => !usedTxn.has(x.id) && x.date >= opts.weekStart && x.date <= end)) {
@@ -183,6 +197,26 @@ export function buildWeek(opts: {
       overdue: rows.filter((r) => r.overdue).length,
     },
   };
+}
+
+/**
+ * The planned entries the bank has already counted: per account, the smallest set of entries due from 10 days
+ * back to tomorrow that adds up to the unlisted amount, to the cent. None when nothing adds up exactly.
+ */
+export function unlistedPlanned(planned: PlannedItem[], unlisted: Record<string, number>, today: IsoDate): Set<string> {
+  const out = new Set<string>();
+  for (const [accountId, gap] of Object.entries(unlisted)) {
+    if (Math.abs(gap) < 0.01) continue;
+    const near = planned.filter((p) => p.accountId === accountId && p.date >= addDays(today, -10) && p.date <= addDays(today, 1)).slice(0, 14);
+    let best: PlannedItem[] | null = null;
+    for (let mask = 1; mask < 1 << near.length; mask++) {
+      const pick = near.filter((_, i) => mask & (1 << i));
+      if (best && pick.length >= best.length) continue;
+      if (Math.abs(pick.reduce((x, p) => x + p.amount, 0) - gap) < 0.005) best = pick;
+    }
+    for (const p of best ?? []) out.add(p.key);
+  }
+  return out;
 }
 
 /** Balance at the start of `date`: today's balance minus everything that posted on or after it. */

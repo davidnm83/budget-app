@@ -100,3 +100,23 @@ describe('weekly planner', () => {
     ]);
   });
 });
+
+describe('planned entries the bank has counted but not listed', () => {
+  const item = (key: string, date: string, amount: number) => ({ key, date, description: key, amount, accountId: 'chq', categoryId: null, estimated: false,
+    matchText: null, recurringId: null, occurrenceDate: null, entryId: key, transfer: false, matchedTxnId: null });
+  const planned = [item('card', '2026-10-08', -400), item('in', '2026-10-07', 25), item('fee', '2026-10-07', -15), item('rent', '2026-10-09', -900)];
+  const week = (unlisted?: Record<string, number>) => buildWeek({ weekStart: '2026-10-05', today: '2026-10-08', accounts: [{ id: 'chq', name: 'Chequing', startBalance: 1200, buffer: 0 }], planned, actuals: [], unlisted });
+  it('entries that add up to the unlisted amount count as done, not twice', () => {
+    const w = week({ chq: -390 });
+    const rows = w.days.flatMap((d) => d.rows);
+    expect(rows.filter((r) => r.unlisted).map((r) => r.key).sort()).toEqual(['card', 'fee', 'in']);
+    expect(rows.find((r) => r.key === 'fee')!.overdue).toBe(false);
+    expect(w.summary.overdue).toBe(0);
+    expect(w.endBalance).toBe(300); // only rent still to come
+  });
+  it('nothing is assumed when the amounts do not add up exactly', () => {
+    const w = week({ chq: -391 });
+    expect(w.days.flatMap((d) => d.rows).some((r) => r.unlisted)).toBe(false);
+    expect(w.endBalance).toBe(-90);
+  });
+});

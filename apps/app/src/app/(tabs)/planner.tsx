@@ -148,7 +148,7 @@ export default function Planner() {
           </ScrollView>
         )}
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-        {planAccounts.length > 0 && week === thisWeek && <NotListedYet t={t} accounts={planAccounts.filter((a) => !only || a.id === only)} refresh={data} />}
+        {planAccounts.length > 0 && week === thisWeek && <NotListedYet t={t} accounts={planAccounts.filter((a) => !only || a.id === only)} refresh={data} done={(data?.view.days ?? []).flatMap((d) => d.rows).filter((r) => r.unlisted)} />}
         {data && !planAccounts.length && (
           <Card><Text style={{ color: t.text }}>Choose the accounts that pay your bills: tap one on the Accounts tab (or Settings → Planner) and turn on “Plan bills from this account”.</Text></Card>
         )}
@@ -278,8 +278,8 @@ const styles = StyleSheet.create({
  * What the balances already include but the week's list doesn't count yet: pending transactions,
  * and money the bank has moved without listing it (the balance gap the sync keeps track of).
  */
-function NotListedYet({ t, accounts, refresh }: { t: Theme; accounts: { id: string; name: string }[]; refresh: unknown }) {
-  const [lines, setLines] = useState<{ name: string; pending: number; count: number; gap: number }[]>([]);
+function NotListedYet({ t, accounts, refresh, done: doneRows }: { t: Theme; accounts: { id: string; name: string }[]; refresh: unknown; done: WeekRow[] }) {
+  const [lines, setLines] = useState<{ id: string; name: string; pending: number; count: number; gap: number }[]>([]);
   const ids = accounts.map((a) => a.id).join(',');
   useEffect(() => {
     if (!accounts.length) return;
@@ -292,7 +292,7 @@ function NotListedYet({ t, accounts, refresh }: { t: Theme; accounts: { id: stri
       setLines(accounts.map((a) => {
         const mine = ((p.data ?? []) as any[]).filter((r) => r.account_id === a.id);
         const gap = Number(((g.data ?? []) as any[]).find((r) => r.id === a.id)?.balance_gap ?? 0);
-        return { name: a.name, pending: mine.reduce((x, r) => x + Number(r.amount), 0), count: mine.length, gap };
+        return { id: a.id, name: a.name, pending: mine.reduce((x, r) => x + Number(r.amount), 0), count: mine.length, gap };
       }).filter((l) => l.count > 0 || Math.abs(l.gap) >= 1));
     });
     return () => { live = false; };
@@ -301,9 +301,9 @@ function NotListedYet({ t, accounts, refresh }: { t: Theme; accounts: { id: stri
   const signed = (n: number) => `${n < 0 ? '−' : '+'}${formatMoney(Math.abs(n))}`;
   return (
     <View style={{ gap: 2, paddingHorizontal: 4 }}>
-      {lines.map((l) => (
+      {lines.map((l) => ({ ...l, done: doneRows.filter((r) => r.accountId === l.id).map((r) => r.description) })).map((l) => (
         <Text key={l.name} style={{ color: t.muted, fontSize: 12 }}>
-          ⏳ {l.name}: {[l.count ? `${signed(l.pending)} pending (${l.count})` : '', Math.abs(l.gap) >= 1 ? `${signed(l.gap)} the bank has counted but not listed yet` : ''].filter(Boolean).join(' · ')}. Not in this week’s list until it posts.
+          ⏳ {l.name}: {[l.count ? `${signed(l.pending)} pending (${l.count})` : '', Math.abs(l.gap) >= 1 ? `${signed(l.gap)} the bank has counted but not listed yet${l.done.length ? ` (${l.done.join(', ')})` : ''}` : ''].filter(Boolean).join(' · ')}.{l.done.length ? ' Already in the balance; they show as ⏳ below.' : ' Not in this week’s list until it posts.'}
         </Text>
       ))}
     </View>

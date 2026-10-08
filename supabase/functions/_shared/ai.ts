@@ -213,13 +213,14 @@ export async function runTool(db: Admin, name: string, input: any, today: string
     const txns: PostedTxn[] = ((posted ?? []) as any[]).map((r) => ({ id: r.id, date: r.date, amount: num(r.amount), accountId: r.account_id, name: r.name, merchant: r.merchant }));
     const week = buildWeek({
       weekStart: today, days: days + 1, today,
-      planned: expandPlan(((rec ?? []) as any[]).map((r) => ({ ...r, amount: num(r.amount) })), ((ent ?? []) as any[]).filter((e) => !e.plan_key).map((e) => ({ ...e, amount: num(e.amount) })), today, addDays(today, days)),
+      planned: expandPlan(((rec ?? []) as any[]).map((r) => ({ ...r, amount: num(r.amount) })), ((ent ?? []) as any[]).filter((e) => !e.plan_key).map((e) => ({ ...e, amount: num(e.amount) })), addDays(today, -10), addDays(today, days)),
       actuals: txns,
+      unlisted: Object.fromEntries(plan.map((a) => [a.id, num(a.balance_gap)] as const).filter(([, g]) => Math.abs(g) >= 0.01)),
       accounts: plan.map((a) => ({ id: a.id, name: a.name, buffer: num(a.plan_buffer), startBalance: balanceAt(signed(a), txns.filter((t) => t.accountId === a.id && t.date <= today), today) })),
     });
     const name = (id: string | null) => plan.find((a) => a.id === id)?.name ?? '';
     return {
-      planned: week.days.flatMap((d) => d.rows).filter((r) => r.kind === 'planned').map((r) => ({ date: r.date, what: r.description, account: name(r.accountId), amount: r.planned, paid: r.actual != null })),
+      planned: week.days.flatMap((d) => d.rows).filter((r) => r.kind === 'planned').map((r) => ({ date: r.date, what: r.description, account: name(r.accountId), amount: r.planned, paid: r.actual != null || !!r.unlisted, ...(r.unlisted ? { note: 'done by the bank, not listed yet' } : {}) })),
       dips: week.warnings.map((w) => ({ date: w.date, account: name(w.accountId), balance: round2(w.balance), buffer: w.buffer, after: w.cause })),
       endBalance: round2(week.endBalance),
     };

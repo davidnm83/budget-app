@@ -75,7 +75,9 @@ export async function notesFor(admin: Admin, userId: string, s: NotifySettings, 
     const entries = ((ent ?? []) as any[]).filter((e) => !e.plan_key).map((e) => ({ ...e, amount: num(e.amount) }));
     const txns: PostedTxn[] = posted.map((r) => ({ id: r.id, date: r.date, amount: num(r.amount), accountId: r.account_id, name: r.name, merchant: r.merchant }));
     const startOn = (d: string) => planAccts.map((a) => ({ id: a.id, name: a.name, buffer: num(a.plan_buffer), startBalance: balanceAt(signed(a), txns.filter((t) => t.accountId === a.id && t.date <= today), d) }));
-    plan = buildWeek({ weekStart: today, days: ahead + 1, today, planned: expandPlan(recurring, entries, today, addDays(today, ahead)), actuals: txns, accounts: startOn(today) });
+    // Entries the bank has counted but not listed yet (balance_gap) count as done, so they aren't taken off twice.
+    const unlisted = Object.fromEntries(planAccts.map((a) => [a.id, num(a.balance_gap)] as const).filter(([, g]) => Math.abs(g) >= 0.01));
+    plan = buildWeek({ weekStart: today, days: ahead + 1, today, planned: expandPlan(recurring, entries, addDays(today, -10), addDays(today, ahead)), actuals: txns, accounts: startOn(today), unlisted });
     if (wantRadar('bill')) back = buildWeek({ weekStart: addDays(today, -14), days: 14, today, planned: expandPlan(recurring, entries, addDays(today, -14), addDays(today, -1)), actuals: txns, accounts: startOn(addDays(today, -14)) });
   }
   const rows = plan ? plan.days.flatMap((d) => d.rows) : [];
