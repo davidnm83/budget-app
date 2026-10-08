@@ -34,8 +34,20 @@ export function LockScreen() {
     try { await unlockWithFingerprint(); }
     catch (e: any) { if (e?.name !== 'NotAllowedError' && e?.name !== 'AbortError') setError(e instanceof Error ? e.message : String(e)); }
   };
-  // Offer the fingerprint as soon as the screen appears; the button is there if the browser wants a tap first.
-  useEffect(() => { if (lock.locked && finger && !asked.current) { asked.current = true; byFinger(); } if (!lock.locked) { asked.current = false; setPin(''); setError(''); setForgot(false); } }, [lock.locked, finger]);
+  // Offer the fingerprint as soon as the screen appears, but only in the tab you're looking at: a browser that
+  // reopens the app in a background tab (or a window behind another) waits until you switch to it. The button is
+  // there if the browser wants a tap first.
+  useEffect(() => {
+    if (!lock.locked) { asked.current = false; setPin(''); setError(''); setForgot(false); return; }
+    if (!finger || asked.current) return;
+    const seen = () => typeof document === 'undefined' || (document.visibilityState === 'visible' && document.hasFocus());
+    const ask = () => { if (asked.current || !seen()) return; asked.current = true; byFinger(); };
+    ask();
+    if (asked.current || typeof document === 'undefined') return;
+    document.addEventListener('visibilitychange', ask);
+    window.addEventListener('focus', ask);
+    return () => { document.removeEventListener('visibilitychange', ask); window.removeEventListener('focus', ask); };
+  }, [lock.locked, finger]);
   // In the background (or just back from it): a plain cover over everything until it's decided whether to lock.
   if (!lock.locked) return lock.covered ? <View style={[StyleSheet.absoluteFill, ON_TOP, { backgroundColor: t.bg }]} /> : null;
 
