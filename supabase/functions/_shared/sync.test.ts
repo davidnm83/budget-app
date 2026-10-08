@@ -254,13 +254,17 @@ Deno.test('a pending transaction is replaced in place when it posts, keeping its
 Deno.test('balance gap: money the bank counted but has not listed yet', async () => {
   const tables: Record<string, Row[]> = {
     accounts: [{ id: 'a1', type: 'depository', current_balance: 450, balance_anchor: 500, balance_anchor_at: new Date(Date.now() - 86_400_000).toISOString() }],
-    transactions: [{ id: 't', account_id: 'a1', amount: -20, created_at: new Date().toISOString() }],
+    transactions: [
+      { id: 't', account_id: 'a1', amount: -20, date: new Date().toISOString().slice(0, 10), created_at: new Date().toISOString() },
+      // Old history imported today: it didn't move today's balance.
+      { id: 'old', account_id: 'a1', amount: 368.94, date: '2024-02-01', created_at: new Date().toISOString() },
+    ],
   };
   const db = fakeDb(tables);
   await trackBalanceGaps(db, ['a1']);
   assertEquals(tables.accounts[0].balance_gap, -30, '$50 down, $20 of it listed');
   // The rest arrives: the gap closes and the anchor moves on.
-  tables.transactions.push({ id: 'u', account_id: 'a1', amount: -30, created_at: new Date().toISOString() });
+  tables.transactions.push({ id: 'u', account_id: 'a1', amount: -30, date: new Date().toISOString().slice(0, 10), created_at: new Date().toISOString() });
   await trackBalanceGaps(db, ['a1']);
   assertEquals([tables.accounts[0].balance_gap, tables.accounts[0].balance_anchor], [0, 450]);
 });

@@ -367,7 +367,9 @@ export async function trackBalanceGaps(admin: Admin, accountIds: string[], today
     await admin.from('balance_snapshots').upsert({ user_id: a.user_id, account_id: a.id, date: today, balance: signed, taken_at: nowIso }, { onConflict: 'account_id,date' });
     let gap = 0;
     if (a.balance_anchor != null && a.balance_anchor_at) {
-      const { data: since } = await admin.from('transactions').select('amount').eq('account_id', a.id).gt('created_at', a.balance_anchor_at).limit(5000);
+      // Only what happened around then or later: history imported since (older dates) never moved today's balance.
+      const from = addDays(String(a.balance_anchor_at).slice(0, 10), -7);
+      const { data: since } = await admin.from('transactions').select('amount').eq('account_id', a.id).gt('created_at', a.balance_anchor_at).gte('date', from).limit(5000);
       const moved = ((since ?? []) as any[]).reduce((x, r) => x + Number(r.amount), 0);
       gap = Math.round((signed - (Number(a.balance_anchor) + moved)) * 100) / 100;
     }
