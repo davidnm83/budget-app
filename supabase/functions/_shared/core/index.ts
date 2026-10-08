@@ -19,3 +19,4 @@ export * from './goals.ts';
 export * from './receipts.ts';
 export * from './review.ts';
 export * from './notify.ts';
+export * from './debts.ts';

@@ -7,6 +7,7 @@ import { router } from 'expo-router';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
+import { openYearReview, YearReview } from '@/components/YearReview';
 import { Bar, Button } from '@/components/ui';
 import { loadGoals, type Goal } from '@/lib/goals';
 import { useOffline } from '@/lib/offline';
@@ -79,7 +80,7 @@ export function MonthlyReview() {
     }).catch(() => {});
     return () => { live = false; };
   }, [offline]);
-  return month ? <ReviewSheet month={month} /> : null;
+  return <>{month && <ReviewSheet month={month} />}<YearReview /></>;
 }
 
 function ReviewSheet({ month }: { month: Month }) {
@@ -130,6 +131,7 @@ function ReviewSheet({ month }: { month: Month }) {
           )}
           <View style={{ gap: 8 }}>
             {r.toReview > 0 && <Button title={`Review ${r.toReview} transaction${r.toReview === 1 ? '' : 's'} from ${monthName(r.month).split(' ')[0]}`} kind="plain" onPress={() => go(txnHref({ mode: 'review', from: r.month, to: monthEnd(r.month), label: monthName(r.month) }))} />}
+            {r.month.slice(5, 7) === '12' && <Button title={`See ${r.month.slice(0, 4)} in review`} onPress={() => { const y = Number(r.month.slice(0, 4)); close(); afterClose(() => openYearReview(y)); }} />}
             <Button title={`Open ${monthName(r.month).split(' ')[0]}'s budget`} kind="plain" onPress={() => go({ pathname: '/budget', params: { month: r.month } })} />
           </View>
         </View>

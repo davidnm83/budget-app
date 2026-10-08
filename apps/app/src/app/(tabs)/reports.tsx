@@ -13,6 +13,7 @@ import { addMonths, formatMoney, monthEnd, monthName } from '@budget-app/core';
 // Month totals cover whole months; ranges here always start on the 1st and end today or at a month end.
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { WatchPage } from '@/components/WatchPage';
+import { openYearReview } from '@/components/YearReview';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -103,7 +104,14 @@ export default function Reports() {
       </Pressable>
     </ScrollView>
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
-      {!custom && tab !== 'watch' && <DateRangeButton value={picked} onChange={setPicked} />}
+      {!custom && tab !== 'watch' && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <DateRangeButton value={picked} onChange={setPicked} />
+          <Pressable onPress={() => openYearReview(Number(now.slice(0, 4)) - (now.slice(5, 7) <= '02' ? 1 : 0))} style={[styles.tab, { borderColor: t.line, backgroundColor: t.card }]} accessibilityRole="button">
+            <Ionicons name="sparkles-outline" size={15} color={t.accent} /><Text style={{ color: t.accent, fontWeight: '600' }}>Year in review</Text>
+          </Pressable>
+        </View>
+      )}
       {tab === 'watch' && <WatchPage />}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {custom && (

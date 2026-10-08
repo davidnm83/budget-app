@@ -16,6 +16,7 @@ import { AccountSheet } from '@/components/AccountSheet';
 import { PageBoard } from '@/components/PageBoard';
 import { PlansCard } from '@/components/PaymentPlans';
 import { CreditScoreCard } from '@/components/CreditScore';
+import { PayoffPlan } from '@/components/PayoffPlan';
 import { loadPlans, syncPlans, type CardPlan } from '@/lib/paymentPlans';
 import { loadMinimums, ruleFor, type CardMinimum } from '@/lib/cardMinimums';
 import { makeEntry } from '@/components/Widgets';
@@ -27,7 +28,7 @@ import { useTheme } from '@/lib/theme';
 import { bankBalance, signedBalance, type Account } from '@/lib/types';
 
 // Card debt and utilisation over time are Chart widgets now (Card debt; Card utilisation), added from Edit layout.
-const CREDIT_DEFAULT = [makeEntry('credit:tiles', { w: 'full' }), makeEntry('credit:cards', { w: 'full' }), makeEntry('plans', { w: 'full' }), makeEntry('transfers', { w: 'full' }), makeEntry('scorelog', { w: 'full' })];
+const CREDIT_DEFAULT = [makeEntry('credit:tiles', { w: 'full' }), makeEntry('credit:cards', { w: 'full' }), makeEntry('payoff', { w: 'full' }), makeEntry('plans', { w: 'full' }), makeEntry('transfers', { w: 'full' }), makeEntry('scorelog', { w: 'full' })];
 const money0 = (n: number) => formatMoney(n).replace(/\.\d\d$/, '');
 
 export default function Credit() {
@@ -89,7 +90,7 @@ export default function Credit() {
   return (
     <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
-      <PageBoard page="credit" refresh={refresh} defaults={CREDIT_DEFAULT} added={['plans', 'transfers', 'scorelog']} blocks={[
+      <PageBoard page="credit" refresh={refresh} defaults={CREDIT_DEFAULT} added={['plans', 'transfers', 'scorelog', 'payoff']} blocks={[
         { key: 'credit:tiles', title: 'Card totals', about: 'Total owing, utilisation, next due and interest', render: () => (
           <View style={styles.tiles}>
         <Tile t={t} label="Total owing" value={money0(totalOwed)} sub={onPlans > 0 ? `${cards.length} cards · ${money0(onPlans)} on plans` : `${cards.length} cards`} />
@@ -128,6 +129,7 @@ export default function Credit() {
       </Card>
         ) },
         // The same widgets as anywhere else, drawn here from what the page already loaded.
+        { key: 'payoff', title: 'Payoff plan', about: 'When the cards are paid off with one monthly amount, highest interest or smallest balance first', render: () => <PayoffPlan t={t} cards={cards} transfers={transfers} minimums={minimums} /> },
         { key: 'plans', title: 'Payment plans', about: 'Purchases paid off in monthly instalments on a card', render: () => <PlansCard t={t} plans={plans} accounts={accounts} onChanged={load} /> },
         { key: 'transfers', title: 'Balance transfers', about: 'Money moved between cards at a promo rate', render: () => <TransfersCard t={t} transfers={transfers} accounts={accounts} onChanged={load} /> },
         { key: 'scorelog', title: 'Credit score log', about: 'Log a score; the latest from each bureau', render: () => <CreditScoreCard refresh={refresh} /> },
