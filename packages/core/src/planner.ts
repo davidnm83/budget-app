@@ -97,6 +97,8 @@ export interface WeekView {
   endBalance: number;
   endBalanceByAccount: Record<string, number>;
   warnings: WeekWarning[];
+  /** The planned entries the bank has already counted in its balance without listing them (see `unlisted`). */
+  unlistedFound: { key: string; date: IsoDate; amount: number; accountId: string }[];
   summary: { plannedIn: number; plannedOut: number; actualIn: number; actualOut: number; unplannedOut: number; overdue: number };
 }
 
@@ -119,6 +121,8 @@ export function buildWeek(opts: {
    * them: they count as done, so today's balance (which already has them) doesn't lose them a second time.
    */
   unlisted?: Record<string, number>;
+  /** Which planned entries those are, when already worked out (so every view of the plan agrees). */
+  unlistedKeys?: string[];
 }): WeekView {
   const ids = new Set(opts.accounts.map((a) => a.id));
   const span = opts.days ?? 7;
@@ -138,7 +142,9 @@ export function buildWeek(opts: {
   // too; ones already paid by a listed transaction aren't.
   const earlier = opts.planned.filter((p) => p.accountId && ids.has(p.accountId) && p.date < opts.weekStart && p.date >= addDays(opts.today, -10));
   const earlierPaid = earlier.length ? matchDues(earlier.filter((p) => !p.matchedTxnId).map((p) => ({ key: p.key, date: p.date, amount: p.amount, accountId: p.accountId, matchText: p.matchText, estimated: p.estimated })), actuals, 3) : new Map();
-  const unlisted = unlistedPlanned([...earlier.filter((p) => !p.matchedTxnId && !earlierPaid.has(p.key)), ...planned.filter((p) => !match.has(p.key))], opts.unlisted ?? {}, opts.today);
+  const candidates = [...earlier.filter((p) => !p.matchedTxnId && !earlierPaid.has(p.key)), ...planned.filter((p) => !match.has(p.key))];
+  const unlisted = opts.unlistedKeys ? new Set(opts.unlistedKeys) : unlistedPlanned(candidates, opts.unlisted ?? {}, opts.today);
+  const unlistedFound = candidates.filter((p) => unlisted.has(p.key)).map((p) => ({ key: p.key, date: p.date, amount: p.amount, accountId: p.accountId! }));
   const txnById = new Map(actuals.map((t) => [t.id, t]));
   const usedTxn = new Set(match.values());
 
@@ -148,7 +154,8 @@ export function buildWeek(opts: {
     const done = !t && unlisted.has(p.key);
     rows.push({
       key: p.key, date: p.date, kind: 'planned', description: p.description, accountId: p.accountId,
-      planned: p.amount, actual: t ? t.amount : null, counted: t ? t.amount : done ? 0 : p.amount,
+      // Done by the bank: counted on its day like a listed transaction (one dated after today is already in today's balance).
+      planned: p.amount, actual: t ? t.amount : null, counted: t ? t.amount : done && p.date > opts.today ? 0 : p.amount,
       overdue: !t && !done && p.date < opts.today, ...(done ? { unlisted: true } : {}), item: p, txn: t,
     });
   }
@@ -159,11 +166,14 @@ export function buildWeek(opts: {
   // Within a day: money in first, so a paycheck landing the same day as a bill doesn't false-alarm.
   rows.sort((a, b) => a.date.localeCompare(b.date) || b.counted - a.counted);
 
-  const perAccount: Record<string, number> = Object.fromEntries(opts.accounts.map((a) => [a.id, a.startBalance]));
+  // A start balance worked back from the bank's balance still has the bank's unlisted entries in it; the ones
+  // from this view onward come out of it, to be counted on their own day.
+  const inView = (a: string) => unlistedFound.filter((u) => u.accountId === a && u.date >= opts.weekStart && u.date <= end && u.date <= opts.today).reduce((x, u) => x + u.amount, 0);
+  const perAccount: Record<string, number> = Object.fromEntries(opts.accounts.map((a) => [a.id, round2(a.startBalance - inView(a.id))]));
   const buffer = Object.fromEntries(opts.accounts.map((a) => [a.id, a.buffer]));
   const warned = new Set<string>();
   const warnings: WeekWarning[] = [];
-  let running = round2(opts.accounts.reduce((s, a) => s + a.startBalance, 0));
+  let running = round2(opts.accounts.reduce((s, a) => s + perAccount[a.id], 0));
   const startBalance = running;
   const days: WeekDay[] = [];
   for (let i = 0; i < span; i++) {
@@ -186,7 +196,7 @@ export function buildWeek(opts: {
 
   const sum = (f: (r: Omit<WeekRow, 'balanceAfter'>) => number) => round2(rows.reduce((s, r) => s + f(r), 0));
   return {
-    days, startBalance, endBalance: running, endBalanceByAccount: perAccount, warnings,
+    days, startBalance, endBalance: running, endBalanceByAccount: perAccount, warnings, unlistedFound,
     summary: {
       plannedIn: sum((r) => (r.planned ?? 0) > 0 ? r.planned! : 0),
       plannedOut: sum((r) => (r.planned ?? 0) < 0 ? -r.planned! : 0),

@@ -114,6 +114,12 @@ describe('planned entries the bank has counted but not listed', () => {
     expect(w.summary.overdue).toBe(0);
     expect(w.endBalance).toBe(300); // only rent still to come
   });
+  it('they move the balance on their own day, not at the start of the week', () => {
+    const w = week({ chq: -390 });
+    expect(w.startBalance).toBe(1590);
+    expect(w.days.map((d) => d.endBalance)).toEqual([1590, 1590, 1600, 1200, 300, 300, 300]);
+    expect(w.unlistedFound.map((u) => u.key).sort()).toEqual(['card', 'fee', 'in']);
+  });
   it('nothing is assumed when the amounts do not add up exactly', () => {
     const w = week({ chq: -391 });
     expect(w.days.flatMap((d) => d.rows).some((r) => r.unlisted)).toBe(false);
