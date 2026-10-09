@@ -16,6 +16,7 @@ import { setPanel } from '@/lib/panels';
 import { LockSettings } from '@/components/LockSettings';
 import { NotificationSettings } from '@/components/NotificationSettings';
 import { useAiOn } from '@/lib/ai';
+import { setTrackRewards, trackRewardsOn } from '@/lib/rewards';
 import { canExport, exportEverything } from '@/lib/exportAll';
 import { NightlyBackups } from '@/components/NightlyBackups';
 import { accountIsEmpty, describeBackup, readBackup, restoreBackup, type Backup } from '@/lib/restore';
@@ -37,6 +38,12 @@ function confirm(message: string): Promise<boolean> {
 
 export default function Settings() {
   const ai = useAiOn();
+  const [rewards, setRewards] = useState(false);
+  useEffect(() => { trackRewardsOn().then(setRewards).catch(() => {}); }, []);
+  const toggleRewards = async (on: boolean) => {
+    setRewards(on);
+    try { await setTrackRewards(on); } catch (e) { setRewards(!on); toast(e instanceof Error ? e.message : String(e)); }
+  };
   const t = useTheme();
   const logos = useLogos();
   const themeMode = useThemeMode();
@@ -230,6 +237,13 @@ export default function Settings() {
           <>
             <Text style={{ color: t.text }}>On. Receipt photos are read when you add them, and Ask (in the menu) answers questions about your money.</Text>
             <Text style={{ color: t.muted, fontSize: 12 }}>Uses Claude Haiku, and Claude Sonnet for receipts that don’t add up or when you pick Thorough in Ask. Your data is sent to Anthropic’s API for each request; set a monthly spending limit in the Claude Console.</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+              <Text style={{ color: t.text, flex: 1 }}>Record points as rewards</Text>
+              <Switch value={rewards} onValueChange={toggleRewards} />
+            </View>
+            <Text style={{ color: t.muted, fontSize: 12 }}>
+              Points paid with in store (like PC Optimum) are read from the receipt, and its amount is what the card was charged. With this on, attaching the receipt also splits the transaction: the purchase at its full value, and the points back under “Rewards” income.
+            </Text>
           </>
         ) : (
           <Text style={{ color: t.muted }}>Off. To read receipt photos and ask questions about your money, add a Claude API key to the server: create one at console.anthropic.com, then run{'\n'}npx supabase secrets set ANTHROPIC_API_KEY=your-key{'\n'}(see docs/SELF_HOSTING.md).</Text>

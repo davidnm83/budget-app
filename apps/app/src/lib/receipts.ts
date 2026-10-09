@@ -4,13 +4,14 @@
 // and are never part of the offline copy or a backup file.
 import { addDays, receiptMatches, type ReceiptMatch } from '@budget-app/core';
 import { today } from './plan';
+import { recordRewards } from './rewards';
 import { supabase } from './supabase';
 
 export interface Receipt {
   id: string; path: string; taken_on: string | null; amount: number | null; merchant: string | null; note: string | null;
   transaction_id: string | null; created_at: string;
-  /** Read from the photo by AI: its lines, and which model read it. */
-  items?: { name: string; amount: number }[] | null; read_by?: string | null;
+  /** Read from the photo by AI: its lines (points redeemed marked `redeemed`), and which model read it. */
+  items?: { name: string; amount: number; redeemed?: boolean }[] | null; read_by?: string | null;
 }
 export interface CandidateTxn { id: string; date: string; amount: number; name: string; merchant: string | null; display_name: string; account_name: string | null }
 export interface InboxItem { receipt: Receipt; matches: (ReceiptMatch & { txn: CandidateTxn })[] }
@@ -75,6 +76,14 @@ export async function updateReceipt(id: string, patch: Partial<Pick<Receipt, 'ta
   const { error } = await supabase.from('receipts').update(patch).eq('id', id);
   if (error) throw new Error(error.message);
 }
+
+/** Attach a receipt to a transaction; points on it are recorded as rewards when that's switched on. Returns the message to show. */
+export async function attachReceipt(r: Pick<Receipt, 'id' | 'items'>, txnId: string): Promise<string> {
+  await updateReceipt(r.id, { transaction_id: txnId });
+  return attachedMessage(await recordRewards(txnId, r.items ?? null).catch(() => null));
+}
+export const attachedMessage = (rewards: Awaited<ReturnType<typeof recordRewards>>) =>
+  rewards === 'recorded' ? 'Receipt attached; points recorded as rewards' : rewards === 'split already' ? 'Receipt attached (already split, so the points weren’t added)' : 'Receipt attached';
 
 export async function deleteReceipt(r: Receipt) {
   const { error } = await supabase.from('receipts').delete().eq('id', r.id);

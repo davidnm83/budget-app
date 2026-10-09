@@ -49,8 +49,12 @@ export function receiptMatches(r: ReceiptFacts, txns: TxnFacts[], taken: Set<str
 
 /** What reading a receipt photo gives back (see supabase/functions/_shared/ai.ts). Amounts are positive; discounts are negative items. */
 export interface ReadReceipt {
-  merchant: string | null; date: IsoDate | null; total: number | null; tax: number | null;
+  merchant: string | null; date: IsoDate | null;
+  /** What the items and tax come to, before any points were redeemed. */
+  total: number | null; tax: number | null;
   items: { name: string; amount: number }[];
+  /** Points or loyalty rewards used to pay part of it (PC Optimum, Scene+…), positive: not charged to the card. */
+  redeemed: { name: string; amount: number }[];
   /** The model could read the receipt clearly. */
   legible: boolean;
 }
@@ -61,8 +65,22 @@ export interface ReadReceipt {
  * read again by the stronger model.
  */
 export function receiptAddsUp(r: ReadReceipt): boolean {
+  if (r.redeemed.some((x) => !(x.amount > 0)) || (r.total != null && r.redeemed.reduce((s, x) => s + x.amount, 0) > r.total + 0.005)) return false;
   if (!r.legible || r.total == null || !(r.total > 0) || !r.merchant?.trim()) return false;
   if (!r.items.length) return true;
   const sum = r.items.reduce((s, i) => s + i.amount, 0) + (r.tax ?? 0);
   return Math.abs(sum - r.total) <= 0.05;
+}
+
+/** What was charged: the total less the points redeemed. */
+export function receiptPaid(r: Pick<ReadReceipt, 'total' | 'redeemed'>): number | null {
+  return r.total == null ? null : Math.round((r.total - r.redeemed.reduce((s, x) => s + x.amount, 0)) * 100) / 100;
+}
+
+/**
+ * Points redeemed recorded as rewards: the purchase's category gets its full value and a rewards line gives the
+ * redeemed amount back, so the parts still add up to what the bank charged (`amount`, negative for spending).
+ */
+export function rewardsSplit(amount: number, redeemed: number, categoryId: string | null, rewardsId: string): { category_id: string | null; amount: number }[] {
+  return [{ category_id: categoryId, amount: Math.round((amount - redeemed) * 100) / 100 }, { category_id: rewardsId, amount: Math.round(redeemed * 100) / 100 }];
 }

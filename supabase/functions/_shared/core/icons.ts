@@ -5,7 +5,7 @@
  */
 const CATEGORY: Record<string, string> = {
   // income
-  paycheck: '💼', paycheque: '💼', 'repayment from others': '🔁', 'other income': '💵', refunds: '↩️',
+  paycheck: '💼', paycheque: '💼', 'repayment from others': '🔁', 'other income': '💵', refunds: '↩️', rewards: '🎁',
   'money from family': '👪', 'tax returns & benefits': '🏛️', cashback: '🪙', 'interest income': '📈', sales: '🏷️', 'student loans': '🎓',
   // home & bills
   rent: '🏠', furniture: '🛋️', 'household items': '💡', home: '🏠', 'phone bill': '📱', 'phone & internet': '📱', subscriptions: '🔁',

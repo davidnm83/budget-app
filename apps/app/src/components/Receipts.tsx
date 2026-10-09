@@ -1,13 +1,14 @@
 // Receipt pieces shared by the Receipts page and the transaction pop-up: the photo, the form to add
 // or change one, and the strip of receipts attached to a transaction.
-import { formatMoney, parseMoney, shortDate, toIsoDate } from '@budget-app/core';
+import { formatMoney, parseMoney, receiptPaid, shortDate, toIsoDate } from '@budget-app/core';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { DateField } from '@/components/DateField';
 import { Field, Sheet, useChanged } from '@/components/Forms';
 import { Button } from '@/components/ui';
 import { today } from '@/lib/plan';
-import { deleteReceipt, photoUrl, pickPhoto, receiptsFor, receiptsMatching, saveReceipt, shrinkPhoto, updateReceipt, type Receipt } from '@/lib/receipts';
+import { attachedMessage, attachReceipt, deleteReceipt, photoUrl, pickPhoto, receiptsFor, receiptsMatching, saveReceipt, shrinkPhoto, updateReceipt, type Receipt } from '@/lib/receipts';
+import { recordRewards, redeemedOf } from '@/lib/rewards';
 import { useTheme, type Theme } from '@/lib/theme';
 import { toast } from '@/lib/toast';
 import { afterClose } from '@/lib/useBackToClose';
@@ -54,6 +55,8 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
   const [showItems, setShowItems] = useState(false);
   const ai = useAiOn();
   const changed = useChanged([photo, amount, date, merchant, note, items]);
+  const bought = (items ?? []).filter((i) => !i.redeemed);
+  const points = redeemedOf(items ?? null);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
   useEffect(() => { if (!photo) { setPreview(null); return; } const u = URL.createObjectURL(photo); setPreview(u); return () => URL.revokeObjectURL(u); }, [photo]);
 
@@ -73,10 +76,14 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
     try {
       const { receipt: r, model } = await readReceiptPhoto(img);
       if (!r) { setError('The receipt couldn’t be read. Fill it in yourself.'); return; }
-      if (r.total != null && (!amount.trim() || (fresh && !attachTo))) setAmount(r.total.toFixed(2));
+      // Points redeemed (PC Optimum…) aren't charged to the card: the amount is what was, so it matches the transaction.
+      const redeemed = r.redeemed ?? [];
+      const paid = receiptPaid({ total: r.total, redeemed });
+      if (paid != null && (!amount.trim() || (fresh && !attachTo))) setAmount(paid.toFixed(2));
       if (r.date && (fresh && !attachTo || !date.trim())) setDate(r.date);
       if (r.merchant && !merchant.trim()) setMerchant(r.merchant);
-      setItems(r.items.length ? r.items : null); setReadBy(model);
+      const lines = [...r.items, ...redeemed.map((x) => ({ ...x, redeemed: true }))];
+      setItems(lines.length ? lines : null); setReadBy(model);
       if (!r.legible) setError('The photo was hard to read; check the figures.');
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setReading(false); }
   };
@@ -97,7 +104,7 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
         if (!photo) { setError('Choose or take a photo first.'); setBusy(false); return; }
         await saveReceipt(photo, { ...fields, transaction_id: attachTo?.id ?? null });
       }
-      toast(initial ? 'Saved' : attachTo ? 'Receipt attached' : 'Receipt added');
+      toast(initial ? 'Saved' : attachTo ? attachedMessage(await recordRewards(attachTo.id, items).catch(() => null)) : 'Receipt added');
       onSaved(); onClose();
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   };
@@ -142,9 +149,14 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
         <View style={{ gap: 4 }}>
           <Text style={{ color: t.muted, fontSize: 12 }}>
             Read by {readBy === 'sonnet' ? 'Claude Sonnet (a second, closer look)' : 'Claude Haiku'}; check the figures before saving.{' '}
-            {items?.length ? <Text style={{ color: t.accent }} onPress={() => setShowItems(!showItems)}>{showItems ? 'Hide' : 'Show'} the {items.length} line{items.length === 1 ? '' : 's'}</Text> : null}
+            {bought.length ? <Text style={{ color: t.accent }} onPress={() => setShowItems(!showItems)}>{showItems ? 'Hide' : 'Show'} the {bought.length} line{bought.length === 1 ? '' : 's'}</Text> : null}
           </Text>
-          {showItems && items?.map((i, k) => (
+          {points.lines.map((p, k) => (
+            <Text key={`p${k}`} style={{ color: t.text, fontSize: 13 }}>
+              🎁 {p.name}: {formatMoney(p.amount)} in points, not charged to the card{amount.trim() ? ' (the total above leaves it out)' : ''}.
+            </Text>
+          ))}
+          {showItems && bought.map((i, k) => (
             <View key={k} style={{ flexDirection: 'row', gap: 8 }}>
               <Text style={{ color: t.text, flex: 1, fontSize: 13 }} numberOfLines={1}>{i.name}</Text>
               <Text style={{ color: i.amount < 0 ? t.positive : t.text, fontSize: 13, fontVariant: ['tabular-nums'] }}>{formatMoney(i.amount)}</Text>
@@ -160,7 +172,7 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
 }
 
 /** In the transaction pop-up: its receipts, ones in the inbox that may belong to it, and Add receipt. */
-export function TxnReceipts({ t, txn }: { t: Theme; txn: { id: string; date: string; amount: number; name: string; merchant: string | null } }) {
+export function TxnReceipts({ t, txn, onChanged }: { t: Theme; txn: { id: string; date: string; amount: number; name: string; merchant: string | null }; onChanged?: () => void }) {
   const [mine, setMine] = useState<Receipt[]>([]);
   const [maybe, setMaybe] = useState<Receipt[]>([]);
   const [open, setOpen] = useState<Receipt | null>(null);
@@ -170,7 +182,7 @@ export function TxnReceipts({ t, txn }: { t: Theme; txn: { id: string; date: str
     receiptsFor(txn.id).then(setMine);
     if (txn.amount < 0) receiptsMatching(txn).then(setMaybe);
   }, [txn.id, n]);
-  const attach = async (r: Receipt) => { await updateReceipt(r.id, { transaction_id: txn.id }); toast('Receipt attached'); setN((x) => x + 1); };
+  const attach = async (r: Receipt) => { const m = await attachReceipt(r, txn.id); toast(m); setN((x) => x + 1); if (/rewards/.test(m)) onChanged?.(); };
   return (
     <View style={{ gap: 8, marginTop: 16 }}>
       <View style={styles.between}>
@@ -190,7 +202,7 @@ export function TxnReceipts({ t, txn }: { t: Theme; txn: { id: string; date: str
         </View>
       ))}
       {open && <ReceiptForm initial={open} onClose={() => setOpen(null)} onSaved={() => setN((x) => x + 1)} />}
-      {adding && <ReceiptForm attachTo={txn} onClose={() => setAdding(false)} onSaved={() => afterClose(() => setN((x) => x + 1))} />}
+      {adding && <ReceiptForm attachTo={txn} onClose={() => setAdding(false)} onSaved={() => afterClose(() => { setN((x) => x + 1); onChanged?.(); })} />}
     </View>
   );
 }

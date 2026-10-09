@@ -10,7 +10,7 @@ import { Button, Card, Fab } from '@/components/ui';
 import { useFocusLoad } from '@/lib/focusLoad';
 import { PAGE_MAX, UNDER_BAR } from '@/lib/layout';
 import { usePullRefresh } from '@/lib/pullRefresh';
-import { loadInbox, loadReceipts, updateReceipt, type InboxItem, type Receipt } from '@/lib/receipts';
+import { attachReceipt, loadInbox, loadReceipts, updateReceipt, type InboxItem, type Receipt } from '@/lib/receipts';
 import { useTheme, type Theme } from '@/lib/theme';
 import { toast } from '@/lib/toast';
 
@@ -28,7 +28,7 @@ export default function Receipts() {
   useFocusLoad(load);
   usePullRefresh(load);
   const attach = async (r: Receipt, txnId: string) => {
-    try { await updateReceipt(r.id, { transaction_id: txnId }); toast('Receipt attached', { undo: () => updateReceipt(r.id, { transaction_id: null }) }); load(); }
+    try { const m = await attachReceipt(r, txnId); toast(m, /rewards/.test(m) ? undefined : { undo: () => updateReceipt(r.id, { transaction_id: null }) }); load(); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   const attached = (all ?? []).filter((r) => r.transaction_id).slice(0, 40);

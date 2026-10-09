@@ -39,6 +39,14 @@ Deno.test('receipts: a reading that does not add up goes to Sonnet', async () =>
   assertEquals([r2.model, r2.receipt?.date], ['sonnet', null]);
 });
 
+Deno.test('receipts: points redeemed are read apart, and the missing field means none', async () => {
+  const { client } = fakeClaude({ 'claude-haiku-5-5': [reading({ redeemed: [{ name: 'PC Optimum', amount: -20 }] })] });
+  const r = await readReceipt(client, 'aGVsbG8=', '2026-10-07');
+  assertEquals([r.model, r.receipt?.total, r.receipt?.redeemed], ['haiku', 23.45, [{ name: 'PC Optimum', amount: 20 }]]);
+  const old = fakeClaude({ 'claude-haiku-5-5': [reading({})] });
+  assertEquals((await readReceipt(old.client, 'aGVsbG8=', '2026-10-07')).receipt?.redeemed, []);
+});
+
 const u = 'u1';
 const tables = () => ({
   transaction_list: [

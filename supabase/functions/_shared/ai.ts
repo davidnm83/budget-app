@@ -31,16 +31,21 @@ const RECEIPT_SCHEMA = {
   properties: {
     merchant: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'The store or business name, as a person would say it (e.g. "No Frills", not the legal name).' },
     date: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Purchase date as YYYY-MM-DD.' },
-    total: { ...money, description: 'The total paid, positive.' },
+    total: { ...money, description: 'The receipt total, positive: what the items and tax come to, before any points or loyalty rewards were redeemed.' },
     tax: { ...money, description: 'Total tax (HST/GST/PST), positive, or null if none shown.' },
     items: {
       type: 'array',
-      description: 'Each purchased line with its price, positive; discounts and coupons as negative lines. Leave out subtotal, tax, total, payment and change lines.',
+      description: 'Each purchased line with its price, positive; discounts and coupons as negative lines. Leave out subtotal, tax, total, payment and change lines, and points redeemed.',
+      items: { type: 'object', properties: { name: { type: 'string' }, amount: { type: 'number' } }, required: ['name', 'amount'], additionalProperties: false },
+    },
+    redeemed: {
+      type: 'array',
+      description: 'Points or loyalty rewards used to pay part of the bill (PC Optimum, Scene+, Air Miles, a store\'s rewards dollars), each with the dollar value redeemed, positive. Usually shown with the payments, or as a loyalty or redemption line after the total. Not coupons or price discounts, and not gift cards. Empty when none.',
       items: { type: 'object', properties: { name: { type: 'string' }, amount: { type: 'number' } }, required: ['name', 'amount'], additionalProperties: false },
     },
     legible: { type: 'boolean', description: 'False if the photo is too blurry, cut off or dark to read the total with confidence.' },
   },
-  required: ['merchant', 'date', 'total', 'tax', 'items', 'legible'],
+  required: ['merchant', 'date', 'total', 'tax', 'items', 'redeemed', 'legible'],
   additionalProperties: false,
 };
 
@@ -61,7 +66,9 @@ async function readOnce(client: Claude, model: ModelChoice, jpegBase64: string, 
   try {
     const r = JSON.parse(textOf(res));
     return { merchant: r.merchant ?? null, date: /^\d{4}-\d{2}-\d{2}$/.test(r.date ?? '') ? r.date : null, total: r.total ?? null, tax: r.tax ?? null,
-      items: Array.isArray(r.items) ? r.items.map((i: any) => ({ name: String(i.name), amount: round2(Number(i.amount)) })) : [], legible: !!r.legible };
+      items: Array.isArray(r.items) ? r.items.map((i: any) => ({ name: String(i.name), amount: round2(Number(i.amount)) })) : [],
+      redeemed: Array.isArray(r.redeemed) ? r.redeemed.map((i: any) => ({ name: String(i.name), amount: round2(Math.abs(Number(i.amount))) })).filter((i: any) => i.amount > 0) : [],
+      legible: !!r.legible };
   } catch {
     return null;
   }

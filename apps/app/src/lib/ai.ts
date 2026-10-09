@@ -4,7 +4,8 @@ import { useSyncExternalStore } from 'react';
 import { callFunction } from './supabase';
 
 export type ModelChoice = 'haiku' | 'sonnet';
-export interface ReadReceipt { merchant: string | null; date: string | null; total: number | null; tax: number | null; items: { name: string; amount: number }[]; legible: boolean }
+/** As the server sends it; `redeemed` is missing from a server not yet updated. */
+export interface ReadReceipt { merchant: string | null; date: string | null; total: number | null; tax: number | null; items: { name: string; amount: number }[]; redeemed?: { name: string; amount: number }[]; legible: boolean }
 export interface ChatTurn { role: 'user' | 'assistant'; text: string; looked?: string[] }
 
 // Whether the server has a key (asked once per app start).

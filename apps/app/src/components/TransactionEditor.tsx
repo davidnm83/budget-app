@@ -67,6 +67,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   const [pair, setPair] = useState<{ id: string; date: string; amount: number; account: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Bumped when something else changed the transaction (a receipt's points split it): read it again.
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -93,7 +95,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
       }
       setCats((c ?? []) as Category[]); storeCategories((c ?? []) as Category[]);
     })();
-  }, [id]);
+  }, [id, reload]);
 
   const groups = useMemo(() => {
     const m = new Map<string, Category[]>();
@@ -391,7 +393,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
         </View>
       )}
 
-      <TxnReceipts t={t} txn={{ id: txn.id, date: txn.date, amount: Number(txn.amount), name: txn.name, merchant: txn.merchant }} />
+      <TxnReceipts t={t} txn={{ id: txn.id, date: txn.date, amount: Number(txn.amount), name: txn.name, merchant: txn.merchant }} onChanged={() => setReload((x) => x + 1)} />
 
       <Text style={[styles.label, { color: t.muted }]}>Notes</Text>
       <TextInput style={[input, { minHeight: 60 }]} value={notes} onChangeText={setNotes} multiline />
