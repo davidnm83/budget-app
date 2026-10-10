@@ -20,7 +20,7 @@ import { forgetKnown, knownMerchants, knownPeople, knownTags } from '@/lib/known
 import { OWED_CATEGORY, owedCategory } from '@/lib/iou';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { TxnReceipts } from '@/components/Receipts';
-import { Button, Card } from '@/components/ui';
+import { Button, Card, Chip } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { useTheme, type Theme } from '@/lib/theme';
 import { FADE, PULSE } from '@/lib/motion';
@@ -416,6 +416,14 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
                   <Text style={{ color: t.text, flex: 1 }}>{out ? `${name}’s share` : `Paid back by ${name}`}</Text>
                   <TextInput style={[input, { width: 120, textAlign: 'right' }]} value={iouAmount} onChangeText={setIouAmount} keyboardType="decimal-pad"
                     placeholder={Math.abs(Number(txn.amount)).toFixed(2)} placeholderTextColor={t.muted} accessibilityLabel="Amount owed" />
+                </View>
+                <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {[25, 30, 50, 75].map((pc) => {
+                    const total = Math.abs(parseMoney(amount));
+                    const v = Number.isFinite(total) ? (Math.round(total * pc) / 100).toFixed(2) : '';
+                    return <Chip key={pc} label={`${pc}%`} on={!!v && iouAmount.trim() === v} onPress={() => v && setIouAmount(v)} />;
+                  })}
+                  <Chip label="All" on={!iouAmount.trim()} onPress={() => setIouAmount('')} />
                 </View>
               </View>
             )}

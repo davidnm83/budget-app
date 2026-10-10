@@ -29,6 +29,7 @@ import {
 } from '@budget-app/core';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
+import { notPosted } from '@/lib/accountTxns';
 import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bar, Button, Chip, Segmented } from '@/components/ui';
@@ -257,8 +258,11 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
     loadPlans().then((ps) => setPlans(ps.filter((p) => p.accountId === a.id))).catch(() => {});
     loadTransfers().then((l) => setTransfers(l.filter((x) => x.toAccountId === a.id && !x.closedOn))).catch(() => {});
   }, [a.id]);
+  // Pending charges and what the bank counted without listing it yet: in its balance, so in this cycle.
+  const [extra, setExtra] = useState<Txn[]>([]);
+  useEffect(() => { notPosted([a as any], today()).then((r) => setExtra(r as Txn[])).catch(() => {}); }, [a.id, a.current_balance]);
   const tr = cycle ? transfersOnStatement(transfers, owed, cycle.lastClose, today()) : null;
-  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!, minimum.rule ?? undefined, cycle.prevClose) : null;
+  const st = cycle ? cardStatement(bankOwed, [...txns, ...extra], cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!, minimum.rule ?? undefined, cycle.prevClose) : null;
   // What the left-to-pay is made of: payment plan instalments billed on this statement, and an estimate of
   // the minimum (on the whole statement, balance transfers included), less what's been paid since.
   const prevClose = cycle ? cycle.prevClose : null;

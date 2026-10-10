@@ -22,7 +22,7 @@ import { loadMinimums, ruleFor, type CardMinimum } from '@/lib/cardMinimums';
 import { makeEntry } from '@/components/Widgets';
 import { Bar, Card } from '@/components/ui';
 import { loadAccounts, today } from '@/lib/plan';
-import { loadTxnsFor, type Row } from '@/lib/accountTxns';
+import { loadTxnsFor, notPosted, type Row } from '@/lib/accountTxns';
 import { Tile } from '@/components/Tile';
 import { useTheme } from '@/lib/theme';
 import { bankBalance, signedBalance, type Account } from '@/lib/types';
@@ -57,7 +57,9 @@ export default function Credit() {
       await linkTransfers(bt).catch(() => false);
       setTransfers([...bt]);
       loadMinimums().then(setMinimums);
-      setTxns(await loadTxnsFor(cards.map((c) => c.id), addDays(today(), -400)));
+      // Pending charges and what the bank counted without listing them: in its balance, so in this cycle's statement.
+      const [posted, extra] = await Promise.all([loadTxnsFor(cards.map((c) => c.id), addDays(today(), -400)), notPosted(cards as any, today()).catch(() => [])]);
+      setTxns([...posted, ...extra]);
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
   useFocusEffect(useCallback(() => { load(); setRefresh((r) => r + 1); }, [load]));
