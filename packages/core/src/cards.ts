@@ -81,13 +81,21 @@ export function cardStatus(owedNow: number, txns: { date: IsoDate; amount: numbe
  * count as neither spending nor payments, so a $1,800 plan credit no longer looks like a payment.
  */
 export function cardStatement(owedNow: number, txns: { id?: string; date: IsoDate; amount: number; name?: string | null; importId?: string | null }[], lastClose: IsoDate, cycleDays: number, apr: number | null, plans: PlanOnCard[] = [],
-  transfers: { held: number; moves: (string | null | undefined)[] } = { held: 0, moves: [] }, rule: MinimumRule = DEFAULT_MINIMUM, prevCloseAt?: IsoDate): CardStatus {
+  transfers: { held: number; moves: (string | null | undefined)[] } = { held: 0, moves: [] }, rule: MinimumRule = DEFAULT_MINIMUM, prevCloseAt?: IsoDate,
+  /** The statement's balance as you entered it from the bank (a statement check), when there is one for this close. */
+  stated?: number | null): CardStatus {
   // `transfers`: the promo balance transfers on this card that were already on it when the statement
   // closed (left out like a plan), and their charges (moved money, not spending).
   const moves = new Set([...plans.flatMap((p) => [p.purchaseTxnId, p.creditTxnId]), ...transfers.moves].filter(Boolean) as string[]);
   const after = txns.filter((t) => t.date > lastClose);
   const atClose = owedNow + after.reduce((s, t) => s + t.amount, 0);
-  const statementOwed = round2(Math.max(0, atClose - plans.reduce((s, p) => s + planHeld(p, lastClose), 0) - Math.max(0, transfers.held)));
+  const held = plans.reduce((s, p) => s + planHeld(p, lastClose), 0) + Math.max(0, transfers.held);
+  // Worked back from today's balance, which is only right once the bank feed has every transaction since the close.
+  const worked = round2(Math.max(0, atClose - held));
+  // The bank's own figure wins. It may be the new balance with plans in it, or the amount due without them: whichever
+  // is nearer the worked-back one.
+  const statementOwed = stated == null ? worked
+    : round2(Math.max(0, [stated, stated - held].sort((a, b) => Math.abs(a - worked) - Math.abs(b - worked))[0]));
   const real = after.filter((t) => !(t.id && moves.has(t.id)));
   const paidSince = round2(real.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0));
   const spentThisCycle = round2(real.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0));
@@ -241,4 +249,10 @@ export function statementCharges(txns: { date: IsoDate; amount: number; name?: s
   // A payment plan's own interest and fees (written by the app, import_id "plan:…") are part of its instalment.
   return round2(txns.filter((t) => t.date > prevClose && t.date <= close && t.amount < 0 && !t.importId?.startsWith('plan:') && /interest|int[ée]r[êe]t|\bfee\b|\bfees\b|frais|charge annuelle|annual/i.test(t.name ?? ''))
     .reduce((s, t) => s - t.amount, 0));
+}
+
+/** The balance from a statement check for the statement that closed on `lastClose` (a few days either way), if any. */
+export function statedBalance(checks: { close: IsoDate; balance: number }[] | null | undefined, lastClose: IsoDate): number | null {
+  const c = (checks ?? []).find((x) => Math.abs(daysBetween(x.close, lastClose)) <= 3);
+  return c ? c.balance : null;
 }

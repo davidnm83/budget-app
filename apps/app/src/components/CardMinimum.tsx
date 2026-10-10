@@ -55,7 +55,7 @@ export function MinimumCheckSheet({ t, accountId, had, initial, onClose, onSaved
         <>
           <Text style={{ color: t.muted, fontSize: 13 }}>From one of the card's statements. The app finds the rule that gives the bank's minimum; a second statement (one with interest and one without is best) makes it certain.</Text>
           <Field t={t} label="Statement closing date"><DateField value={close} onChange={setClose} /></Field>
-          <Field t={t} label="Statement balance" hint="The new balance (or amount due) on the statement.">
+          <Field t={t} label="Statement balance" hint="The new balance (or amount due) on the statement. The app then uses it for that statement instead of working it out.">
             <TextInput value={balance} onChangeText={setBalance} keyboardType="decimal-pad" style={input} accessibilityLabel="Statement balance" />
           </Field>
           <Field t={t} label="Interest and fees on it" hint="Worked out from the card's transactions; change it to what the statement shows.">

@@ -8,7 +8,7 @@ import { usePullRefresh } from '@/lib/pullRefresh';
 import { bankLogo, customPicture, useLogoVersion } from '@/lib/logos';
 import { Logo } from '@/components/Logo';
 import { UNDER_BAR } from '@/lib/layout';
-import { addDays, cardCycle, cardStatement, transfersOnStatement, formatMoney, shortDate, utilization } from '@budget-app/core';
+import { addDays, cardCycle, cardStatement, statedBalance, transfersOnStatement, formatMoney, shortDate, utilization } from '@budget-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -22,7 +22,7 @@ import { loadMinimums, ruleFor, type CardMinimum } from '@/lib/cardMinimums';
 import { makeEntry } from '@/components/Widgets';
 import { Bar, Card } from '@/components/ui';
 import { loadAccounts, today } from '@/lib/plan';
-import { loadTxnsFor, notPosted, type Row } from '@/lib/accountTxns';
+import { loadTxnsFor, type Row } from '@/lib/accountTxns';
 import { Tile } from '@/components/Tile';
 import { useTheme } from '@/lib/theme';
 import { bankBalance, signedBalance, type Account } from '@/lib/types';
@@ -57,9 +57,7 @@ export default function Credit() {
       await linkTransfers(bt).catch(() => false);
       setTransfers([...bt]);
       loadMinimums().then(setMinimums);
-      // Pending charges and what the bank counted without listing them: in its balance, so in this cycle's statement.
-      const [posted, extra] = await Promise.all([loadTxnsFor(cards.map((c) => c.id), addDays(today(), -400)), notPosted(cards as any, today()).catch(() => [])]);
-      setTxns([...posted, ...extra]);
+      setTxns(await loadTxnsFor(cards.map((c) => c.id), addDays(today(), -400)));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }, []);
   useFocusEffect(useCallback(() => { load(); setRefresh((r) => r + 1); }, [load]));
@@ -82,7 +80,7 @@ export default function Credit() {
     // The part of the balance on payment plans that isn't billed yet isn't part of what the statement asks for.
     // The statement: from the bank's own balance, leaving out plans and promo balance transfers not billed yet.
     const st = cycle ? cardStatement(bankOwed, mine, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans.filter((p) => p.accountId === a.id),
-      transfersOnStatement(transfers.filter((x) => x.toAccountId === a.id && !x.closedOn), owed, cycle.lastClose, now), ruleFor(minimums, a.id), cycle.prevClose) : null;
+      transfersOnStatement(transfers.filter((x) => x.toAccountId === a.id && !x.closedOn), owed, cycle.lastClose, now), ruleFor(minimums, a.id), cycle.prevClose, statedBalance(minimums.get(a.id)?.checks, cycle.lastClose)) : null;
     return { a, owed, u: utilization(owed, a.credit_limit), cycle, st };
   }).sort((x, y) => y.owed - x.owed), [cards, txns, now, plans, transfers, minimums]);
 

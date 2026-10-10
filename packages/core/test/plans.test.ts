@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardStatement, cardStatus, findPlanCredit, findPlanDuplicates, planHeld, plansOffBalance, instalmentsBetween, monthsAfter, planProgress, planSchedule, plansDeferred, type PaymentPlan } from '../src/index.ts';
+import { cardStatement, cardStatus, statedBalance, findPlanCredit, findPlanDuplicates, planHeld, plansOffBalance, instalmentsBetween, monthsAfter, planProgress, planSchedule, plansDeferred, type PaymentPlan } from '../src/index.ts';
 
 const plan = (o: Partial<PaymentPlan> = {}): PaymentPlan => ({ id: 'p', description: 'Laptop', principal: 1200, months: 12, startDate: '2026-01-15', setupFee: 0, apr: 0, ...o });
 const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
@@ -119,6 +119,16 @@ describe('statements with payment plans (option B)', () => {
     expect(plansOffBalance([p], '2026-10-06')).toBe(1800);
     expect(planHeld(p, '2026-10-01')).toBe(1800);
     expect(planHeld(p, '2026-10-04')).toBe(0);
+  });
+  it('a statement entered from the bank wins over the worked-back one, as new balance or amount due', () => {
+    const p = { ...base, principal: 1800, startDate: '2026-11-10', purchaseDate: '2026-09-15', purchaseTxnId: 'buy', creditTxnId: 'cr', creditDate: '2026-10-03' };
+    // On the statement: $2,350.03 with the $1,800 plan, $550.03 due. The feed is missing $23.92 of charges since, so working back gives $573.95.
+    const txns = [{ id: 'buy', date: '2026-09-15', amount: -1800 }, { id: 'o', date: '2026-09-28', amount: -278.14 }, { id: 'cr', date: '2026-10-03', amount: 1800 }];
+    expect(cardStatement(852.09, txns, '2026-09-20', 30, null, [p]).statementOwed).toBe(573.95);
+    expect(cardStatement(852.09, txns, '2026-09-20', 30, null, [p], undefined, undefined, undefined, 550.03).statementOwed).toBe(550.03);
+    expect(cardStatement(852.09, txns, '2026-09-20', 30, null, [p], undefined, undefined, undefined, 2350.03).statementOwed).toBe(550.03);
+    expect(statedBalance([{ close: '2026-09-21', balance: 550.03 }], '2026-09-20')).toBe(550.03);
+    expect(statedBalance([{ close: '2026-08-20', balance: 500 }], '2026-09-20')).toBe(null);
   });
   it('finds the bank’s plan credit', () => {
     const p = { ...base, principal: 1800, startDate: '2026-11-10', purchaseDate: '2026-09-25', purchaseTxnId: 'buy' };

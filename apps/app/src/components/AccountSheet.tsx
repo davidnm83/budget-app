@@ -23,13 +23,12 @@ export { Tile } from '@/components/Tile';
 import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, plansBilled, statementCharges, instalmentsBetween, minimumPayment, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, statedBalance, plansBilled, statementCharges, instalmentsBetween, minimumPayment, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
   monthlyFlow, shortDate, utilization,
   csvReminderOn,
 } from '@budget-app/core';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { notPosted } from '@/lib/accountTxns';
 import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Bar, Button, Chip, Segmented } from '@/components/ui';
@@ -258,11 +257,8 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
     loadPlans().then((ps) => setPlans(ps.filter((p) => p.accountId === a.id))).catch(() => {});
     loadTransfers().then((l) => setTransfers(l.filter((x) => x.toAccountId === a.id && !x.closedOn))).catch(() => {});
   }, [a.id]);
-  // Pending charges and what the bank counted without listing it yet: in its balance, so in this cycle.
-  const [extra, setExtra] = useState<Txn[]>([]);
-  useEffect(() => { notPosted([a as any], today()).then((r) => setExtra(r as Txn[])).catch(() => {}); }, [a.id, a.current_balance]);
   const tr = cycle ? transfersOnStatement(transfers, owed, cycle.lastClose, today()) : null;
-  const st = cycle ? cardStatement(bankOwed, [...txns, ...extra], cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!, minimum.rule ?? undefined, cycle.prevClose) : null;
+  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!, minimum.rule ?? undefined, cycle.prevClose, statedBalance(minimum.checks, cycle.lastClose)) : null;
   // What the left-to-pay is made of: payment plan instalments billed on this statement, and an estimate of
   // the minimum (on the whole statement, balance transfers included), less what's been paid since.
   const prevClose = cycle ? cycle.prevClose : null;
@@ -299,7 +295,7 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
                     // All of the statement is on a promo balance transfer (or a plan): only the minimum is due.
                     ? `minimum ≈ ${formatMoney(minLeft)} by ${shortDate(cycle.due)}\nthe rest is on a balance transfer`
                     : 'statement paid'} />
-              <Tile t={t} label="Last statement" value={formatMoney(st.statementOwed)} sub={`closed ${shortDate(cycle.lastClose)} · paid ${money0(st.paidSince)}`} />
+              <Tile t={t} label="Last statement" value={formatMoney(st.statementOwed)} sub={`closed ${shortDate(cycle.lastClose)} · paid ${money0(st.paidSince)}${statedBalance(minimum.checks, cycle.lastClose) != null ? ' · as entered' : ''}`} />
               <Tile t={t} label="This cycle" value={formatMoney(st.spentThisCycle)} sub={`closes ${shortDate(cycle.nextClose)}`} />
             </View>
             {st.interestIfUnpaid != null ? (

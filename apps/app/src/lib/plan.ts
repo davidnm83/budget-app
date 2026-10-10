@@ -1,7 +1,7 @@
 // Data for Bills and the Planner: recurring bills/income, one-off planned entries, the
 // accounts the plan covers, and posted transactions to match against.
 import {
-  addDays, addMonths, balanceAt, buildWeek, monthEnd, monthOf, cardCycle, cardStatement, minimumPayment, planHeld, planUnbilled, transfersOnStatement, expandPlan, round2, todayIn, weekStart as mondayOf,
+  addDays, addMonths, balanceAt, buildWeek, monthEnd, monthOf, cardCycle, cardStatement, statedBalance, minimumPayment, planHeld, planUnbilled, transfersOnStatement, expandPlan, round2, todayIn, weekStart as mondayOf,
   type PlanEntry, type PlannedItem, type PostedTxn, type Recurring, type WeekView,
 } from '@budget-app/core';
 import { supabase } from './supabase';
@@ -37,12 +37,10 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
   if (!cards.length) return list;
   const now = today();
   const [{ data: accts }, { data: txns }] = await Promise.all([
-    supabase.from('account_balances').select('id, type, balance, balance_gap, statement_day, due_day').in('id', cards),
+    supabase.from('account_balances').select('id, type, balance, statement_day, due_day').in('id', cards),
     supabase.from('transactions').select('id, account_id, date, amount, name, import_id').in('account_id', cards).gte('date', addDays(now, -70)).eq('pending', false),
   ]);
   const minimums = await import('./cardMinimums').then((m) => m.loadMinimums()).catch(() => new Map());
-  // Pending charges and what the bank counted without listing them: in its balance, so in this cycle's statement.
-  const extra = await import('./accountTxns').then((m) => m.notPosted((accts ?? []) as any[], now)).catch(() => []);
   const ruleOf = (id: string) => minimums.get(id)?.rule ?? undefined;
   // Payment plans on these cards: what isn't billed yet is left out of the amount to pay.
   const plans = await import('./paymentPlans').then((m) => m.loadPlans()).catch(() => []);
@@ -59,8 +57,8 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
     let amount = Math.max(0, owed - mine.reduce((s, p) => s + planHeld(p, now), 0) - transfersOnStatement(bts, owed, now, now).held);
     if (a.statement_day && a.due_day) {
       const c = cardCycle(now, a.statement_day, a.due_day, !!minimums.get(a.id)?.mondays);
-      const st = cardStatement(owed, [...(txns ?? []), ...extra].filter((x: any) => x.account_id === a.id).map((x: any) => ({ id: x.id, date: x.date, amount: Number(x.amount), name: x.name, importId: x.import_id })), c.lastClose, c.cycleDays, null, mine,
-        transfersOnStatement(bts, owed, c.lastClose, now), ruleOf(a.id), c.prevClose);
+      const st = cardStatement(owed, (txns ?? []).filter((x: any) => x.account_id === a.id).map((x: any) => ({ id: x.id, date: x.date, amount: Number(x.amount), name: x.name, importId: x.import_id })), c.lastClose, c.cycleDays, null, mine,
+        transfersOnStatement(bts, owed, c.lastClose, now), ruleOf(a.id), c.prevClose, statedBalance(minimums.get(a.id)?.checks, c.lastClose));
       // A statement that's all on a balance transfer still asks for its minimum.
       if (st.leftToPay > 0 || st.minimumLeft) amount = Math.max(st.leftToPay, st.minimumLeft ?? 0);
       if (st.leftToPay > 0 || st.minimumLeft) mins.set(a.id, st.minimumLeft ?? 0);
