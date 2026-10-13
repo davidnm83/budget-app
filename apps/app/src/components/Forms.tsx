@@ -225,7 +225,7 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
 export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
   initial: { id?: string | null; date: string; description: string; amount: number | null; account_id: string | null; to_account_id?: string | null;
     recurring_id?: string | null; occurrence_date?: string | null;
-    matched?: { id: string; date: string; amount: number; name: string } | null; manualMatch?: boolean };
+    matched?: { id: string; date: string; amount: number; name: string } | null; manualMatch?: boolean; noMatch?: boolean };
   accounts: Account[]; onClose: () => void; onSaved: () => void;
 }) {
   const t = useTheme();
@@ -250,10 +250,12 @@ export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
       .gte('date', addDays(initial.date, -10)).lte('date', addDays(initial.date, 10)).order('date')
       .then(({ data }) => setCandidates((data ?? []).map((r: any) => ({ ...r, amount: Number(r.amount) }))));
   }, [pickMatch]);
-  const setMatch = async (txnId: string | null) => {
+  // A transaction by hand, back to automatic (null), or left unmatched on purpose ('none').
+  const setMatch = async (txnId: string | null | 'none') => {
     const { error } = await upsert({ description: initial.description, amount: initial.amount ?? 0, date: initial.date, account_id: initial.account_id,
-      to_account_id: initial.to_account_id ?? null, matched_transaction_id: txnId, skipped: false });
-    if (error) setError(error.message); else { toast('Saved'); onSaved(); onClose(); }
+      to_account_id: initial.to_account_id ?? null, matched_transaction_id: txnId === 'none' ? null : txnId, no_match: txnId === 'none', skipped: false });
+    if (error) setError(/no_match/.test(error.message) ? 'This needs the newest database update (supabase db push).' : error.message);
+    else { toast(txnId === 'none' ? 'Left unmatched' : 'Saved'); onSaved(); onClose(); }
   };
 
   const upsert = async (patch: Record<string, unknown>) => {
@@ -305,10 +307,12 @@ export function PlanEntryForm({ initial, accounts, onClose, onSaved }: {
         <Field t={t} label="Matched transaction">
           {initial.matched
             ? <Text style={{ color: t.text }}>{shortDate(initial.matched.date)} · {initial.matched.name} · {formatMoney(initial.matched.amount)}{initial.manualMatch ? ' (matched by you)' : ' (matched automatically)'}</Text>
+            : initial.noMatch ? <Text style={{ color: t.muted }}>Left unmatched by you: it won't match a transaction on its own.</Text>
             : <Text style={{ color: t.muted }}>Not matched yet. It matches on its own when a similar transaction posts within 3 days.</Text>}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
             <Button title={initial.matched ? 'Match a different one' : 'Match by hand'} kind="plain" onPress={() => setPickMatch(true)} style={{ flex: 1 }} />
-            {initial.manualMatch && <Button title="Back to automatic" kind="plain" onPress={() => setMatch(null)} style={{ flex: 1 }} />}
+            {initial.matched && <Button title="Leave unmatched" kind="plain" onPress={() => setMatch('none')} style={{ flex: 1 }} />}
+            {(initial.manualMatch || initial.noMatch) && <Button title="Back to automatic" kind="plain" onPress={() => setMatch(null)} style={{ flex: 1 }} />}
           </View>
         </Field>
       )}

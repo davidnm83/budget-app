@@ -105,6 +105,18 @@ describe('weekly planner', () => {
   });
 });
 
+describe('leaving a planned entry unmatched', () => {
+  it('a transaction that would match it stays unplanned, and the entry is still to come', () => {
+    const item = { key: 'e:1', date: '2026-10-10', description: 'Money from Dad', amount: 200, accountId: 'chq', categoryId: null, estimated: false,
+      matchText: null, recurringId: null, occurrenceDate: null, entryId: '1', transfer: false, matchedTxnId: null };
+    const txn = { id: 't1', date: '2026-10-09', amount: 200, accountId: 'chq', name: 'E-TRANSFER', merchant: null };
+    const run = (noMatch: boolean) => buildWeek({ weekStart: '2026-10-05', today: '2026-10-08', accounts: [{ id: 'chq', name: 'Chequing', startBalance: 100, buffer: 0 }],
+      planned: [{ ...item, ...(noMatch ? { noMatch: true } : {}) }], actuals: [txn] }).days.flatMap((d) => d.rows);
+    expect(run(false).map((r) => [r.kind, r.txn?.id ?? null])).toEqual([['planned', 't1']]);
+    expect(run(true).map((r) => [r.kind, r.txn?.id ?? null]).sort()).toEqual([['actual', 't1'], ['planned', null]]);
+  });
+});
+
 describe('planned entries the bank has counted but not listed', () => {
   const item = (key: string, date: string, amount: number) => ({ key, date, description: key, amount, accountId: 'chq', categoryId: null, estimated: false,
     matchText: null, recurringId: null, occurrenceDate: null, entryId: key, transfer: false, matchedTxnId: null });
