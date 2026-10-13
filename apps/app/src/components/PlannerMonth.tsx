@@ -135,7 +135,7 @@ export function PlanRow({ t, r, account, onPress }: { t: Theme; r: WeekRow; acco
       <View style={{ flex: 1 }}>
         <Text style={[ROW.title, { color: t.text, fontWeight: r.kind === 'actual' ? '500' : '600' }]} numberOfLines={1}>{r.description}</Text>
         <Text style={{ color: r.overdue ? t.danger : t.muted, fontSize: 12 }} numberOfLines={1}>
-          {r.kind === 'actual' ? 'unplanned' : matched ? `planned ${formatMoney(r.planned!)}` : r.unlisted ? 'done by the bank, not listed yet' : r.overdue ? 'not posted yet' : 'planned'}{account ? ` · ${account}` : ''}
+          {r.kind === 'actual' ? 'unplanned' : matched ? `planned ${formatMoney(r.planned!)}` : r.unlisted ? (r.item?.bankDone ? 'done by the bank (marked), not listed yet' : 'done by the bank, not listed yet') : r.overdue ? 'not posted yet' : 'planned'}{account ? ` · ${account}` : ''}
         </Text>
       </View>
       <View style={{ alignItems: 'flex-end' }}>

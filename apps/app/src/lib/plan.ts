@@ -123,7 +123,8 @@ export const unlistedOf = (accounts: Account[]): Record<string, number> =>
  * The planned entries the bank has done without listing them yet, worked out once so every view agrees, and
  * a balance on a day that leaves out the ones from that day on (they hadn't happened yet).
  */
-function unlistedNow(plan: (from: string, to: string) => PlannedItem[], posted: PostedTxn[], planAccounts: Account[], now: string) {
+function unlistedNow(plan: (from: string, to: string) => PlannedItem[], posted: PostedTxn[], planAccounts: Account[], now: string,
+  snaps: Map<string, { date: string; balance: number }[]> = new Map()) {
   const unlisted = unlistedOf(planAccounts);
   const found = Object.keys(unlisted).length ? buildWeek({
     weekStart: addDays(now, -10), days: 12, today: now, planned: plan(addDays(now, -10), addDays(now, 1)), actuals: posted, unlisted,
@@ -132,7 +133,16 @@ function unlistedNow(plan: (from: string, to: string) => PlannedItem[], posted: 
   /** What the bank held at the start of `d` (its balance less listed transactions and these entries from then). */
   const startOf = (a: Account, d: string) => round2(balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), d)
     - found.filter((u) => u.accountId === a.id && u.date >= d && u.date <= now).reduce((x, u) => x + u.amount, 0));
-  return { unlisted, keys: found.map((u) => u.key), startOf };
+  /**
+   * What the bank held at the end of `d`: for a day gone by, the balance the sync saved that day (IDEA-2) where there is
+   * one, since it already has whatever the bank had done, listed or not; otherwise worked back as above. (Cards keep
+   * payment plans apart from the bank's balance, so they're always worked back.)
+   */
+  const endOf = (a: Account, d: string) => {
+    const snap = d < now && a.type !== 'credit' ? snaps.get(a.id)?.find((x) => x.date === d) : undefined;
+    return snap ? snap.balance : startOf(a, addDays(d, 1));
+  };
+  return { unlisted, keys: found.map((u) => u.key), startOf, endOf };
 }
 
 export interface PlannerData {
@@ -168,7 +178,8 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   const balanceOn = (d: string) => Object.fromEntries(planAccounts.map((a) => [a.id, balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), d)]));
   const shown = only ? planAccounts.filter((a) => a.id === only) : planAccounts;
   const shownIds = new Set(shown.map((a) => a.id));
-  const { unlisted, keys: unlistedKeys, startOf } = unlistedNow((a, b) => expandPlan(recurring, entries, a, b), posted, planAccounts, now);
+  const snaps = await loadSnapshots(planAccounts.filter((a) => a.type !== 'credit').map((a) => a.id), addDays(from, -1));
+  const { unlisted, keys: unlistedKeys, endOf } = unlistedNow((a, b) => expandPlan(recurring, entries, a, b), posted, planAccounts, now, snaps);
   const accountsFor = (bal: Record<string, number>) => planAccounts.map((a) => ({ id: a.id, name: a.name, startBalance: bal[a.id], buffer: Number(a.plan_buffer ?? 0) }));
 
   // Roll forward from this week: each week starts at the projected end of the one before.
@@ -178,7 +189,7 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   let roll = balanceOn(thisWeek);
   const strip: PlannerData['strip'] = [];
   const total = (bal: Record<string, number>) => Math.round(shown.reduce((s2, a) => s2 + bal[a.id], 0) * 100) / 100;
-  for (let w = back; w < thisWeek; w = addDays(w, 7)) strip.push({ week: w, end: round2(shown.reduce((x, a) => x + startOf(a, addDays(w, 7)), 0)), warning: null, past: true });
+  for (let w = back; w < thisWeek; w = addDays(w, 7)) strip.push({ week: w, end: round2(shown.reduce((x, a) => x + endOf(a, addDays(w, 6)), 0)), warning: null, past: true });
   const last = week > aheadEnd ? week : aheadEnd;
   for (let w = thisWeek; w <= last; w = addDays(w, 7)) {
     starts.set(w, roll);
@@ -200,7 +211,7 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   for (let i = 0; i < 7; i++) {
     const d = addDays(week, i);
     if (d > now) break;
-    actual[d] = round2(shown.reduce((s, a) => s + startOf(a, addDays(d, 1)), 0));
+    actual[d] = round2(shown.reduce((s, a) => s + endOf(a, d), 0));
   }
   return { view, accounts: all, recurring, entries, ahead, actual, strip };
 }
@@ -234,7 +245,8 @@ export async function loadMonth(month: string, only: string | null): Promise<Mon
     ids.length ? loadPosted(ids, addDays(first < addDays(now, -10) ? first : addDays(now, -10), -4), addDays(end > now ? end : now, 4)) : Promise.resolve([] as PostedTxn[]),
   ]);
   const shown = only ? planAccounts.filter((a) => a.id === only) : planAccounts;
-  const { unlisted, keys: unlistedKeys, startOf } = unlistedNow((a, b) => expandPlan(recurring, entries, a, b), posted, planAccounts, now);
+  const snaps = await loadSnapshots(planAccounts.filter((a) => a.type !== 'credit').map((a) => a.id), addDays(first, -1));
+  const { unlisted, keys: unlistedKeys, endOf } = unlistedNow((a, b) => expandPlan(recurring, entries, a, b), posted, planAccounts, now, snaps);
   // This month's plan reaches back 10 days for entries the bank may have done without listing them yet.
   const back10 = addDays(now, -10);
   const balanceOn = (d: string) => Object.fromEntries(planAccounts.map((a) => [a.id, balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), d)]));
@@ -250,7 +262,7 @@ export async function loadMonth(month: string, only: string | null): Promise<Mon
     accounts: shown.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })) });
   const actual: Record<string, number> = {};
   for (let d = month; d <= end && d <= now; d = addDays(d, 1)) {
-    actual[d] = round2(shown.reduce((s, a) => s + startOf(a, addDays(d, 1)), 0));
+    actual[d] = round2(shown.reduce((s, a) => s + endOf(a, d), 0));
   }
   const strip: MonthData['strip'] = [];
   for (let m = stripFrom; m <= addMonths(cur, 12); m = addMonths(m, 1)) {

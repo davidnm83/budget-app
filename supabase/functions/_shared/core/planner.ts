@@ -27,6 +27,8 @@ export interface PlanEntry {
   matched_transaction_id: string | null;
   /** Left unmatched on purpose: not matched to a transaction automatically. */
   no_match?: boolean;
+  /** Marked by hand as done by the bank: already in the balance, though not listed yet. */
+  bank_done?: boolean;
 }
 
 export interface PlannedItem {
@@ -45,6 +47,8 @@ export interface PlannedItem {
   matchedTxnId: string | null; // set by hand
   /** Left unmatched by hand: automatic matching skips it. */
   noMatch?: boolean;
+  /** Marked by hand as done by the bank (in the balance, not listed yet), until its transaction posts and matches. */
+  bankDone?: boolean;
 }
 
 /** Every planned item between `from` and `to`: due dates of active bills/income (with per-date changes) and one-off entries. */
@@ -61,13 +65,13 @@ export function expandPlan(recurring: Recurring[], entries: PlanEntry[], from: I
       out.push({
         key: `r:${r.id}:${d}`, date, description: o?.description ?? r.name, amount: o ? Number(o.amount) : r.amount_until && d <= r.amount_until.date ? r.amount_until.amount : r.amount,
         accountId: o?.account_id ?? r.account_id, categoryId: r.category_id, estimated: r.estimated, matchText: r.match_text,
-        recurringId: r.id, occurrenceDate: d, entryId: o?.id ?? null, transfer: false, matchedTxnId: o?.matched_transaction_id ?? null, ...(o?.no_match ? { noMatch: true } : {}),
+        recurringId: r.id, occurrenceDate: d, entryId: o?.id ?? null, transfer: false, matchedTxnId: o?.matched_transaction_id ?? null, ...(o?.no_match ? { noMatch: true } : {}), ...(o?.bank_done ? { bankDone: true } : {}),
       });
     }
   }
   for (const e of entries.filter((x) => !x.recurring_id && !x.skipped && x.date >= from && x.date <= to)) {
     const base = { date: e.date, description: e.description, categoryId: e.category_id, estimated: false, matchText: null,
-      recurringId: null, occurrenceDate: null, entryId: e.id, matchedTxnId: e.matched_transaction_id, ...(e.no_match ? { noMatch: true } : {}) };
+      recurringId: null, occurrenceDate: null, entryId: e.id, matchedTxnId: e.matched_transaction_id, ...(e.no_match ? { noMatch: true } : {}), ...(e.bank_done ? { bankDone: true } : {}) };
     out.push({ ...base, key: `e:${e.id}`, amount: Number(e.amount), accountId: e.account_id, transfer: !!e.to_account_id });
     // A planned transfer also shows on the receiving account (PLN-9).
     if (e.to_account_id) out.push({ ...base, key: `e:${e.id}:in`, amount: -Number(e.amount), accountId: e.to_account_id, transfer: true, matchedTxnId: null });
@@ -148,7 +152,11 @@ export function buildWeek(opts: {
   const earlier = opts.planned.filter((p) => p.accountId && ids.has(p.accountId) && p.date < opts.weekStart && p.date >= addDays(opts.today, -10));
   const earlierPaid = earlier.length ? matchDues(earlier.filter((p) => !p.matchedTxnId && !p.noMatch).map((p) => ({ key: p.key, date: p.date, amount: p.amount, accountId: p.accountId, matchText: p.matchText, estimated: p.estimated })), actuals, 3) : new Map();
   const candidates = [...earlier.filter((p) => !p.matchedTxnId && !earlierPaid.has(p.key)), ...planned.filter((p) => !match.has(p.key))];
-  const unlisted = opts.unlistedKeys ? new Set(opts.unlistedKeys) : unlistedPlanned(candidates, opts.unlisted ?? {}, opts.today);
+  // Entries you marked as done by the bank count as done; the rest of the bank's unlisted amount is matched as before.
+  const marked = candidates.filter((p) => p.bankDone);
+  const rest = Object.fromEntries(Object.entries(opts.unlisted ?? {}).map(([a, g]) => [a, round2(g - marked.filter((p) => p.accountId === a).reduce((x, p) => x + p.amount, 0))]));
+  const unlisted = opts.unlistedKeys ? new Set(opts.unlistedKeys) : unlistedPlanned(candidates.filter((p) => !p.bankDone), rest, opts.today);
+  for (const p of marked) unlisted.add(p.key);
   const unlistedFound = candidates.filter((p) => unlisted.has(p.key)).map((p) => ({ key: p.key, date: p.date, amount: p.amount, accountId: p.accountId! }));
   const txnById = new Map(actuals.map((t) => [t.id, t]));
   const usedTxn = new Set(match.values());

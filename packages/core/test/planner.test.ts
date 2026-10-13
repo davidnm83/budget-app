@@ -136,6 +136,14 @@ describe('planned entries the bank has counted but not listed', () => {
     expect(w.days.map((d) => d.endBalance)).toEqual([1590, 1590, 1600, 1200, 300, 300, 300]);
     expect(w.unlistedFound.map((u) => u.key).sort()).toEqual(['card', 'fee', 'in']);
   });
+  it('entries marked done by hand count as done, and the rest of the gap is still matched', () => {
+    // The bank's gap also holds $23.40 of other spending, so card + in + fee no longer add up on their own.
+    const marked = planned.map((p) => (p.key === 'card' ? { ...p, bankDone: true } : p));
+    const w = buildWeek({ weekStart: '2026-10-05', today: '2026-10-08', accounts: [{ id: 'chq', name: 'Chequing', startBalance: 1200, buffer: 0 }], planned: marked, actuals: [], unlisted: { chq: -413.4 } });
+    expect(w.unlistedFound.map((u) => u.key)).toEqual(['card']);
+    const w2 = buildWeek({ weekStart: '2026-10-05', today: '2026-10-08', accounts: [{ id: 'chq', name: 'Chequing', startBalance: 1200, buffer: 0 }], planned: marked, actuals: [], unlisted: { chq: -390 } });
+    expect(w2.unlistedFound.map((u) => u.key).sort()).toEqual(['card', 'fee', 'in']);
+  });
   it('nothing is assumed when the amounts do not add up exactly', () => {
     const w = week({ chq: -391 });
     expect(w.days.flatMap((d) => d.rows).some((r) => r.unlisted)).toBe(false);
