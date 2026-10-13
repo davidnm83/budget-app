@@ -19,6 +19,8 @@ import { TransfersCard } from '@/components/BalanceTransfers';
 import { CreditScoreCard } from '@/components/CreditScore';
 import { loadPlans } from '@/lib/paymentPlans';
 import { loadTransfers } from '@/lib/balanceTransfers';
+import { loadPayLaterStatus } from '@/lib/payLater';
+import { PayLaterRow, payLaterTotals } from '@/components/PayLater';
 import { Skeleton } from '@/components/Columns';
 import { Field, Sheet, useChanged } from '@/components/Forms';
 import { DateField } from '@/components/DateField';
@@ -103,6 +105,7 @@ export const WIDGETS: WidgetDef[] = [
   { key: 'chart', title: 'Chart', about: 'Spending, money in and out, net worth, card debt or an account, for the accounts and categories you choose', home: true, budget: true, config: 'chart', sizable: true },
   { key: 'owed', title: 'Money owed', about: 'What each person owes you, or you owe them, from transactions marked with their name', home: true, budget: true, fits: true },
   { key: 'plans', title: 'Payment plans', about: 'Purchases paid off in monthly instalments on a card, with their progress', home: true, budget: true },
+  { key: 'paylater', title: 'Pay later', about: 'Affirm, Klarna, PayPal and other pay later plans: what’s owed and the next payments', home: true, budget: true },
   { key: 'transfers', title: 'Balance transfers', about: 'Money moved between cards at a promo rate, and what to pay to clear it in time', home: true, budget: true },
   { key: 'scorelog', title: 'Credit score log', about: 'Log a score and see the latest from each bureau (a Credit score chart shows the trend)', home: true, budget: true },
   { key: 'goals', title: 'Goals', about: 'Your goals with their progress and whether they’re on pace', home: true, budget: true, fits: true },
@@ -180,6 +183,7 @@ function WidgetBody({ k: entry, refresh = 0, anchor, range }: { k: string; refre
     case 'owed': return <OwedCard t={t} refresh={refresh} />;
     case 'radar': return <Radar t={t} refresh={refresh} settings={cfg.radar} />;
     case 'plans': return <PlansWidget t={t} refresh={refresh} />;
+    case 'paylater': return <PayLaterWidget t={t} refresh={refresh} />;
     case 'transfers': return <TransfersWidget t={t} refresh={refresh} />;
     case 'scorelog': return <CreditScoreCard refresh={refresh} />;
     case 'watch': return <WatchMini t={t} refresh={refresh} h={cfg.h} />;
@@ -412,6 +416,26 @@ function PlansWidget({ t, refresh }: { t: Theme; refresh: number }) {
   const { data } = useLoad(() => Promise.all([loadPlans(), loadAccounts()]), [refresh, again]);
   if (!data) return <CardShell t={t} title="Payment plans"><Skeleton color={t.track} /></CardShell>;
   return <PlansCard t={t} plans={data[0]} accounts={data[1]} onChanged={() => setAgain((n) => n + 1)} />;
+}
+/** Pay later plans: what's owed, the next payment, each open plan's progress. Tap through to the Pay later page. */
+function PayLaterWidget({ t, refresh }: { t: Theme; refresh: number }) {
+  const { data } = useLoad(() => loadPayLaterStatus(), [refresh]);
+  if (!data) return <CardShell t={t} title="Pay later"><Skeleton color={t.track} /></CardShell>;
+  const tot = payLaterTotals(data, today());
+  const open = data.filter((r) => !r.status.done);
+  return (
+    <CardShell t={t} title="Pay later">
+      <Pressable onPress={() => router.navigate('/paylater')} accessibilityRole="button" style={{ gap: 6 }}>
+        {!open.length ? <Text style={{ color: t.muted }}>{data.length ? 'Every plan is paid off. 🎉' : 'No pay later plans. Add one on the Pay later page.'}</Text> : (
+          <>
+            <Text style={{ color: t.text, fontSize: 20, fontWeight: '700' }}>{formatMoney(tot.owing)} <Text style={{ color: t.muted, fontSize: 13, fontWeight: '400' }}>owing on {open.length} plan{open.length === 1 ? '' : 's'}</Text></Text>
+            {tot.next && <Text style={{ color: tot.missed ? t.danger : t.muted, fontSize: 13 }}>{tot.missed ? `${tot.missed} payment${tot.missed === 1 ? '' : 's'} missed · ` : ''}Next {formatMoney(tot.next.amount)} on {shortDate(tot.next.date)} ({tot.next.plan.provider})</Text>}
+            {open.slice(0, 4).map((r) => <PayLaterRow key={r.plan.id} t={t} plan={r.plan} status={r.status} onPress={() => router.navigate('/paylater')} />)}
+          </>
+        )}
+      </Pressable>
+    </CardShell>
+  );
 }
 /** Balance transfers between cards, as on the Credit cards page. */
 function TransfersWidget({ t, refresh }: { t: Theme; refresh: number }) {

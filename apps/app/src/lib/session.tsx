@@ -20,6 +20,8 @@ function signedIn(s: Session) {
     refreshSaved(s.access_token).catch(() => {});
     // Card payment plans: add any instalment that has come due since the app was last open.
     import('./paymentPlans').then((m) => m.syncPlans()).catch(() => {});
+    // Pay later: file payments that have come in, and keep what's owed current.
+    import('./payLater').then((m) => m.syncPayLater()).catch(() => {});
   }, 4000);
 }
 

@@ -15,6 +15,7 @@ import { useTxnSheet } from '@/components/TxnSheet';
 import { Button, Card, Segmented } from '@/components/ui';
 import { loadTxnsFor, type Row } from '@/lib/accountTxns';
 import { loadAccounts, today } from '@/lib/plan';
+import { isPayLaterAccount } from '@/lib/payLater';
 import { useTheme, type Theme } from '@/lib/theme';
 import { signedBalance, type Account } from '@/lib/types';
 
@@ -33,7 +34,7 @@ export default function Loans() {
   const load = useCallback(async () => {
     try {
       const all = await loadAccounts();
-      const loans = all.filter((a) => a.type === 'loan');
+      const loans = all.filter((a) => a.type === 'loan' && !isPayLaterAccount(a));
       setAccounts(all);
       setTxns(await loadTxnsFor(loans.map((l) => l.id), '1900-01-01'));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -42,7 +43,7 @@ export default function Loans() {
   usePullRefresh(load);
 
   // Car loans first: that's what this page is mostly for.
-  const loans = accounts.filter((a) => a.type === 'loan')
+  const loans = accounts.filter((a) => a.type === 'loan' && !isPayLaterAccount(a))
     .sort((a, b) => Number(/auto|car|vehicle/i.test(b.name)) - Number(/auto|car|vehicle/i.test(a.name)) || a.name.localeCompare(b.name));
   const loan = loans.find((l) => l.id === pick) ?? loans[0];
   const mine = useMemo(() => (loan ? txns.filter((x) => x.account_id === loan.id).map((x) => ({ date: x.date, amount: x.amount, name: x.name ?? '' })) : []), [loan, txns]);

@@ -24,6 +24,7 @@ const PAGES: Item[] = [
   { icon: 'chatbubbles-outline', label: 'Ask', href: '/ask' },
   { icon: 'flag-outline', label: 'Goals', href: '/goals' },
   { icon: 'card-outline', label: 'Credit cards', href: '/credit' },
+  { icon: 'bag-handle-outline', label: 'Pay later', href: '/paylater' },
   { icon: 'car-outline', label: 'Car & loans', href: '/loans' },
   { icon: 'bar-chart-outline', label: 'Reports', href: '/reports' },
 ];
