@@ -132,6 +132,11 @@ export function buildWeek(opts: {
   unlisted?: Record<string, number>;
   /** Which planned entries those are, when already worked out (so every view of the plan agrees). */
   unlistedKeys?: string[];
+  /**
+   * Every such entry, wherever it falls: a view that ends before one of them (a past week) still starts without it,
+   * since the bank's balance it's worked back from already has it.
+   */
+  unlistedAll?: { date: IsoDate; amount: number; accountId: string }[];
 }): WeekView {
   const ids = new Set(opts.accounts.map((a) => a.id));
   const span = opts.days ?? 7;
@@ -181,7 +186,8 @@ export function buildWeek(opts: {
 
   // A start balance worked back from the bank's balance still has the bank's unlisted entries in it; the ones
   // from this view onward come out of it, to be counted on their own day.
-  const inView = (a: string) => unlistedFound.filter((u) => u.accountId === a && u.date >= opts.weekStart && u.date <= end && u.date <= opts.today).reduce((x, u) => x + u.amount, 0);
+  // (Ones after the view, up to today, come out too: the view never counts them, and they weren't there yet.)
+  const inView = (a: string) => (opts.unlistedAll ?? unlistedFound).filter((u) => u.accountId === a && u.date >= opts.weekStart && u.date <= opts.today).reduce((x, u) => x + u.amount, 0);
   const perAccount: Record<string, number> = Object.fromEntries(opts.accounts.map((a) => [a.id, round2(a.startBalance - inView(a.id))]));
   const buffer = Object.fromEntries(opts.accounts.map((a) => [a.id, a.buffer]));
   const warned = new Set<string>();

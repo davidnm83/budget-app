@@ -144,6 +144,16 @@ describe('planned entries the bank has counted but not listed', () => {
     const w2 = buildWeek({ weekStart: '2026-10-05', today: '2026-10-08', accounts: [{ id: 'chq', name: 'Chequing', startBalance: 1200, buffer: 0 }], planned: marked, actuals: [], unlisted: { chq: -390 } });
     expect(w2.unlistedFound.map((u) => u.key).sort()).toEqual(['card', 'fee', 'in']);
   });
+  it('a past week starts without an entry the bank did after it (worked back from a balance that has it)', () => {
+    const dad = { key: 'dad', date: '2026-10-12', description: 'Money from Dad', amount: 257, accountId: 'chq', categoryId: null, estimated: false,
+      matchText: null, recurringId: null, occurrenceDate: null, entryId: 'dad', transfer: false, matchedTxnId: null, bankDone: true };
+    const last = buildWeek({ weekStart: '2026-10-05', today: '2026-10-13', accounts: [{ id: 'chq', name: 'Chequing', startBalance: 570.22, buffer: 0 }],
+      planned: [], actuals: [], unlistedKeys: ['dad'], unlistedAll: [{ date: dad.date, amount: 257, accountId: 'chq' }] });
+    expect([last.startBalance, last.endBalance]).toEqual([313.22, 313.22]);
+    const now = buildWeek({ weekStart: '2026-10-12', today: '2026-10-13', accounts: [{ id: 'chq', name: 'Chequing', startBalance: 570.22, buffer: 0 }],
+      planned: [dad], actuals: [], unlistedKeys: ['dad'], unlistedAll: [{ date: dad.date, amount: 257, accountId: 'chq' }] });
+    expect([now.startBalance, now.endBalance]).toEqual([313.22, 570.22]);
+  });
   it('nothing is assumed when the amounts do not add up exactly', () => {
     const w = week({ chq: -391 });
     expect(w.days.flatMap((d) => d.rows).some((r) => r.unlisted)).toBe(false);
