@@ -21,6 +21,7 @@ import { loadPlans } from '@/lib/paymentPlans';
 import { loadTransfers } from '@/lib/balanceTransfers';
 import { Skeleton } from '@/components/Columns';
 import { Field, Sheet, useChanged } from '@/components/Forms';
+import { DateField } from '@/components/DateField';
 import { MultiPicker } from '@/components/Picker';
 import { loadTxnsFor } from '@/lib/accountTxns';
 import { supabase } from '@/lib/supabase';
@@ -507,6 +508,10 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
   useEffect(() => { if (widget === 'watch') loadPrefs().then((p) => setWatch(p.watch_categories ?? [])).catch(() => setWatch([])); }, [widget]);
   const [title, setTitle] = useState(cfg.title ?? '');
   const [months, setMonths] = useState(cfg.months ?? 6);
+  // Custom: the chart's own dates instead of a period.
+  const [custom, setCustom] = useState(!!cfg.from);
+  const [from, setFrom] = useState(cfg.from ?? addDays(today(), -13));
+  const [to, setTo] = useState(cfg.to ?? '');
   const [source, setSource] = useState<Source>(cfg.source ?? 'spending');
   const [view, setView] = useState<ChartView>(cfg.view ?? cfg.chart ?? 'bars');
   const [ids, setIds] = useState<string[] | null>(cfg.categoryIds ?? null);
@@ -522,7 +527,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
   const [text, setText] = useState(cfg.text ?? '');
   const [plain, setPlain] = useState(!!cfg.plain);
   const [radar, setRadar] = useState<RadarSettings>(cfg.radar ?? {});
-  const changed = useChanged([title, months, source, view, ids, accs, by, avgLine, numbers, labels, payoff, stack, compare, pace, text, plain, radar]);
+  const changed = useChanged([title, months, custom, from, to, source, view, ids, accs, by, avgLine, numbers, labels, payoff, stack, compare, pace, text, plain, radar]);
   const radarNum = (k: 'unusualPct' | 'unusualMin' | 'cardPct' | 'runwayDays', v: string) => setRadar((r) => { const n = Number(v); const { [k]: _old, ...rest } = r; return v.trim() && isFinite(n) && n >= 0 ? { ...rest, [k]: n } : rest; });
   const [pick, setPick] = useState(false);
   const [pickAcc, setPickAcc] = useState(false);
@@ -557,6 +562,7 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
     : kind === 'text' ? { ...keep, title: title.trim() || undefined, text: text.trim() || undefined, ...(plain ? { plain: true } : {}) }
     : {
       ...keep, title: title.trim() || undefined, source, view: shown, months,
+      from: custom && from ? from : undefined, to: custom && from && to ? to : undefined,
       ...(catSource && selected.length ? { categoryIds: selected } : {}),
       ...(canStack && stack ? { stack: true } : {}),
       ...(canCompare && compare && !(canStack && stack) ? { compare: true } : {}),
@@ -602,7 +608,16 @@ export function WidgetSettings({ kind, cfg, onDone, onClose, widget }: { kind: '
             </View>
           </Field>
           <Field t={t} label="Over">
-            <View style={chips}>{[0, 1, 3, 6, 12, 24].map((m) => <Chip key={m} label={m === 0 ? 'This week' : m === 1 ? 'This month' : `${m} months`} on={months === m} onPress={() => setMonths(m)} />)}</View>
+            <View style={chips}>
+              {[0, -1, 1, 3, 6, 12, 24].map((m) => <Chip key={m} label={m === 0 ? 'This week' : m === -1 ? 'Last week' : m === 1 ? 'This month' : `${m} months`} on={!custom && months === m} onPress={() => { setMonths(m); setCustom(false); }} />)}
+              <Chip label="Custom" on={custom} onPress={() => setCustom(true)} />
+            </View>
+            {custom && (
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                <View style={{ flex: 1 }}><DateField value={from} onChange={setFrom} /></View>
+                <View style={{ flex: 1 }}><DateField value={to} onChange={setTo} placeholder="Today" /></View>
+              </View>
+            )}
           </Field>
           {!NO_ACCOUNTS.includes(source) && <Field t={t} label="Accounts" hint={chosen.length ? pool.filter((a) => chosen.includes(a.id)).map((a) => a.name).join(' · ') : source === 'balance' ? 'Choose one account, or several to add together.' : source === 'carddebt' ? 'All cards. Choose cards to narrow it.' : 'All accounts. Choose accounts to narrow it.'}>
             <Button kind="plain" title={chosen.length ? `${chosen.length} chosen · change` : 'Choose accounts'} onPress={() => setPickAcc(true)} />

@@ -47,6 +47,8 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
   const transfers = await import('./balanceTransfers').then((m) => m.loadTransfers()).catch(() => []);
   const due = new Map<string, number>();
   const mins = new Map<string, number>(); // the statement's minimum still to pay, interest and fees included where the card's rule adds them
+  // A statement already paid: its due date and what it asked for (in full, and its minimum), for the bill that paid it.
+  const paid = new Map<string, { due: string; full: number; minimum: number }>();
   for (const a of (accts ?? []) as any[]) {
     const owed = Math.max(0, Number(a.balance ?? 0)); // cards: amount owing is positive in balance
     const mine = plans.filter((p) => p.accountId === a.id);
@@ -62,6 +64,7 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
       // A statement that's all on a balance transfer still asks for its minimum.
       if (st.leftToPay > 0 || st.minimumLeft) amount = Math.max(st.leftToPay, st.minimumLeft ?? 0);
       if (st.leftToPay > 0 || st.minimumLeft) mins.set(a.id, st.minimumLeft ?? 0);
+      else if (st.statementOwed > 0) paid.set(a.id, { due: c.due, full: st.statementOwed, minimum: minimumPayment(st.statementOwed, ruleOf(a.id)) });
     }
     due.set(a.id, round2(amount));
   }
@@ -69,7 +72,10 @@ async function resolveCardBills(list: (Recurring & { card_account_id?: string | 
     if (!r.card_account_id || !r.card_rule || r.card_rule === 'custom' || !due.has(r.card_account_id)) return r;
     const full = due.get(r.card_account_id)!;
     const amount = r.card_rule === 'minimum' ? mins.get(r.card_account_id) ?? minimumPayment(full, minimums.get(r.card_account_id)?.rule ?? undefined) : full;
-    return { ...r, amount: -amount, estimated: true };
+    // The occurrence for the statement just paid keeps that statement's amount; later ones follow the balance.
+    const p = paid.get(r.card_account_id);
+    const until = p ? { date: addDays(p.due, 3), amount: -(r.card_rule === 'minimum' ? p.minimum : p.full) } : null;
+    return { ...r, amount: -amount, estimated: true, amount_until: until };
   });
 }
 

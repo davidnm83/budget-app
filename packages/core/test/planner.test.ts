@@ -14,6 +14,10 @@ describe('schedules', () => {
     expect(occurrences(r({ frequency: 'yearly', start_date: '2025-03-15' }), '2026-01-01', '2027-12-31')).toEqual(['2026-03-15', '2027-03-15']);
     expect(occurrences(r({ start_date: '2026-10-15' }), '2026-09-01', '2026-09-30')).toEqual([]);
   });
+  it('a card bill already paid keeps its statement amount; later ones follow the balance', () => {
+    const card = r({ name: 'Visa', amount: -312.4, start_date: '2026-09-11', amount_until: { date: '2026-10-14', amount: -550.03 } });
+    expect(expandPlan([card], [], '2026-10-01', '2026-11-30').map((p) => [p.date, p.amount])).toEqual([['2026-10-11', -550.03], ['2026-11-11', -312.4]]);
+  });
 });
 
 describe('matching due dates to transactions', () => {

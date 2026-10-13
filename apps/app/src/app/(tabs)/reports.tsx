@@ -65,7 +65,7 @@ export default function Reports() {
       ]);
       setCats(c); setMonths(s); setSources(inc);
       // report_months is newest first, so its last row is the oldest month with activity.
-      setRows(s.length ? await loadCategoryMonths(s[s.length - 1].month, s[0].month) : []);
+      setRows(s.length ? await loadCategoryMonths(s[s.length - 1].month, s[0].month, { from: r.from, to: r.to }) : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -77,7 +77,8 @@ export default function Reports() {
 
   // Drill-down: the transactions behind a number, in a slide-over.
   const open = (q: Record<string, string>) => {
-    const from = q.month ?? range.from, to = q.month ? monthEnd(q.month) : range.to;
+    // A month at either end of the range only counts its days inside it.
+    const from = q.month && q.month > range.from ? q.month : range.from, to = q.month && monthEnd(q.month) < range.to ? monthEnd(q.month) : range.to;
     showTxns({
       title: q.title ?? '', from, to, category: q.category, group: q.group, merchant: q.merchant,
       kind: (q.kind as any) ?? (q.merchant || q.group ? 'expense' : undefined), noTransfers: true,

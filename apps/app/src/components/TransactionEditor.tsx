@@ -91,7 +91,8 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
           if (p) setPair({ id: p.id, date: p.date, amount: Number(p.amount), account: p.account_name });
         }
         const sp = (tx.transaction_splits ?? []) as any[];
-        setParts(sp.length ? sp.map((p) => ({ category_id: p.category_id, amount: Number(p.amount).toFixed(2), notes: p.notes ?? '', person: p.iou_person ?? '', touched: true })) : null);
+        // Money back on a purchase (points, a refund) keeps its + so it isn't read as more spending.
+        setParts(sp.length ? sp.map((p) => ({ category_id: p.category_id, amount: (Number(tx.amount) < 0 && Number(p.amount) > 0 ? '+' : '') + Number(p.amount).toFixed(2), notes: p.notes ?? '', person: p.iou_person ?? '', touched: true })) : null);
       }
       setCats((c ?? []) as Category[]); storeCategories((c ?? []) as Category[]);
     })();
@@ -126,7 +127,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
   }, [makeRule, ruleText, txn?.id]);
 
   // Changes not saved yet, against the transaction as loaded: closing the pop-up by accident asks first.
-  const savedParts = ((txn as any)?.transaction_splits ?? []).map((p: any) => [p.category_id, Number(p.amount).toFixed(2), p.notes ?? '', p.iou_person ?? '']);
+  const savedParts = ((txn as any)?.transaction_splits ?? []).map((p: any) => [p.category_id, (Number(txn?.amount) < 0 && Number(p.amount) > 0 ? '+' : '') + Number(p.amount).toFixed(2), p.notes ?? '', p.iou_person ?? '']);
   useUnsaved(ready && !!txn && !busy && (merchant !== (txn.merchant ?? '') || categoryId !== txn.category_id || notes !== (txn.notes ?? '') || tags !== (txn.tags ?? []).join(', ')
     || date !== txn.date || amount !== Number(txn.amount).toFixed(2) || makeRule
     || iouPerson !== ((txn as any).iou_person ?? '') || (!!iouPerson && !!iouAmount.trim())
@@ -157,7 +158,7 @@ export function TransactionEditor({ id, onDone, onOpen }: { id: string; onDone: 
     const next = ps!.map((p, j) => (j === i ? { ...p, amount: v, touched: true } : p));
     let fill = -1;
     for (let j = next.length - 1; j >= 0; j--) if (j !== i && !next[j].touched) { fill = j; break; }
-    if (fill >= 0) next[fill] = { ...next[fill], amount: round2(total - next.reduce((s2, p, j) => s2 + (j === fill ? 0 : partValue(p.amount)), 0)).toFixed(2) };
+    if (fill >= 0) { const v = round2(total - next.reduce((s2, p, j) => s2 + (j === fill ? 0 : partValue(p.amount)), 0)); next[fill] = { ...next[fill], amount: (total < 0 && v > 0 ? '+' : '') + v.toFixed(2) }; }
     return next;
   });
 

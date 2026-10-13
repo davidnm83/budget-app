@@ -54,7 +54,7 @@ export function expandPlan(recurring: Recurring[], entries: PlanEntry[], from: I
       const date = o?.date ?? (r.lead_days ? addDays(d, -r.lead_days) : d);
       if (date < from || date > to) continue;
       out.push({
-        key: `r:${r.id}:${d}`, date, description: o?.description ?? r.name, amount: o ? Number(o.amount) : r.amount,
+        key: `r:${r.id}:${d}`, date, description: o?.description ?? r.name, amount: o ? Number(o.amount) : r.amount_until && d <= r.amount_until.date ? r.amount_until.amount : r.amount,
         accountId: o?.account_id ?? r.account_id, categoryId: r.category_id, estimated: r.estimated, matchText: r.match_text,
         recurringId: r.id, occurrenceDate: d, entryId: o?.id ?? null, transfer: false, matchedTxnId: o?.matched_transaction_id ?? null,
       });

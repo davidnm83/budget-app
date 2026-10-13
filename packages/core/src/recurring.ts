@@ -23,6 +23,8 @@ export interface Recurring {
   active: boolean;
   /** Shown in the planner this many days before each due date (a card paid ahead of its due day). */
   lead_days?: number | null;
+  /** Occurrences due on or before `date` are for this amount instead (a card's statement already paid, while later ones follow the new balance). */
+  amount_until?: { date: IsoDate; amount: number } | null;
 }
 
 function lastDayOfMonth(y: number, m: number): number {

@@ -20,15 +20,17 @@ export async function loadBudgets(): Promise<Budget[]> {
   return (data ?? []).map((b) => ({ id: b.id, month: b.month, categoryId: b.category_id, groupName: b.group_name, amount: Number(b.amount), rollover: b.rollover }));
 }
 
-/** Per-category totals for every month from `from` to `to` (inclusive), fetched 6 months at a time. */
-export async function loadCategoryMonths(from: Month, to: Month): Promise<CategoryMonth[]> {
+/** Per-category totals for every month from `from` to `to` (inclusive), fetched 6 months at a time; `days` cuts them to those dates. */
+export async function loadCategoryMonths(from: Month, to: Month, days?: { from: string; to: string }): Promise<CategoryMonth[]> {
   const chunks: [Month, Month][] = [];
   for (let m = from; m <= to; m = addMonths(m, 6)) {
     const end = addMonths(m, 6) <= addMonths(to, 1) ? addMonths(m, 6) : addMonths(to, 1);
     chunks.push([m, end]);
   }
   const parts = await Promise.all(chunks.map(async ([a, b]) => {
-    const { data, error } = await supabase.rpc('report_category_months', { p_from: a, p_to: dayBefore(b) });
+    const lo = days?.from && days.from > a ? days.from : a, end = dayBefore(b), hi = days?.to && days.to < end ? days.to : end;
+    if (lo > hi) return [];
+    const { data, error } = await supabase.rpc('report_category_months', { p_from: lo, p_to: hi });
     if (error) throw new Error(error.message);
     return (data ?? []) as any[];
   }));

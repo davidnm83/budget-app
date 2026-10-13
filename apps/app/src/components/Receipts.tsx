@@ -6,6 +6,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View 
 import { DateField } from '@/components/DateField';
 import { Field, Sheet, useChanged } from '@/components/Forms';
 import { Button } from '@/components/ui';
+import { ZoomPhoto } from '@/components/ZoomPhoto';
 import { today } from '@/lib/plan';
 import { attachedMessage, attachReceipt, deleteReceipt, photoUrl, pickPhoto, receiptsFor, receiptsMatching, saveReceipt, shrinkPhoto, updateReceipt, type Receipt } from '@/lib/receipts';
 import { recordRewards, redeemedOf } from '@/lib/rewards';
@@ -16,6 +17,7 @@ import { aiOn, readReceiptPhoto, useAiOn } from '@/lib/ai';
 
 /** A receipt's photo, fetched when shown. */
 export function ReceiptPhoto({ path, size, full }: { path: string; size?: number; full?: boolean }) {
+  const [zoom, setZoom] = useState(false);
   const t = useTheme();
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -24,9 +26,12 @@ export function ReceiptPhoto({ path, size, full }: { path: string; size?: number
   const box = full ? { width: '100%' as const, aspectRatio: 0.62, maxHeight: 640 } : { width: size ?? 56, height: (size ?? 56) * 1.3 };
   return (
     <View style={[box, styles.photo, { backgroundColor: t.line }]}>
-      {url ? <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode={full ? 'contain' : 'cover'} accessibilityLabel="Receipt photo" />
+      {url ? (full
+        ? <Pressable onPress={() => setZoom(true)} style={StyleSheet.absoluteFill} accessibilityLabel="Receipt photo, tap to zoom"><Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" /></Pressable>
+        : <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityLabel="Receipt photo" />)
         : failed ? <Pressable onPress={() => setTries((n) => n + 1)} hitSlop={6}><Text style={{ color: t.muted, fontSize: 11, textAlign: 'center' }}>Photo didn’t load{'\n'}<Text style={{ color: t.accent }}>Tap to retry</Text></Text></Pressable>
         : <ActivityIndicator color={t.muted} />}
+      {zoom && url && <ZoomPhoto uri={url} onClose={() => setZoom(false)} />}
     </View>
   );
 }
@@ -42,6 +47,7 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
   const t = useTheme();
   const [photo, setPhoto] = useState<Blob | null>(given ?? null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [zoomPreview, setZoomPreview] = useState(false);
   const [amount, setAmount] = useState(initial?.amount != null ? initial.amount.toFixed(2) : attachTo ? Math.abs(attachTo.amount).toFixed(2) : '');
   const [date, setDate] = useState(initial?.taken_on ?? attachTo?.date ?? today());
   const [merchant, setMerchant] = useState(initial?.merchant ?? attachTo?.merchant ?? '');
@@ -124,7 +130,8 @@ export function ReceiptForm({ initial, photo: given, attachTo, onClose, onSaved 
         : preview ? (
           <View style={{ gap: 8 }}>
             <View style={[styles.photo, { width: '100%', aspectRatio: 0.75, maxHeight: 420, backgroundColor: t.line }]}>
-              <Image source={{ uri: preview }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+              <Pressable onPress={() => setZoomPreview(true)} style={StyleSheet.absoluteFill} accessibilityLabel="Receipt photo, tap to zoom"><Image source={{ uri: preview }} style={StyleSheet.absoluteFill} resizeMode="contain" /></Pressable>
+              {zoomPreview && <ZoomPhoto uri={preview} onClose={() => setZoomPreview(false)} />}
             </View>
             {reading ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><ActivityIndicator color={t.accent} /><Text style={{ color: t.muted }}>Reading the receipt…</Text></View>
               : <Pressable onPress={() => choose(false)} hitSlop={6}><Text style={{ color: t.accent }}>Choose a different photo</Text></Pressable>}

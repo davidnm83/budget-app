@@ -88,7 +88,7 @@ function useNoAutofill() {
       + '[tabindex="0"]:focus,[role="button"]:focus,[role="tab"]:focus,[role="link"]:focus{outline:none}'
       // The app's text isn't selectable, as in an app: a drag or long press doesn't highlight labels, rows or buttons
       // (fields, and text marked selectable, like a bank's description, still are). No highlight flash on a tap either.
-      + '*{-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}input,textarea,[contenteditable="true"]{-webkit-user-select:text;user-select:text}'
+      + '*{-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}input,textarea,[contenteditable="true"]{-webkit-user-select:text;user-select:text}[aria-modal="true"]{touch-action:pan-x pan-y}'
       + '@media (hover:none){[tabindex="0"],[role="button"],[role="tab"],[role="link"],[role="menuitem"]{-webkit-touch-callout:none}}'
       + '@media (hover:hover){[data-emoji]:hover{background-color:rgba(128,128,128,.22)}}'
       + '@media (hover:hover){*{scrollbar-width:thin;scrollbar-color:rgba(128,128,128,.35) transparent}}'
