@@ -117,6 +117,27 @@ describe('leaving a planned entry unmatched', () => {
   });
 });
 
+describe('a planned entry paid in the next week', () => {
+  // Planned Saturday Oct 10, paid Tuesday Oct 13.
+  const item = { key: 'r:visa:2026-10-10', date: '2026-10-10', description: 'Visa payment', amount: -300, accountId: 'chq', categoryId: null, estimated: false,
+    matchText: null, recurringId: 'visa', occurrenceDate: '2026-10-10', entryId: null, transfer: false, matchedTxnId: null };
+  const txn = { id: 't1', date: '2026-10-13', amount: -300, accountId: 'chq', name: 'TD BANK', merchant: null };
+  const week = (weekStart: string, start: number, manual: boolean) => buildWeek({ weekStart, today: '2026-10-14', accounts: [{ id: 'chq', name: 'Chequing', startBalance: start, buffer: 0 }],
+    planned: [{ ...item, ...(manual ? { matchedTxnId: 't1' } : {}) }], nearby: [{ ...item, ...(manual ? { matchedTxnId: 't1' } : {}) }], actuals: [txn] });
+  for (const manual of [false, true]) {
+    it(`the payment is not unplanned in the later week, and each week counts it once (${manual ? 'matched by hand' : 'matched automatically'})`, () => {
+      const last = week('2026-10-04', 1000, manual), next = week('2026-10-11', 1000, manual);
+      const row = last.days.flatMap((d) => d.rows)[0];
+      expect([row.txn?.id, row.counted, row.paidOn]).toEqual(['t1', 0, '2026-10-13']);
+      expect(last.endBalance).toBe(1000); // the money left after the week
+      const paid = next.days.flatMap((d) => d.rows);
+      expect(paid.map((r) => [r.kind, r.counted, r.pays?.description])).toEqual([['actual', -300, 'Visa payment']]);
+      expect(next.summary.unplannedOut).toBe(0);
+      expect(next.endBalance).toBe(700);
+    });
+  }
+});
+
 describe('planned entries the bank has counted but not listed', () => {
   const item = (key: string, date: string, amount: number) => ({ key, date, description: key, amount, accountId: 'chq', categoryId: null, estimated: false,
     matchText: null, recurringId: null, occurrenceDate: null, entryId: key, transfer: false, matchedTxnId: null });

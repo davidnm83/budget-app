@@ -164,6 +164,8 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   ]);
   // Planned items for a week: bills, income and one-offs.
   const plannedFor = (w: string, from = w) => expandPlan(recurring, entries, from, addDays(w, 6));
+  // A week either side, for payments made a few days off their week.
+  const nearbyFor = (w: string, end = addDays(w, 6)) => expandPlan(recurring, entries, addDays(w, -7), addDays(end, 7));
 
   const balanceOn = (d: string) => Object.fromEntries(planAccounts.map((a) => [a.id, balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), d)]));
   const shown = only ? planAccounts.filter((a) => a.id === only) : planAccounts;
@@ -182,7 +184,7 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   const last = week > aheadEnd ? week : aheadEnd;
   for (let w = thisWeek; w <= last; w = addDays(w, 7)) {
     starts.set(w, roll);
-    const v = buildWeek({ weekStart: w, today: now, planned: plannedFor(w, w === thisWeek ? addDays(now, -10) : w), actuals: posted, accounts: accountsFor(roll), unlisted, unlistedKeys, unlistedAll });
+    const v = buildWeek({ weekStart: w, today: now, planned: plannedFor(w, w === thisWeek ? addDays(now, -10) : w), actuals: posted, nearby: nearbyFor(w), accounts: accountsFor(roll), unlisted, unlistedKeys, unlistedAll });
     if (w <= aheadEnd) strip.push({ week: w, end: total(v.endBalanceByAccount), warning: v.warnings.find((x) => shownIds.has(x.accountId)) ?? null, past: false });
     if (ahead.length < 4) {
       ahead.push({ week: w, end: Math.round(shown.reduce((s2, a) => s2 + v.endBalanceByAccount[a.id], 0) * 100) / 100, warning: v.warnings.find((x) => shownIds.has(x.accountId)) ?? null });
@@ -192,7 +194,7 @@ export async function loadWeek(week: string, only: string | null): Promise<Plann
   // Past weeks start from the real balance back then.
   const start = week < thisWeek ? balanceOn(week) : starts.get(week)!;
   const view = buildWeek({
-    weekStart: week, today: now, planned: plannedFor(week, week === thisWeek ? addDays(now, -10) : week), actuals: posted, unlisted, unlistedKeys, unlistedAll,
+    weekStart: week, today: now, planned: plannedFor(week, week === thisWeek ? addDays(now, -10) : week), actuals: posted, nearby: nearbyFor(week), unlisted, unlistedKeys, unlistedAll,
     accounts: shown.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })),
   });
   // What the accounts really held at the end of each day so far, to set against the plan's running balance.
@@ -242,11 +244,11 @@ export async function loadMonth(month: string, only: string | null): Promise<Mon
   let start = balanceOn(month <= cur ? month : cur);
   if (month > cur) {
     // Carry the plan forward from the start of this month to the day before this one.
-    const run = buildWeek({ weekStart: cur, days: days(cur, addDays(month, -1)), today: now, planned: expandPlan(recurring, entries, back10 < cur ? back10 : cur, addDays(month, -1)), actuals: posted, unlisted, unlistedKeys, unlistedAll,
+    const run = buildWeek({ weekStart: cur, days: days(cur, addDays(month, -1)), today: now, planned: expandPlan(recurring, entries, back10 < cur ? back10 : cur, addDays(month, -1)), actuals: posted, nearby: expandPlan(recurring, entries, addDays(cur, -7), addDays(month, 6)), unlisted, unlistedKeys, unlistedAll,
       accounts: planAccounts.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })) });
     start = run.endBalanceByAccount;
   }
-  const view = buildWeek({ weekStart: month, days: days(month, end), today: now, planned: expandPlan(recurring, entries, month === cur && back10 < month ? back10 : month, end), actuals: posted, unlisted, unlistedKeys, unlistedAll,
+  const view = buildWeek({ weekStart: month, days: days(month, end), today: now, planned: expandPlan(recurring, entries, month === cur && back10 < month ? back10 : month, end), actuals: posted, nearby: expandPlan(recurring, entries, addDays(month, -7), addDays(end, 7)), unlisted, unlistedKeys, unlistedAll,
     accounts: shown.map((a) => ({ id: a.id, name: a.name, startBalance: start[a.id], buffer: Number(a.plan_buffer ?? 0) })) });
   const actual: Record<string, number> = {};
   for (let d = month; d <= end && d <= now; d = addDays(d, 1)) {

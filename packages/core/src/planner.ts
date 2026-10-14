@@ -90,6 +90,10 @@ export interface WeekRow {
   overdue: boolean;
   /** Already in the bank's balance but not listed by the bank yet (see `unlisted` in buildWeek): counts as done. */
   unlisted?: boolean;
+  /** A planned entry paid by a transaction dated outside the view: the day it was paid (it counts on that day, not here). */
+  paidOn?: IsoDate;
+  /** A transaction that paid a planned entry dated outside the view (so it isn't unplanned). */
+  pays?: { key: string; description: string; date: IsoDate };
   item: PlannedItem | null;
   txn: PostedTxn | null;
   balanceAfter: number;    // running balance of the view (one account or the combined group)
@@ -136,6 +140,11 @@ export function buildWeek(opts: {
    * since the bank's balance it's worked back from already has it.
    */
   unlistedAll?: { date: IsoDate; amount: number; accountId: string }[];
+  /**
+   * Planned entries from just before and after the view (a week either side is plenty): a transaction that paid one
+   * of them isn't unplanned here, and an entry here paid on a day outside the view counts on that day, not here.
+   */
+  nearby?: PlannedItem[];
 }): WeekView {
   const ids = new Set(opts.accounts.map((a) => a.id));
   const span = opts.days ?? 7;
@@ -145,9 +154,11 @@ export function buildWeek(opts: {
   const actuals = opts.actuals.filter((t) => ids.has(t.accountId));
 
   const manual = new Map(planned.filter((p) => p.matchedTxnId).map((p) => [p.key, p.matchedTxnId!]));
+  const takenNearby = new Set((opts.nearby ?? []).filter((p) => p.matchedTxnId && (p.date < opts.weekStart || p.date > end)).map((p) => p.matchedTxnId!));
   const auto = matchDues(
     planned.filter((p) => !p.matchedTxnId && !p.noMatch).map((p) => ({ key: p.key, date: p.date, amount: p.amount, accountId: p.accountId, matchText: p.matchText, estimated: p.estimated })),
-    actuals.filter((t) => ![...manual.values()].includes(t.id)),
+    // (Not ones you've matched to an entry outside the view.)
+    actuals.filter((t) => ![...manual.values()].includes(t.id) && !takenNearby.has(t.id)),
     3,
   );
   const match = new Map([...auto, ...manual]);
@@ -164,21 +175,39 @@ export function buildWeek(opts: {
   const unlistedFound = candidates.filter((p) => unlisted.has(p.key)).map((p) => ({ key: p.key, date: p.date, amount: p.amount, accountId: p.accountId! }));
   const txnById = new Map(actuals.map((t) => [t.id, t]));
   const usedTxn = new Set(match.values());
+  // Transactions that paid an entry outside the view (planned Saturday, paid Tuesday of the next week).
+  const outside = new Map<string, PlannedItem>();
+  for (const p of [...earlier, ...(opts.nearby ?? [])]) {
+    if (p.accountId && ids.has(p.accountId) && (p.date < opts.weekStart || p.date > end) && !outside.has(p.key)) outside.set(p.key, p);
+  }
+  const outsideList = [...outside.values()];
+  const paysFor = new Map<string, PlannedItem>();
+  for (const p of outsideList) if (p.matchedTxnId && !usedTxn.has(p.matchedTxnId)) paysFor.set(p.matchedTxnId, p);
+  const outsideAuto = matchDues(
+    outsideList.filter((p) => !p.matchedTxnId && !p.noMatch).map((p) => ({ key: p.key, date: p.date, amount: p.amount, accountId: p.accountId, matchText: p.matchText, estimated: p.estimated })),
+    actuals.filter((t) => !usedTxn.has(t.id) && !paysFor.has(t.id)),
+    3,
+  );
+  for (const [k, id] of outsideAuto) paysFor.set(id, outside.get(k)!);
+  const inside = (d: IsoDate) => d >= opts.weekStart && d <= end;
 
   const rows: Omit<WeekRow, 'balanceAfter'>[] = [];
   for (const p of planned) {
     const t = match.has(p.key) ? txnById.get(match.get(p.key)!) ?? null : null;
     const done = !t && unlisted.has(p.key);
+    // Paid on a day outside the view: that day's balance has it (the view's start, or a later view), so it counts there.
+    const away = t && !inside(t.date) ? t.date : null;
     rows.push({
       key: p.key, date: p.date, kind: 'planned', description: p.description, accountId: p.accountId,
       // Done by the bank: counted on its day like a listed transaction (one dated after today is already in today's balance).
-      planned: p.amount, actual: t ? t.amount : null, counted: t ? t.amount : done && p.date > opts.today ? 0 : p.amount,
-      overdue: !t && !done && p.date < opts.today, ...(done ? { unlisted: true } : {}), item: p, txn: t,
+      planned: p.amount, actual: t ? t.amount : null, counted: away ? 0 : t ? t.amount : done && p.date > opts.today ? 0 : p.amount,
+      overdue: !t && !done && p.date < opts.today, ...(done ? { unlisted: true } : {}), ...(away ? { paidOn: away } : {}), item: p, txn: t,
     });
   }
-  for (const t of actuals.filter((x) => !usedTxn.has(x.id) && x.date >= opts.weekStart && x.date <= end)) {
+  for (const t of actuals.filter((x) => !usedTxn.has(x.id) && inside(x.date))) {
+    const p = paysFor.get(t.id);
     rows.push({ key: `t:${t.id}`, date: t.date, kind: 'actual', description: t.merchant || t.name, accountId: t.accountId,
-      planned: null, actual: t.amount, counted: t.amount, overdue: false, item: null, txn: t });
+      planned: null, actual: t.amount, counted: t.amount, overdue: false, ...(p ? { pays: { key: p.key, description: p.description, date: p.date } } : {}), item: null, txn: t });
   }
   // Within a day: money in first, so a paycheck landing the same day as a bill doesn't false-alarm.
   rows.sort((a, b) => a.date.localeCompare(b.date) || b.counted - a.counted);
@@ -218,9 +247,9 @@ export function buildWeek(opts: {
     summary: {
       plannedIn: sum((r) => (r.planned ?? 0) > 0 ? r.planned! : 0),
       plannedOut: sum((r) => (r.planned ?? 0) < 0 ? -r.planned! : 0),
-      actualIn: sum((r) => (r.actual ?? 0) > 0 ? r.actual! : 0),
-      actualOut: sum((r) => (r.actual ?? 0) < 0 ? -r.actual! : 0),
-      unplannedOut: sum((r) => (r.kind === 'actual' && (r.actual ?? 0) < 0 ? -r.actual! : 0)),
+      actualIn: sum((r) => !r.paidOn && (r.actual ?? 0) > 0 ? r.actual! : 0),
+      actualOut: sum((r) => !r.paidOn && (r.actual ?? 0) < 0 ? -r.actual! : 0),
+      unplannedOut: sum((r) => (r.kind === 'actual' && !r.pays && (r.actual ?? 0) < 0 ? -r.actual! : 0)),
       overdue: rows.filter((r) => r.overdue).length,
     },
   };

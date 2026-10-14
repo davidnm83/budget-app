@@ -98,7 +98,7 @@ export default function Planner() {
   // Unplanned transactions can be tucked away to leave just the plan; they still count in every balance.
   const [hideUnplanned, setHideUnplanned] = useState(() => { try { return globalThis.localStorage?.getItem('budget.planner.hideUnplanned') === '1'; } catch { return false; } });
   const toggleUnplanned = () => setHideUnplanned((h) => { try { globalThis.localStorage?.setItem('budget.planner.hideUnplanned', h ? '0' : '1'); } catch { /* lasts until reload */ } return !h; });
-  const unplanned = v ? v.days.reduce((n, d) => n + d.rows.filter((r) => r.kind === 'actual').length, 0) : 0;
+  const unplanned = v ? v.days.reduce((n, d) => n + d.rows.filter((r) => r.kind === 'actual' && !r.pays).length, 0) : 0;
 
   const openRow = (r: WeekRow) => {
     if (r.kind === 'actual' && r.txn) { seedTxn({ ...r.txn, account_name: name((r.txn as any).account_id ?? null) || undefined }); setTxnOpen(r.txn.id); return; }
@@ -210,7 +210,7 @@ export default function Planner() {
                       );
                     })()}
                   </View>
-                  {d.rows.filter((r) => !(hideUnplanned && r.kind === 'actual')).map((r) => <PlanRow key={r.key} t={t} r={r} account={only ? '' : name(r.accountId)} onPress={() => openRow(r)} />)}
+                  {d.rows.filter((r) => !(hideUnplanned && r.kind === 'actual' && !r.pays)).map((r) => <PlanRow key={r.key} t={t} r={r} account={only ? '' : name(r.accountId)} onPress={() => openRow(r)} />)}
                 </View>
               ))}
             </Card>
