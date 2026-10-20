@@ -79,6 +79,8 @@ export function planSchedule(p: PaymentPlan): Instalment[] {
   const n = Math.max(1, Math.round(p.months));
   const r = p.apr > 0 ? p.apr / 100 / 12 : 0;
   const payment = r ? (p.principal * r) / (1 - (1 + r) ** -n) : p.principal / n;
+  // Banks round the payment up to the next cent (the last one is a little less), then take the month's interest out of it.
+  const billedPayment = Math.ceil(payment * 100 - 1e-6) / 100;
   const out: Instalment[] = [];
   const monthlyFee = round2(Math.max(0, p.monthlyFee ?? 0));
   let balance = p.principal;
@@ -98,7 +100,7 @@ export function planSchedule(p: PaymentPlan): Instalment[] {
     const last = i === n - 1;
     // A billed amount set by hand: the purchase part is what's left after interest and fees; the last instalment evens it out.
     const billed = !last && ch.amount != null && isFinite(ch.amount) ? Math.min(balance, Math.max(0, round2(ch.amount - interest - inTotal - monthlyFee))) : null;
-    const principal = last ? round2(balance) : billed ?? Math.min(balance, round2(payment - interest));
+    const principal = last ? round2(balance) : billed ?? Math.min(balance, round2(billedPayment - interest));
     balance = round2(balance - principal);
     out.push({ n: i + 1, date, principal, interest, fee, ...(feeOn ? { feeOn } : {}), monthlyFee, total: round2(principal + interest + inTotal + monthlyFee), balanceAfter: balance,
       moved: !!ch.date || billed != null, paidBy: ch.paidBy ?? null });
