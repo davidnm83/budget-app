@@ -262,9 +262,9 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
   // What the left-to-pay is made of: payment plan instalments billed on this statement, and an estimate of
   // the minimum (on the whole statement, balance transfers included), less what's been paid since.
   const prevClose = cycle ? cycle.prevClose : null;
-  // As the bank bills them: the instalments, and plan fees that come with them (not ones the statement lists itself).
+  // The instalments as the bank bills them (a plan's one-time fee is a charge of its own, with the interest and fees).
   const billed = cycle ? plansOnStatement(plans, prevClose!, cycle.lastClose, txns) : null;
-  const onPlans = billed ? billed.instalments + billed.fees : 0;
+  const onPlans = billed?.instalments ?? 0;
   const minLeft = st?.minimumLeft ?? 0;
   const offBalance = a.off_balance ?? 0;
   return (
@@ -292,18 +292,16 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
                 sub={st.leftToPay > 0
                   ? [`by ${shortDate(cycle.due)} (${cycle.daysToDue < 0 ? `${-cycle.daysToDue}d ago` : `in ${cycle.daysToDue}d`})`,
                       onPlans > 0.005 ? `incl. ${formatMoney(onPlans)} on payment plans` : '',
-                      `minimum ≈ ${formatMoney(minLeft)}`].filter(Boolean).join('\n')
-                  : minLeft > 0
-                    // All of the statement is on a promo balance transfer (or a plan): only the minimum is due.
-                    ? `minimum ≈ ${formatMoney(minLeft)} by ${shortDate(cycle.due)}\nthe rest is on a balance transfer`
-                    : 'statement paid'} />
+                      // All of the statement is on a promo balance transfer (or a plan): only the minimum is due.
+                      (st.statementLeft ?? st.leftToPay) > 0.005 ? `minimum ≈ ${formatMoney(minLeft)}` : 'the minimum; the rest is on a balance transfer'].filter(Boolean).join('\n')
+                  : 'statement paid'} />
               <Tile t={t} label="Last statement" value={formatMoney(st.statementOwed)} sub={`closed ${shortDate(cycle.lastClose)} · paid ${money0(st.paidSince)}${statedBalance(minimum.checks, cycle.lastClose) != null ? ' · as entered' : ''}`} />
               <Tile t={t} label="This cycle" value={formatMoney(st.spentThisCycle)} sub={`closes ${shortDate(cycle.nextClose)}`} />
             </View>
             {st.interestIfUnpaid != null ? (
-              <Text style={{ color: st.leftToPay > 0 ? t.text : t.muted, fontSize: 13 }}>
-                {st.leftToPay > 0
-                  ? <>If the {formatMoney(st.leftToPay)} isn't paid by {shortDate(cycle.due)}, expect about <Text style={{ fontWeight: '700' }}>{formatMoney(st.interestIfUnpaid)}</Text> interest next statement (at {a.apr}%).</>
+              <Text style={{ color: (st.statementLeft ?? 0) > 0 ? t.text : t.muted, fontSize: 13 }}>
+                {(st.statementLeft ?? 0) > 0
+                  ? <>If the {formatMoney(st.statementLeft!)} isn't paid by {shortDate(cycle.due)}, expect about <Text style={{ fontWeight: '700' }}>{formatMoney(st.interestIfUnpaid)}</Text> interest next statement (at {a.apr}%).</>
                   : `Nothing owing from the last statement, so no interest so far this cycle.`}
               </Text>
             ) : <Pressable onPress={onSetUp}><Text style={{ color: t.accent, fontSize: 13 }}>Add the interest rate in Details for an interest estimate.</Text></Pressable>}

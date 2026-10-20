@@ -90,9 +90,18 @@ export async function syncPlans(plans?: CardPlan[]): Promise<number> {
   if (!list.length) return 0;
   const now = today();
   await linkPlanCredits(list);
-  const { data: have, error } = await supabase.from('transactions').select('import_id').like('import_id', 'plan:%');
+  const { data: have, error } = await supabase.from('transactions').select('id, import_id, amount, date').like('import_id', 'plan:%');
   fail(error);
   const done = new Set((have ?? []).map((r: any) => r.import_id as string));
+  const row = new Map(((have ?? []) as any[]).map((r) => [r.import_id as string, r]));
+  /** A charge written before for a different amount or day (the plan's fee moved to its set-up day): written again. */
+  const stale = async (key: string, amount: number, date: string) => {
+    const r = row.get(key);
+    if (!r || (Math.abs(Number(r.amount) - amount) < 0.005 && r.date === date)) return false;
+    fail((await supabase.from('transactions').delete().eq('id', r.id)).error);
+    done.delete(key);
+    return true;
+  };
   // Installs with a currency setting stamp it on each row; ones without leave it to the database's default.
   const money = typeof (core as any).currency === 'function' ? { currency: (core as any).currency() as string } : {};
   let cat: string | null = null, added = 0;
@@ -114,6 +123,18 @@ export async function syncPlans(plans?: CardPlan[]): Promise<number> {
         added++;
       }
     }
+    if (first?.feeOn && p.postFee && first.feeOn <= now && !(p.countFrom && first.feeOn < p.countFrom)) {
+      const fkey = `plan:${p.id}:f`;
+      await stale(fkey, -first.fee, first.feeOn);
+      if (!done.has(fkey)) {
+        const f = await supabase.from('transactions').insert({ account_id: p.accountId, date: first.feeOn, ...money, merchant: p.description, category_source: 'manual', reviewed: true,
+          reviewed_at: new Date().toISOString(), source: 'manual', amount: -first.fee, name: `${p.description} · plan fee`, category_id: p.interestCategoryId, import_id: fkey });
+        if (f.error && f.error.code !== '23505') throw new Error(f.error.message);
+        if (!f.error) added++;
+      }
+    } else if (row.has(`plan:${p.id}:f`)) {
+      fail((await supabase.from('transactions').delete().eq('import_id', `plan:${p.id}:f`)).error);
+    }
     for (const x of schedule) {
       if (x.date > now || (p.countFrom && x.date < p.countFrom)) continue;
       const base = { account_id: p.accountId, date: x.date, ...money, merchant: p.description, category_source: 'manual', reviewed: true, reviewed_at: new Date().toISOString(), source: 'manual' };
@@ -130,8 +151,10 @@ export async function syncPlans(plans?: CardPlan[]): Promise<number> {
         if (parts.error) { await supabase.from('transactions').delete().eq('id', t.data.id); throw new Error(parts.error.message); }
         added++;
       }
-      const interest = p.postCharges ? x.interest + x.monthlyFee : 0, fee = p.postFee ? x.fee : 0; // the monthly fee goes with the interest switch
+      // The one-time fee goes with the first instalment, unless it was charged on its own on the set-up day.
+      const interest = p.postCharges ? x.interest + x.monthlyFee : 0, fee = p.postFee && !x.feeOn ? x.fee : 0; // the monthly fee goes with the interest switch
       const charge = Math.round((interest + fee) * 100) / 100, ckey = `plan:${p.id}:c:${x.n}`;
+      if (charge > 0) await stale(ckey, -charge, x.date);
       if (charge > 0 && !done.has(ckey)) {
         const monthly = x.monthlyFee > 0 && x.interest > 0 ? 'interest and monthly fee' : x.monthlyFee > 0 ? 'monthly fee' : 'interest';
         const what = fee && interest ? `plan fee and ${monthly}` : fee ? 'plan fee' : `plan ${monthly}`;

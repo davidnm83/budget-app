@@ -117,7 +117,7 @@ export default function Credit() {
             )}
             <Text style={{ color: c.st && c.st.leftToPay > 0 && c.cycle!.daysToDue <= 3 ? t.danger : t.muted, fontSize: 12 }}>
               {!c.cycle ? 'Set the closing and due days on the card to see what’s due.'
-                : c.st!.leftToPay > 0
+                : (c.st!.statementLeft ?? 0) > 0
                   ? `${formatMoney(c.st!.leftToPay)} left on the statement, due ${shortDate(c.cycle.due)}${c.st!.interestIfUnpaid != null ? ` · ≈ ${formatMoney(c.st!.interestIfUnpaid)} interest if unpaid` : ''}`
                   : c.st!.minimumLeft
                     ? `Minimum ≈ ${formatMoney(c.st!.minimumLeft)} due ${shortDate(c.cycle.due)} (the statement is on a balance transfer) · ${formatMoney(c.st!.spentThisCycle)} this cycle`

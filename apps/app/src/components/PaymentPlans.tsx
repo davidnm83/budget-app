@@ -146,7 +146,7 @@ function PlanDetail({ t, plan: given, accounts, onClose, onChanged, onEdit }: { 
               style={({ pressed, hovered }: any) => [styles.between, { paddingVertical: 6, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.line }, (pressed || hovered) && { backgroundColor: t.line }]}>
               <Ionicons name={x.paidBy ? 'link' : past ? 'checkmark-circle' : 'ellipse-outline'} size={16} color={past ? t.accent : t.muted} />
               <Text style={{ color: past ? t.text : t.muted, flex: 1 }} numberOfLines={1}>{shortDate(x.date)}{notes ? <Text style={{ color: t.muted, fontSize: 12 }}> · {notes}</Text> : null}</Text>
-              <Text style={{ color: t.muted, fontSize: 12 }}>{x.interest + x.fee + x.monthlyFee > 0 ? `${formatMoney(x.principal)} + ${formatMoney(x.interest + x.fee + x.monthlyFee)}` : ''}</Text>
+              <Text style={{ color: t.muted, fontSize: 12 }}>{x.total - x.principal > 0.005 ? `${formatMoney(x.principal)} + ${formatMoney(x.total - x.principal)}` : ''}</Text>
               <Text style={{ color: past ? t.text : t.muted, fontVariant: ['tabular-nums'], minWidth: 76, textAlign: 'right' }}>{formatMoney(x.total)}</Text>
             </Pressable>
           );
@@ -238,7 +238,7 @@ function InstalmentSheet({ t, plan, inst, count, onClose, onSaved }: { t: Theme;
   return (
     <Sheet title={`Instalment ${inst.n} of ${count}`} dirty={changed && !busy} onClose={onClose} footer={<Button title="Save" onPress={() => save()} busy={busy} />}>
       <Text style={{ color: t.muted }}>
-        Worked out as {formatMoney(inst.total)}{inst.interest + inst.fee + inst.monthlyFee > 0 ? ` (${formatMoney(inst.principal)} of the purchase + ${formatMoney(inst.interest + inst.fee + inst.monthlyFee)} fees and interest)` : ''}, billed {shortDate(inst.date)}.
+        Worked out as {formatMoney(inst.total)}{inst.total - inst.principal > 0.005 ? ` (${formatMoney(inst.principal)} of the purchase + ${formatMoney(inst.total - inst.principal)} fees and interest)` : ''}, billed {shortDate(inst.date)}.{inst.feeOn ? ` The one-time fee (${formatMoney(inst.fee)}) is charged on its own, on ${shortDate(inst.feeOn)}.` : ''}
       </Text>
       <Field t={t} label="Billed on" hint="The date it shows on the card. Its part of the purchase counts in the budget of that month."><DateField value={date} onChange={setDate} /></Field>
       {last ? <Text style={{ color: t.muted, fontSize: 13 }}>This is the last instalment: it is always what’s left of the purchase, so any cents the bank rounded differently end up here.</Text> : (
@@ -404,7 +404,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
             <View style={styles.between}>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: t.text }}>Add the one-time fee as a transaction</Text>
-                <Text style={{ color: t.muted, fontSize: 12 }}>Turn off if the fee shows on your statement when the plan starts (many cards do this), so it isn’t counted twice. It still counts in the plan’s cost.</Text>
+                <Text style={{ color: t.muted, fontSize: 12 }}>{closeDay && setUpOn ? `Dated the day it was set up (${shortDate(setUpOn)}), apart from the instalments: some banks charge the plan’s fee or interest then. ` : ''}Turn off if the fee shows in the card’s transactions already (many cards do this), so it isn’t counted twice. It still counts in the plan’s cost.</Text>
               </View>
               <Switch value={postFee} onValueChange={setPostFee} accessibilityLabel="Add the one-time fee as a transaction" />
             </View>

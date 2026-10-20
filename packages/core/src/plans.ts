@@ -45,6 +45,8 @@ export interface Instalment {
   principal: number;        // the part that pays down the purchase
   interest: number;
   fee: number;              // the one-time fee, on the first instalment
+  /** The one-time fee is charged on its own on this day (the day the plan was set up), so it isn't in `total`. */
+  feeOn?: IsoDate;
   monthlyFee: number;       // the fixed fee charged every month
   total: number;            // what this instalment adds to the card's bill
   balanceAfter: number;     // of the purchase still on the plan
@@ -90,12 +92,15 @@ export function planSchedule(p: PaymentPlan): Instalment[] {
     }
     const interest = round2(balance * r);
     const fee = i === 0 ? round2(p.setupFee) : 0;
+    // With a set-up date, the bank charges the one-time fee (or interest) that day, apart from the first instalment.
+    const feeOn = fee > 0 && p.createdOn ? p.createdOn : undefined;
+    const inTotal = feeOn ? 0 : fee;
     const last = i === n - 1;
     // A billed amount set by hand: the purchase part is what's left after interest and fees; the last instalment evens it out.
-    const billed = !last && ch.amount != null && isFinite(ch.amount) ? Math.min(balance, Math.max(0, round2(ch.amount - interest - fee - monthlyFee))) : null;
+    const billed = !last && ch.amount != null && isFinite(ch.amount) ? Math.min(balance, Math.max(0, round2(ch.amount - interest - inTotal - monthlyFee))) : null;
     const principal = last ? round2(balance) : billed ?? Math.min(balance, round2(payment - interest));
     balance = round2(balance - principal);
-    out.push({ n: i + 1, date, principal, interest, fee, monthlyFee, total: round2(principal + interest + fee + monthlyFee), balanceAfter: balance,
+    out.push({ n: i + 1, date, principal, interest, fee, ...(feeOn ? { feeOn } : {}), monthlyFee, total: round2(principal + interest + inTotal + monthlyFee), balanceAfter: balance,
       moved: !!ch.date || billed != null, paidBy: ch.paidBy ?? null });
   }
   return out;

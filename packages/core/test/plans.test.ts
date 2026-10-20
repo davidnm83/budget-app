@@ -184,3 +184,14 @@ describe('a plan whose interest the bank bills with each instalment', () => {
   });
 });
 
+describe('a plan whose one-time charge the bank makes on the day it is set up', () => {
+  const p = { id: 'p', description: 'Desk', principal: 1200, months: 24, apr: 9, setupFee: 24, createdOn: '2026-10-02', startDate: '2026-10-18' };
+  it('is charged that day, apart from the first instalment', () => {
+    expect(planSchedule(p)[0]).toMatchObject({ fee: 24, feeOn: '2026-10-02', total: 54.82 });
+    expect(planSchedule({ ...p, createdOn: null })[0]).toMatchObject({ fee: 24, total: 78.82 });
+    // On the statement it falls in: a charge (for the minimum), not part of the instalment.
+    expect(plansOnStatement([p], '2026-09-18', '2026-10-18')).toEqual({ instalments: 54.82, fees: 24, unlisted: 9 });
+    expect(plansOnStatement([{ ...p, createdOn: '2026-09-15' }], '2026-09-18', '2026-10-18').fees).toBe(0);
+  });
+});
+
