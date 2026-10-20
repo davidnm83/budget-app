@@ -19,6 +19,10 @@ export interface PaymentPlan {
   setupFee: number;         // one-time fee, charged with the first instalment
   apr: number;              // yearly interest on the plan, in percent (0 = none)
   monthlyFee?: number;      // a fixed fee charged with every instalment (some cards charge this instead of interest)
+  /** The statement lists the plan's interest and monthly fee as charges of their own (false); else they come with each instalment. */
+  postCharges?: boolean;
+  /** The statement lists the one-time fee as a charge of its own (false); else it comes with the first instalment. */
+  postFee?: boolean;
   countFrom?: IsoDate | null; // instalments before this are tracked but not added to the budget
   closedOn?: IsoDate | null;  // paid off early on this date
   /** Changes to single instalments, by number: a different date, what the bank actually billed, the payment that paid it. */

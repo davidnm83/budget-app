@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardStatement, cardStatus, statedBalance, findPlanCredit, findPlanDuplicates, planHeld, plansOffBalance, instalmentsBetween, monthsAfter, planProgress, planSchedule, plansDeferred, firstStatementOn, type PaymentPlan } from '../src/index.ts';
+import { cardStatement, cardStatus, statedBalance, findPlanCredit, findPlanDuplicates, planHeld, plansOffBalance, instalmentsBetween, monthsAfter, planProgress, planSchedule, plansDeferred, firstStatementOn, plansOnStatement, type PaymentPlan } from '../src/index.ts';
 
 const plan = (o: Partial<PaymentPlan> = {}): PaymentPlan => ({ id: 'p', description: 'Laptop', principal: 1200, months: 12, startDate: '2026-01-15', setupFee: 0, apr: 0, ...o });
 const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
@@ -160,6 +160,27 @@ describe('a plan set up with the bank', () => {
       .toEqual(['2026-10-18', '2026-10-18', '2026-11-18', '2026-02-28']);
     const s = planSchedule({ id: 'm', description: 'Monitor', principal: 600, months: 3, startDate: firstStatementOn('2026-10-02', 18), setupFee: 0, apr: 0 });
     expect(s.map((x) => x.date)).toEqual(['2026-10-18', '2026-11-18', '2026-12-18']);
+  });
+});
+
+describe('a plan whose interest the bank bills with each instalment', () => {
+  // $1,200 over 24 months at 9%: $54.82 a month, $9.00 of it interest the first month. The bank lists the $24 plan fee
+  // as a charge of its own, keeps the plan in its balance, and asks for the instalment in full on top of the rest.
+  const p = { id: 'p', description: 'Desk', principal: 1200, months: 24, apr: 9, setupFee: 24, startDate: '2026-10-18', purchaseDate: '2026-10-02', purchaseTxnId: 'buy' };
+  const txns = [{ id: 'buy', date: '2026-10-02', amount: -1200, name: 'DESK STORE' }, { id: 'f', date: '2026-10-02', amount: -24, name: 'INSTALMENT PLAN FEE' }, { id: 'o', date: '2026-10-10', amount: -26, name: 'CAFE' }];
+  const rule = { base: 'fixed' as const, amount: 10, plusCharges: true, floor: 10, round: 'cent' as const, plusPlans: true };
+  it('the amount due is the rest of the balance plus the whole instalment', () => {
+    expect(planSchedule(p)[0]).toMatchObject({ principal: 45.82, interest: 9, total: 78.82 });
+    expect(plansOnStatement([p], '2026-09-18', '2026-10-18', txns)).toEqual({ instalments: 54.82, fees: 0, unlisted: 9 });
+    // New balance $1,250.00 ($1,200 plan + $24 fee + $26): $50.00 + $54.82 due; minimum $10 + $24 fee + $54.82.
+    const s = cardStatement(1250, txns, '2026-10-18', 30, null, [p], undefined, rule, '2026-09-18', 1250);
+    expect([s.statementOwed, s.minimumLeft]).toEqual([104.82, 88.82]);
+    expect(cardStatement(1250, txns, '2026-10-18', 30, null, [p], undefined, rule, '2026-09-18').statementOwed).toBe(104.82);
+  });
+  it('a fee the bank does not list is billed with the first instalment; interest the statement lists is not added', () => {
+    const quiet = txns.filter((t) => t.id !== 'f');
+    expect(plansOnStatement([p], '2026-09-18', '2026-10-18', quiet)).toEqual({ instalments: 54.82, fees: 24, unlisted: 9 });
+    expect(plansOnStatement([{ ...p, postCharges: false }], '2026-09-18', '2026-10-18', txns)).toEqual({ instalments: 45.82, fees: 0, unlisted: 0 });
   });
 });
 

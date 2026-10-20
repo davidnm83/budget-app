@@ -80,7 +80,7 @@ export default function Credit() {
     // The part of the balance on payment plans that isn't billed yet isn't part of what the statement asks for.
     // The statement: from the bank's own balance, leaving out plans and promo balance transfers not billed yet.
     const st = cycle ? cardStatement(bankOwed, mine, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans.filter((p) => p.accountId === a.id),
-      transfersOnStatement(transfers.filter((x) => x.toAccountId === a.id && !x.closedOn), owed, cycle.lastClose, now), ruleFor(minimums, a.id), cycle.prevClose, statedBalance(minimums.get(a.id)?.checks, cycle.lastClose)) : null;
+      transfersOnStatement(transfers.filter((x) => x.toAccountId === a.id && !x.closedOn), owed, cycle.lastClose, now), ruleFor(minimums, a.id), cycle.prevClose, statedBalance(minimums.get(a.id)?.checks, cycle.lastClose), a.kind === 'manual') : null;
     return { a, owed, u: utilization(owed, a.credit_limit), cycle, st };
   }).sort((x, y) => y.owed - x.owed), [cards, txns, now, plans, transfers, minimums]);
 

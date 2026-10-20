@@ -83,27 +83,31 @@ export function cardStatus(owedNow: number, txns: { date: IsoDate; amount: numbe
 export function cardStatement(owedNow: number, txns: { id?: string; date: IsoDate; amount: number; name?: string | null; importId?: string | null }[], lastClose: IsoDate, cycleDays: number, apr: number | null, plans: PlanOnCard[] = [],
   transfers: { held: number; moves: (string | null | undefined)[] } = { held: 0, moves: [] }, rule: MinimumRule = DEFAULT_MINIMUM, prevCloseAt?: IsoDate,
   /** The statement's balance as you entered it from the bank (a statement check), when there is one for this close. */
-  stated?: number | null): CardStatus {
+  stated?: number | null,
+  /** The balance is the app's own (a manual card): the plan charges the app writes are in it. */
+  ownBalance = false): CardStatus {
   // `transfers`: the promo balance transfers on this card that were already on it when the statement
   // closed (left out like a plan), and their charges (moved money, not spending).
   const moves = new Set([...plans.flatMap((p) => [p.purchaseTxnId, p.creditTxnId]), ...transfers.moves].filter(Boolean) as string[]);
   const after = txns.filter((t) => t.date > lastClose);
   const atClose = owedNow + after.reduce((s, t) => s + t.amount, 0);
   const held = plans.reduce((s, p) => s + planHeld(p, lastClose), 0) + Math.max(0, transfers.held);
+  const prevClose = prevCloseAt ?? prevCloseOf(lastClose, cycleDays);
+  // A plan's interest and fees billed with its instalment aren't in the bank's balance yet: the amount due adds them.
+  const onPlans = plansOnStatement(plans, prevClose, lastClose, txns);
   // Worked back from today's balance, which is only right once the bank feed has every transaction since the close.
-  const worked = round2(Math.max(0, atClose - held));
+  const worked = round2(Math.max(0, atClose - held + (ownBalance ? 0 : onPlans.unlisted)));
   // The bank's own figure wins. It may be the new balance with plans in it, or the amount due without them: whichever
   // is nearer the worked-back one.
   const statementOwed = stated == null ? worked
-    : round2(Math.max(0, [stated, stated - held].sort((a, b) => Math.abs(a - worked) - Math.abs(b - worked))[0]));
+    : round2(Math.max(0, [stated, stated - held + onPlans.unlisted].sort((a, b) => Math.abs(a - worked) - Math.abs(b - worked))[0]));
   const real = after.filter((t) => !(t.id && moves.has(t.id)));
   const paidSince = round2(real.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0));
   const spentThisCycle = round2(real.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0));
   const leftToPay = round2(Math.max(0, statementOwed - paidSince));
   // The interest and fees on this statement count toward the minimum for banks that add them.
-  const prevClose = prevCloseAt ?? prevCloseOf(lastClose, cycleDays);
-  const charges = rule.plusCharges ? statementCharges(txns, prevClose, lastClose) : 0;
-  const billed = rule.plusPlans ? plansBilled(plans, prevClose, lastClose) : 0;
+  const charges = rule.plusCharges ? round2(statementCharges(txns, prevClose, lastClose) + onPlans.fees) : 0;
+  const billed = rule.plusPlans ? onPlans.instalments : 0;
   const minimumLeft = round2(Math.max(0, minimumPayment(statementOwed + Math.max(0, transfers.held), rule, charges, billed) - paidSince));
   return { statementOwed, paidSince, leftToPay, spentThisCycle, minimumLeft, balanceAtClose: round2(Math.max(0, atClose)), interestIfUnpaid: apr ? cardInterest(leftToPay + spentThisCycle / 2, apr, cycleDays) : null };
 }
@@ -237,11 +241,35 @@ export function fitMinimumRule(checks: MinimumCheck[]): MinimumRule[] {
 }
 
 /**
- * The payment plan instalments billed on a statement (dated after `prevClose`, up to `close`), as a statement shows
- * them: the purchase part with the plan's own interest and fees. Those are left out of `statementCharges`.
+ * What a statement (dated after `prevClose`, up to `close`) bills for payment plans, the way the bank bills it:
+ *  • instalments: the purchase part, with the plan's interest and monthly fee unless the statement lists those as
+ *    charges of their own (the plan's `postCharges` off; then `statementCharges` reads them);
+ *  • fees: one-time plan fees the statement doesn't list as a charge of their own (`postFee`). A charge of the same
+ *    amount from the bank near it means the bank did list it;
+ *  • unlisted: the part of these not in the bank's balance when it closed: the plan's interest, which accrues month by
+ *    month and is billed with the instalment, on a plan the bank keeps in its balance. The amount due has it on top of
+ *    the balance less the plan still to come. (Plan fees are in the balance already: in the plan's amount, or listed.)
  */
+export function plansOnStatement(plans: PlanOnCard[], prevClose: IsoDate, close: IsoDate, txns: { date: IsoDate; amount: number; importId?: string | null }[] = []) {
+  let instalments = 0, fees = 0, unlisted = 0;
+  for (const p of plans) {
+    const inBalance = !(p.creditDate && p.creditDate <= close) && !(p.purchaseDate && p.purchaseDate > close);
+    for (const x of planSchedule(p).filter((y) => y.date > prevClose && y.date <= close)) {
+      const own = p.postCharges === false ? 0 : x.interest + x.monthlyFee;
+      const from = toIso(new Date(parseIso(x.date).getTime() - 40 * 86_400_000));
+      const listed = txns.some((t) => !t.importId?.startsWith('plan:') && t.amount < 0 && Math.abs(-t.amount - x.fee) <= 0.05 && t.date >= from && t.date <= close);
+      const fee = x.fee > 0 && p.postFee !== false && !listed ? x.fee : 0;
+      instalments += x.principal + own;
+      fees += fee;
+      if (inBalance && p.postCharges !== false) unlisted += x.interest;
+    }
+  }
+  return { instalments: round2(instalments), fees: round2(fees), unlisted: round2(unlisted) };
+}
+
+/** The payment plan instalments billed on a statement, as the statement shows them (see plansOnStatement). */
 export function plansBilled(plans: PlanOnCard[], prevClose: IsoDate, close: IsoDate): number {
-  return round2(plans.flatMap((p) => planSchedule(p)).filter((x) => x.date > prevClose && x.date <= close).reduce((s, x) => s + x.total, 0));
+  return plansOnStatement(plans, prevClose, close).instalments;
 }
 
 /** Interest and fees billed on a statement: the card's charges between the two closing dates that say so (not a payment plan's own). */

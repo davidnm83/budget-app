@@ -23,7 +23,7 @@ export { Tile } from '@/components/Tile';
 import { Tile } from '@/components/Tile';
 import { ModalFrame } from '@/components/ModalFrame';
 import {
-  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, statedBalance, plansBilled, statementCharges, instalmentsBetween, minimumPayment, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
+  accountIcon, addDays, balanceHistory, cardCycle, cardStatement, statedBalance, plansOnStatement, statementCharges, minimumPayment, transfersOnStatement, expandPlan, formatMoney, loanSummary, loanWhatIf, parseMoney, payoffSchedule, monthEnd, monthName,
   monthlyFlow, shortDate, utilization,
   csvReminderOn,
 } from '@budget-app/core';
@@ -258,11 +258,13 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
     loadTransfers().then((l) => setTransfers(l.filter((x) => x.toAccountId === a.id && !x.closedOn))).catch(() => {});
   }, [a.id]);
   const tr = cycle ? transfersOnStatement(transfers, owed, cycle.lastClose, today()) : null;
-  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!, minimum.rule ?? undefined, cycle.prevClose, statedBalance(minimum.checks, cycle.lastClose)) : null;
+  const st = cycle ? cardStatement(bankOwed, txns, cycle.lastClose, cycle.cycleDays, a.apr ?? null, plans, tr!, minimum.rule ?? undefined, cycle.prevClose, statedBalance(minimum.checks, cycle.lastClose), a.kind === 'manual') : null;
   // What the left-to-pay is made of: payment plan instalments billed on this statement, and an estimate of
   // the minimum (on the whole statement, balance transfers included), less what's been paid since.
   const prevClose = cycle ? cycle.prevClose : null;
-  const onPlans = cycle ? instalmentsBetween(plans, addDays(prevClose!, 1), cycle.lastClose).reduce((s, x) => s + x.inst.total, 0) : 0;
+  // As the bank bills them: the instalments, and plan fees that come with them (not ones the statement lists itself).
+  const billed = cycle ? plansOnStatement(plans, prevClose!, cycle.lastClose, txns) : null;
+  const onPlans = billed ? billed.instalments + billed.fees : 0;
   const minLeft = st?.minimumLeft ?? 0;
   const offBalance = a.off_balance ?? 0;
   return (
@@ -308,7 +310,7 @@ export function CardBlock({ t, a, txns, onSetUp }: { t: Theme; a: Account; txns:
             <Text style={{ color: t.muted, fontSize: 12 }}>Estimate: daily interest on what's left plus about half of this cycle's spending, for one cycle. Your statement is the final word.</Text>
             <MinimumLine t={t} had={minimum} onCheck={() => setChecking(true)} />
             {checking && <MinimumCheckSheet t={t} accountId={a.id} had={minimum} onClose={() => setChecking(false)} onSaved={loadMinimum}
-              initial={{ close: cycle.lastClose, balance: st.balanceAtClose ?? st.statementOwed + (tr?.held ?? 0), charges: statementCharges(txns, prevClose!, cycle.lastClose), plans: plansBilled(plans, prevClose!, cycle.lastClose) }} />}
+              initial={{ close: cycle.lastClose, balance: st.balanceAtClose ?? st.statementOwed + (tr?.held ?? 0), charges: statementCharges(txns, prevClose!, cycle.lastClose) + (billed?.fees ?? 0), plans: billed?.instalments ?? 0 }} />}
           </>
         )}
       </Section>
