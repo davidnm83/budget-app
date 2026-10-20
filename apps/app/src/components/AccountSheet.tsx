@@ -67,7 +67,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
   const [tab, setTab] = useState<'overview' | 'details' | 'txns'>('overview');
   const [history, setHistory] = useState<Txn[] | null>(null);
   const [snaps, setSnaps] = useState<Snapshot[]>([]);
-  const [list, setList] = useState<{ id: string; date: string; amount: number; display_name: string; category_name: string | null }[]>([]);
+  const [list, setList] = useState<{ id: string; date: string; amount: number; display_name: string; category_name: string | null; split_count: number }[]>([]);
   useBackToClose(!!account, onClose);
   const [showTxns, txnSheet] = useTxnSheet();
   const [txnOpen, setTxnOpen] = useState<string | null>(null);
@@ -91,7 +91,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
         if (!data || data.length < 1000) break;
       }
       setHistory(all);
-      const { data } = await supabase.from('transaction_list').select('id, date, amount, display_name, category_name')
+      const { data } = await supabase.from('transaction_list').select('id, date, amount, display_name, category_name, split_count')
         .eq('account_id', account.id).order('date', { ascending: false }).limit(100);
       setList((data ?? []).map((r: any) => ({ ...r, amount: Number(r.amount) })));
     })();
@@ -154,7 +154,7 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
                 <Text style={{ color: t.muted, width: 52, fontSize: 13 }}>{shortDate(item.date)}</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: t.text }} numberOfLines={1}>{item.display_name}</Text>
-                  <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={1}>{item.category_name ?? 'Uncategorised'}</Text>
+                  <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={1}>{item.split_count ? `✂️ Split · ${item.split_count} parts` : item.category_name ?? 'Uncategorised'}</Text>
                 </View>
                 <Text style={{ color: item.amount > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'] }}>{formatMoney(item.amount)}</Text>
               </Pressable>

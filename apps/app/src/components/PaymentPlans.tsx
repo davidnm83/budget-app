@@ -1,7 +1,7 @@
 // Card payment plans on the Credit cards page: the list with progress, a plan's details and
 // schedule, and the form to add one (from a purchase, or one that already started).
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { addDays, categoryIcon, findPlanDuplicates, type PlanDuplicate, type Instalment, formatMoney, monthsAfter, parseMoney, planProgress, planSchedule, shortDate, toIsoDate } from '@budget-app/core';
+import { addDays, categoryIcon, findPlanDuplicates, firstStatementOn, type PlanDuplicate, type Instalment, formatMoney, monthsAfter, parseMoney, planProgress, planSchedule, shortDate, toIsoDate } from '@budget-app/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useConfirm } from '@/components/Confirm';
@@ -275,6 +275,9 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
   const [accountId, setAccountId] = useState<string | null>(from.accountId ?? (cards.length === 1 ? cards[0].id : null));
   const [amount, setAmount] = useState(from.principal ? String(from.principal) : '');
   const [start, setStart] = useState(from.startDate ?? monthsAfter(seed?.purchaseDate ?? now, 1));
+  // When it was set up with the bank: with the card's statement day, that sets the first instalment (the next statement).
+  // A plan saved before this has only its first instalment date, until a set-up date is entered.
+  const [setUp, setSetUp] = useState(plan ? plan.createdOn ?? '' : seed?.purchaseDate ?? now);
   const [months, setMonths] = useState(String(from.months ?? 12));
   const [fee, setFee] = useState(from.setupFee ? String(from.setupFee) : '');
   const [apr, setApr] = useState(from.apr ? String(from.apr) : '');
@@ -295,7 +298,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
   const [pick, setPick] = useState<'cat' | 'cost' | 'txn' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const changed = useChanged([description, accountId, amount, start, months, fee, apr, monthlyFee, mode, offset, categoryId, payFrom, post, postFee, txnId, past]);
+  const changed = useChanged([description, accountId, amount, start, setUp, months, fee, apr, monthlyFee, mode, offset, categoryId, payFrom, post, postFee, txnId, past]);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
 
   useEffect(() => {
@@ -306,7 +309,10 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
       setCostCat((c) => c ?? list.find((x) => x.kind === 'expense' && /interest/i.test(x.name))?.id ?? list.find((x) => x.kind === 'expense' && /fee/i.test(x.name))?.id ?? null);
     });
   }, []);
-  const p = parseMoney(amount), n = Math.round(Number(months)), f = fee.trim() ? parseMoney(fee) : 0, r = apr.trim() ? Number(apr) : 0, mf = monthlyFee.trim() ? parseMoney(monthlyFee) : 0, d = toIsoDate(start);
+  const closeDay = cards.find((a) => a.id === accountId)?.statement_day ?? null;
+  const setUpOn = setUp ? toIsoDate(setUp) : null;
+  const p = parseMoney(amount), n = Math.round(Number(months)), f = fee.trim() ? parseMoney(fee) : 0, r = apr.trim() ? Number(apr) : 0, mf = monthlyFee.trim() ? parseMoney(monthlyFee) : 0;
+  const d = closeDay && setUpOn ? firstStatementOn(setUpOn, closeDay) : toIsoDate(start);
   const good = !isNaN(p) && p > 0 && n >= 1 && n <= 120 && !isNaN(f) && f >= 0 && !isNaN(r) && r >= 0 && !isNaN(mf) && mf >= 0 && !!d;
   const draft = useMemo(() => (good ? { id: 'draft', description, principal: Math.abs(p), months: n, startDate: d as string, setupFee: f, apr: r, monthlyFee: mf } : null), [good, description, p, n, d, f, r, mf]);
   const schedule = draft ? planSchedule(draft) : [];
@@ -330,7 +336,7 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
     if (!draft) { setError('Check the amount, months, fees, interest and date.'); return; }
     if (mode === 'balance' && !categoryId) { setError('Choose the budget category the instalments count under.'); return; }
     setBusy(true); setError('');
-    const input: PlanInput = { ...draft, description: description.trim(), accountId, transactionId: mode === 'purchase' ? txnId : null, offsetStart: mode === 'balance' && offset && chosen?.kind !== 'transfer', categoryId, interestCategoryId: costCat, payingAccountId: payFrom,
+    const input: PlanInput = { ...draft, createdOn: closeDay && setUpOn ? setUpOn : plan?.createdOn ? null : undefined, description: description.trim(), accountId, transactionId: mode === 'purchase' ? txnId : null, offsetStart: mode === 'balance' && offset && chosen?.kind !== 'transfer', categoryId, interestCategoryId: costCat, payingAccountId: payFrom,
       postCharges: post, postFee, countFrom: started && past === 'skip' ? (plan?.countFrom ?? addDays(now, 1)) : null, closedOn: plan?.closedOn ?? null };
     try { if (plan) await updatePlan(plan, input); else await createPlan(input); toast(plan ? 'Plan saved' : 'Plan added'); onSaved(); onClose(); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -365,7 +371,18 @@ export function PlanForm({ plan, seed, accounts, onClose, onSaved }: { plan?: Ca
         <View style={{ flex: 1 }}><Field t={t} label="Amount on the plan"><TextInput value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={input} accessibilityLabel="Amount on the plan" /></Field></View>
         <View style={{ flex: 1 }}><Field t={t} label="Months"><TextInput value={months} onChangeText={setMonths} keyboardType="number-pad" style={input} accessibilityLabel="Months" /></Field></View>
       </View>
-      <Field t={t} label="First instalment" hint="The date the first one is billed. A date in the past is fine for a plan that already started."><DateField value={start} onChange={setStart} /></Field>
+      {closeDay ? (
+        <Field t={t} label="Set up on" hint={setUpOn
+          ? `The day you set it up with the bank. The first instalment is billed on the next statement (${shortDate(d!)}), then one on each statement after.`
+          : 'The day you set it up with the bank. Enter it and the first instalment goes on the statement after it, the way the bank bills it.'}>
+          <DateField value={setUp} onChange={setSetUp} />
+        </Field>
+      ) : null}
+      {(!closeDay || !setUpOn) && (
+        <Field t={t} label="First instalment" hint={closeDay ? 'Used until a set-up date is entered above.' : 'The date the first one is billed. A date in the past is fine for a plan that already started. (With the card’s statement closing day in its Details, you can enter the set-up date instead.)'}>
+          <DateField value={start} onChange={setStart} />
+        </Field>
+      )}
       <View style={{ flexDirection: 'row', gap: 12 }}>
         <View style={{ flex: 1 }}><Field t={t} label="One-time fee"><TextInput value={fee} onChangeText={setFee} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={t.muted} style={input} accessibilityLabel="One-time fee" /></Field></View>
         <View style={{ flex: 1 }}><Field t={t} label="Interest (% a year)"><TextInput value={apr} onChangeText={setApr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={t.muted} style={input} accessibilityLabel="Interest percent a year" /></Field></View>

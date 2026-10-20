@@ -37,7 +37,7 @@ export type PlanInput = Omit<CardPlan, 'id'>;
 const PLAN_CATEGORY = 'Payment plan';
 
 const fromRow = (r: any): CardPlan => ({
-  id: r.id, description: r.description, principal: Number(r.principal), months: Number(r.months), startDate: r.start_date, setupFee: Number(r.setup_fee), apr: Number(r.apr),
+  id: r.id, description: r.description, principal: Number(r.principal), months: Number(r.months), startDate: r.start_date, createdOn: r.created_on ?? null, setupFee: Number(r.setup_fee), apr: Number(r.apr),
   countFrom: r.count_from, closedOn: r.closed_on, accountId: r.account_id, transactionId: r.transaction_id, categoryId: r.category_id,
   interestCategoryId: r.interest_category_id, payingAccountId: r.paying_account_id, postCharges: r.post_charges, postFee: r.post_fee ?? true, monthlyFee: Number(r.monthly_fee ?? 0), offsetStart: !!r.offset_start,
   instalments: r.instalments ?? {}, creditTransactionId: r.credit_transaction_id ?? null, creditSearch: r.credit_search ?? true,
@@ -50,6 +50,7 @@ const toRow = (p: PlanInput) => ({
   // Left out when absent, so an install that hasn't run the newer migrations can still save plans.
   ...(p.creditTransactionId !== undefined && p.creditTransactionId !== null ? { credit_transaction_id: p.creditTransactionId } : {}),
   ...(p.instalments && Object.keys(p.instalments).length ? { instalments: p.instalments } : {}),
+  ...(p.createdOn !== undefined ? { created_on: p.createdOn } : {}),
 });
 const fail = (e: { message: string } | null) => { if (e) throw new Error(e.message); };
 // An install that hasn't run the payment-plans migration yet simply has no plans.

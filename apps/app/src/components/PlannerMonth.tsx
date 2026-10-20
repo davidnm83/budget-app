@@ -127,20 +127,20 @@ export function PlannerMonth({ t, d, now, only, setOnly, onRow, onAdd, onChanged
 /** One planned or posted entry: what it is, planned against actual, and the balance after it. */
 export function PlanRow({ t, r, account, onPress }: { t: Theme; r: WeekRow; account: string; onPress: () => void }) {
   const matched = r.kind === 'planned' && r.actual != null;
-  const icon = r.pays ? 'checkmark-circle' : r.kind === 'actual' ? 'flash-outline' : matched ? 'checkmark-circle' : r.unlisted ? 'hourglass-outline' : r.overdue ? 'alert-circle' : 'time-outline';
-  const color = r.pays ? t.accent : r.kind === 'actual' ? t.muted : matched || r.unlisted ? t.accent : r.overdue ? t.danger : t.muted;
+  const icon = r.pays ? 'checkmark-circle' : r.unlisted ? 'hourglass-outline' : r.kind === 'actual' ? 'flash-outline' : matched ? 'checkmark-circle' : r.unlisted ? 'hourglass-outline' : r.overdue ? 'alert-circle' : 'time-outline';
+  const color = r.pays || r.unlisted ? t.accent : r.kind === 'actual' ? t.muted : matched || r.unlisted ? t.accent : r.overdue ? t.danger : t.muted;
   return (
     <Pressable onPress={onPress} style={({ pressed, hovered }: any) => [styles.row, (pressed || hovered) && { backgroundColor: t.line }]}>
       <Ionicons name={icon} size={17} color={color} />
       <View style={{ flex: 1 }}>
         <Text style={[ROW.title, { color: t.text, fontWeight: r.kind === 'actual' ? '500' : '600' }]} numberOfLines={1}>{r.description}</Text>
         <Text style={{ color: r.overdue ? t.danger : t.muted, fontSize: 12 }} numberOfLines={1}>
-          {r.pays ? `paid · ${r.pays.description} (planned ${shortDate(r.pays.date)})` : r.kind === 'actual' ? 'unplanned' : r.paidOn ? `paid ${shortDate(r.paidOn)}, counted that day · planned ${formatMoney(r.planned!)}` : matched ? `planned ${formatMoney(r.planned!)}` : r.unlisted ? (r.item?.bankDone ? 'done by the bank (marked), not listed yet' : 'done by the bank, not listed yet') : r.overdue ? 'not posted yet' : 'planned'}{account ? ` · ${account}` : ''}
+          {r.pays ? `paid · ${r.pays.description} (planned ${shortDate(r.pays.date)})` : r.kind === 'actual' ? (r.unlisted ? 'in the bank’s balance since this day; no transaction yet' : 'unplanned') : r.paidOn ? `paid ${shortDate(r.paidOn)}, counted that day · planned ${formatMoney(r.planned!)}` : matched ? `planned ${formatMoney(r.planned!)}` : r.unlisted ? (r.item?.bankDone ? 'done by the bank (marked), not listed yet' : 'done by the bank, not listed yet') : r.overdue ? 'not posted yet' : 'planned'}{account ? ` · ${account}` : ''}
         </Text>
       </View>
       <View style={{ alignItems: 'flex-end' }}>
         {/* Done by the bank but not listed: its amount is already in the balance, so it shows but doesn't move it. */}
-        <Text style={{ color: r.unlisted || r.paidOn ? t.muted : r.counted > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'], fontWeight: matched || r.kind === 'actual' ? '600' : '400' }}>{formatMoney(r.unlisted ? r.planned! : r.paidOn ? r.actual! : r.counted)}</Text>
+        <Text style={{ color: r.unlisted || r.paidOn ? t.muted : r.counted > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'], fontWeight: matched || r.kind === 'actual' ? '600' : '400' }}>{formatMoney(r.unlisted ? r.planned ?? r.actual! : r.paidOn ? r.actual! : r.counted)}</Text>
         <Text style={{ color: r.balanceAfter < 0 ? t.danger : t.muted, fontSize: 12, fontVariant: ['tabular-nums'] }}>{formatMoney(r.balanceAfter)}</Text>
       </View>
     </Pressable>

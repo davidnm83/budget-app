@@ -2,12 +2,14 @@
 // accounts the plan covers, and posted transactions to match against.
 import {
   addDays, addMonths, balanceAt, buildWeek, monthEnd, monthOf, cardCycle, cardStatement, statedBalance, minimumPayment, planHeld, planUnbilled, transfersOnStatement, expandPlan, round2, todayIn, weekStart as mondayOf,
-  type PlanEntry, type PlannedItem, type PostedTxn, type Recurring, type WeekView,
+  type PlanEntry, type PlannedItem, type PostedTxn, type Recurring, type Unlisted, type WeekView,
 } from '@budget-app/core';
 import { supabase } from './supabase';
 import { signedBalance, type Account } from './types';
 
 /** Today's date on this device (its own time zone). Read from the clock directly: it's called for every row and heading. */
+/** The local calendar day of a timestamp. */
+const localDay = (ts: string) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 export const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 async function fetchAll<T>(make: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>) {
@@ -125,14 +127,25 @@ export const unlistedOf = (accounts: Account[]): Record<string, number> =>
  */
 function unlistedNow(plan: (from: string, to: string) => PlannedItem[], posted: PostedTxn[], planAccounts: Account[], now: string) {
   const unlisted = unlistedOf(planAccounts);
-  const found = Object.keys(unlisted).length ? buildWeek({
+  const matched = Object.keys(unlisted).length ? buildWeek({
     weekStart: addDays(now, -10), days: 12, today: now, planned: plan(addDays(now, -10), addDays(now, 1)), actuals: posted, unlisted,
     accounts: planAccounts.map((a) => ({ id: a.id, name: a.name, startBalance: 0, buffer: 0 })),
   }).unlistedFound : [];
+  // What no planned entry explains: it happened after the balance last matched the transactions (the sync's anchor),
+  // so that day on (never before the 10 days the sync waits for it to be listed).
+  const found: Unlisted[] = [...matched];
+  for (const a of planAccounts) {
+    const gap = unlisted[a.id] ?? 0;
+    const rest = round2(gap - matched.filter((u) => u.accountId === a.id).reduce((x, u) => x + u.amount, 0));
+    if (Math.abs(rest) < 0.01 || Math.sign(rest) !== Math.sign(gap) || Math.abs(rest) > Math.abs(gap)) continue;
+    const at = (a as any).balance_anchor_at as string | null;
+    const day = at ? localDay(at) : now;
+    found.push({ key: `gap:${a.id}`, date: day > now ? now : day < addDays(now, -10) ? addDays(now, -10) : day, amount: rest, accountId: a.id, loose: true });
+  }
   /** What the bank held at the start of `d` (its balance less listed transactions and these entries from then). */
   const startOf = (a: Account, d: string) => round2(balanceAt(signedBalance(a), posted.filter((t) => t.accountId === a.id && t.date <= now), d)
     - found.filter((u) => u.accountId === a.id && u.date >= d && u.date <= now).reduce((x, u) => x + u.amount, 0));
-  return { unlisted, keys: found.map((u) => u.key), found, startOf };
+  return { unlisted, keys: matched.map((u) => u.key), found, startOf };
 }
 
 export interface PlannerData {

@@ -17,6 +17,7 @@ import { BillForm, PlanEntryForm, Sheet } from '@/components/Forms';
 import { TransactionEditor } from '@/components/TransactionEditor';
 import { refreshPlannerBadge, setPlannerBadge } from '@/lib/badges';
 import { supabase } from '@/lib/supabase';
+import { toast } from '@/lib/toast';
 import { loadPlans, type CardPlan } from '@/lib/paymentPlans';
 import { IconButton, TopBar } from '@/components/TopBar';
 import { Card, Chip, Empty, Segmented, Fab } from '@/components/ui';
@@ -98,10 +99,11 @@ export default function Planner() {
   // Unplanned transactions can be tucked away to leave just the plan; they still count in every balance.
   const [hideUnplanned, setHideUnplanned] = useState(() => { try { return globalThis.localStorage?.getItem('budget.planner.hideUnplanned') === '1'; } catch { return false; } });
   const toggleUnplanned = () => setHideUnplanned((h) => { try { globalThis.localStorage?.setItem('budget.planner.hideUnplanned', h ? '0' : '1'); } catch { /* lasts until reload */ } return !h; });
-  const unplanned = v ? v.days.reduce((n, d) => n + d.rows.filter((r) => r.kind === 'actual' && !r.pays).length, 0) : 0;
+  const unplanned = v ? v.days.reduce((n, d) => n + d.rows.filter((r) => r.kind === 'actual' && !r.pays && !r.unlisted).length, 0) : 0;
 
   const openRow = (r: WeekRow) => {
     if (r.kind === 'actual' && r.txn) { seedTxn({ ...r.txn, account_name: name((r.txn as any).account_id ?? null) || undefined }); setTxnOpen(r.txn.id); return; }
+    if (!r.item) { toast(`The bank's balance has ${formatMoney(r.counted)} it hasn't listed as a transaction yet. It shows here from the day the balance changed, until the bank lists it.`); return; }
     const p = r.item!;
     setForm({
       id: p.entryId, date: p.date, description: p.description, amount: p.amount, account_id: p.accountId,
@@ -210,7 +212,7 @@ export default function Planner() {
                       );
                     })()}
                   </View>
-                  {d.rows.filter((r) => !(hideUnplanned && r.kind === 'actual' && !r.pays)).map((r) => <PlanRow key={r.key} t={t} r={r} account={only ? '' : name(r.accountId)} onPress={() => openRow(r)} />)}
+                  {d.rows.filter((r) => !(hideUnplanned && r.kind === 'actual' && !r.pays && !r.unlisted)).map((r) => <PlanRow key={r.key} t={t} r={r} account={only ? '' : name(r.accountId)} onPress={() => openRow(r)} />)}
                 </View>
               ))}
             </Card>
@@ -301,9 +303,9 @@ function NotListedYet({ t, accounts, refresh, done: doneRows }: { t: Theme; acco
   const signed = (n: number) => `${n < 0 ? '−' : '+'}${formatMoney(Math.abs(n))}`;
   return (
     <View style={{ gap: 2, paddingHorizontal: 4 }}>
-      {lines.map((l) => ({ ...l, done: doneRows.filter((r) => r.accountId === l.id).map((r) => r.description) })).map((l) => (
+      {lines.map((l) => ({ ...l, done: doneRows.filter((r) => r.accountId === l.id && r.item).map((r) => r.description), loose: doneRows.some((r) => r.accountId === l.id && !r.item) })).map((l) => (
         <Text key={l.name} style={{ color: t.muted, fontSize: 12 }}>
-          ⏳ {l.name}: {[l.count ? `${signed(l.pending)} pending (${l.count})` : '', Math.abs(l.gap) >= 1 ? `${signed(l.gap)} the bank has counted but not listed yet${l.done.length ? ` (${l.done.join(', ')})` : ''}` : ''].filter(Boolean).join(' · ')}.{l.done.length ? ' Already in the balance; they show as ⏳ below.' : ' Not in this week’s list until it posts.'}
+          ⏳ {l.name}: {[l.count ? `${signed(l.pending)} pending (${l.count})` : '', Math.abs(l.gap) >= 1 ? `${signed(l.gap)} the bank has counted but not listed yet${l.done.length ? ` (${l.done.join(', ')})` : ''}` : ''].filter(Boolean).join(' · ')}.{l.done.length || l.loose ? ' Already in the balance; shown as ⏳ below.' : ' Not in this week’s list until it posts.'}
         </Text>
       ))}
     </View>

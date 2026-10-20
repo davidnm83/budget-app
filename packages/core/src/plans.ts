@@ -15,6 +15,7 @@ export interface PaymentPlan {
   principal: number;        // the purchase amount put on the plan (positive)
   months: number;
   startDate: IsoDate;       // date of the first instalment
+  createdOn?: IsoDate | null; // the day it was set up with the bank (startDate is then the first statement close after it)
   setupFee: number;         // one-time fee, charged with the first instalment
   apr: number;              // yearly interest on the plan, in percent (0 = none)
   monthlyFee?: number;      // a fixed fee charged with every instalment (some cards charge this instead of interest)
@@ -52,6 +53,19 @@ export function monthsAfter(start: IsoDate, k: number): IsoDate {
   const s = parseIso(start);
   const last = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth() + k + 1, 0)).getUTCDate();
   return toIso(new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth() + k, Math.min(s.getUTCDate(), last))));
+}
+
+/**
+ * The first statement a plan set up on `setUp` is billed on: the first closing date (the card's statement day) on or
+ * after it. Each later instalment is on the same day of the month after, so each lands on its own statement.
+ */
+export function firstStatementOn(setUp: IsoDate, statementDay: number): IsoDate {
+  const s = parseIso(setUp);
+  const close = (k: number) => {
+    const last = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth() + k + 1, 0)).getUTCDate();
+    return toIso(new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth() + k, Math.min(statementDay, last))));
+  };
+  return close(0) >= setUp ? close(0) : close(1);
 }
 
 /** Every instalment of a plan. Paid off early: the instalments before that date, then one final payment of what was left. */

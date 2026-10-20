@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardStatement, cardStatus, statedBalance, findPlanCredit, findPlanDuplicates, planHeld, plansOffBalance, instalmentsBetween, monthsAfter, planProgress, planSchedule, plansDeferred, type PaymentPlan } from '../src/index.ts';
+import { cardStatement, cardStatus, statedBalance, findPlanCredit, findPlanDuplicates, planHeld, plansOffBalance, instalmentsBetween, monthsAfter, planProgress, planSchedule, plansDeferred, firstStatementOn, type PaymentPlan } from '../src/index.ts';
 
 const plan = (o: Partial<PaymentPlan> = {}): PaymentPlan => ({ id: 'p', description: 'Laptop', principal: 1200, months: 12, startDate: '2026-01-15', setupFee: 0, apr: 0, ...o });
 const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
@@ -153,3 +153,13 @@ describe('payment plan duplicates', () => {
     expect(found.map((f) => [f.txn.id, f.n])).toEqual([['a', 2], ['b', null]]);
   });
 });
+
+describe('a plan set up with the bank', () => {
+  it('is first billed on the statement that closes on or after the set-up day, then one on each after', () => {
+    expect([firstStatementOn('2026-10-02', 18), firstStatementOn('2026-10-18', 18), firstStatementOn('2026-10-19', 18), firstStatementOn('2026-01-31', 30)])
+      .toEqual(['2026-10-18', '2026-10-18', '2026-11-18', '2026-02-28']);
+    const s = planSchedule({ id: 'm', description: 'Monitor', principal: 600, months: 3, startDate: firstStatementOn('2026-10-02', 18), setupFee: 0, apr: 0 });
+    expect(s.map((x) => x.date)).toEqual(['2026-10-18', '2026-11-18', '2026-12-18']);
+  });
+});
+

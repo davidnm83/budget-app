@@ -138,6 +138,24 @@ describe('a planned entry paid in the next week', () => {
   }
 });
 
+describe('an amount the bank counted that no planned entry explains', () => {
+  // −$169 in today's balance (Oct 20), not listed; the balance last matched the transactions on Oct 19.
+  const gap = [{ key: 'gap:chq', date: '2026-10-19', amount: -169, accountId: 'chq', loose: true }];
+  const week = (weekStart: string, start: number) => buildWeek({ weekStart, today: '2026-10-20', accounts: [{ id: 'chq', name: 'Chequing', startBalance: start, buffer: 0 }],
+    planned: [], actuals: [], unlisted: { chq: -169 }, unlistedKeys: [], unlistedAll: gap });
+  it('a past week before it keeps it out (its start is worked back from a balance that has it)', () => {
+    const v = week('2026-10-12', 31); // the balance, less nothing listed since, still has the −169 in it
+    expect([v.startBalance, v.endBalance, v.days.flatMap((d) => d.rows).length]).toEqual([200, 200, 0]);
+  });
+  it('the week it happened shows it on its day, and ends at the bank balance', () => {
+    const v = week('2026-10-19', 31);
+    expect(v.startBalance).toBe(200);
+    const row = v.days[0].rows[0];
+    expect([row.date, row.counted, row.unlisted, row.item]).toEqual(['2026-10-19', -169, true, null]);
+    expect(v.days[1].endBalance).toBe(31);
+  });
+});
+
 describe('planned entries the bank has counted but not listed', () => {
   const item = (key: string, date: string, amount: number) => ({ key, date, description: key, amount, accountId: 'chq', categoryId: null, estimated: false,
     matchText: null, recurringId: null, occurrenceDate: null, entryId: key, transfer: false, matchedTxnId: null });

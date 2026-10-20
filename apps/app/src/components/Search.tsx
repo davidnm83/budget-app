@@ -40,7 +40,7 @@ export function SearchBox({ pages, onGo, empty, autoFocus }: { pages: PageHit[];
       if (!merchantCache) merchantCache = ((await supabase.rpc('merchant_names')).data ?? []) as any[];
       const [cats, txns] = await Promise.all([
         supabase.from('categories').select('id, name, icon, group_name').ilike('name', p.replace(/\\*/g, '%')).eq('is_hidden', false).limit(6),
-        supabase.from('transaction_list').select('id, date, amount, currency, name, merchant, category_id, display_name, account_name, account_mask, notes, tags, category_name')
+        supabase.from('transaction_list').select('id, date, amount, currency, name, merchant, category_id, display_name, account_name, account_mask, notes, tags, category_name, split_count')
           .or(`display_name.ilike.${p},name.ilike.${p},notes.ilike.${p}`).order('date', { ascending: false }).limit(8),
       ]);
       if (mine !== seq.current) return; // a newer search has started
@@ -96,7 +96,7 @@ export function SearchBox({ pages, onGo, empty, autoFocus }: { pages: PageHit[];
               <Text style={{ color: t.muted, fontSize: 12, width: 50 }}>{shortDate(x.date)}</Text>
               <View style={{ flex: 1 }}>
                 <Text style={{ color: t.text, fontSize: 15 }} numberOfLines={1}>{x.display_name}</Text>
-                <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={1}>{x.category_name ?? 'Uncategorised'} · {x.account_name}</Text>
+                <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={1}>{x.split_count ? `✂️ Split · ${x.split_count} parts` : x.category_name ?? 'Uncategorised'} · {x.account_name}</Text>
               </View>
               <Text style={{ color: Number(x.amount) > 0 ? t.positive : t.text, fontVariant: ['tabular-nums'] }}>{formatMoney(Number(x.amount))}</Text>
             </Pressable>

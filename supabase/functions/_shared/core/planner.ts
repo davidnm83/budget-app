@@ -79,6 +79,12 @@ export function expandPlan(recurring: Recurring[], entries: PlanEntry[], from: I
   return out.sort((a, b) => a.date.localeCompare(b.date) || a.amount - b.amount);
 }
 
+/**
+ * Money the bank has counted in a balance but not listed. A planned entry it matched (key = the entry's), or, for an
+ * amount no entry explains, `loose`: dated when the balance stopped matching its transactions, shown as its own row.
+ */
+export interface Unlisted { key?: string; date: IsoDate; amount: number; accountId: string; loose?: boolean }
+
 export interface WeekRow {
   key: string;
   date: IsoDate;
@@ -140,7 +146,7 @@ export function buildWeek(opts: {
    * Every such entry, wherever it falls: a view that ends before one of them (a past week) still starts without it,
    * since the bank's balance it's worked back from already has it.
    */
-  unlistedAll?: { date: IsoDate; amount: number; accountId: string }[];
+  unlistedAll?: Unlisted[];
   /**
    * Planned entries from just before and after the view (a week either side is plenty): a transaction that paid one
    * of them isn't unplanned here, and an entry here paid on a day outside the view counts on that day, not here.
@@ -205,6 +211,11 @@ export function buildWeek(opts: {
       overdue: !t && !done && p.date < opts.today, ...(done ? { unlisted: true } : {}), ...(away ? { paidOn: away } : {}), item: p, txn: t,
     });
   }
+  // An amount the bank counted that no planned entry explains: on the day it appeared, so the days before don't lose it.
+  for (const u of (opts.unlistedAll ?? []).filter((x) => x.loose && ids.has(x.accountId) && inside(x.date) && x.date <= opts.today)) {
+    rows.push({ key: u.key ?? `gap:${u.accountId}`, date: u.date, kind: 'actual', description: 'Not listed by the bank yet', accountId: u.accountId,
+      planned: null, actual: u.amount, counted: u.amount, overdue: false, unlisted: true, item: null, txn: null });
+  }
   for (const t of actuals.filter((x) => !usedTxn.has(x.id) && inside(x.date))) {
     const p = paysFor.get(t.id);
     rows.push({ key: `t:${t.id}`, date: t.date, kind: 'actual', description: t.merchant || t.name, accountId: t.accountId,
@@ -250,7 +261,7 @@ export function buildWeek(opts: {
       plannedOut: sum((r) => (r.planned ?? 0) < 0 ? -r.planned! : 0),
       actualIn: sum((r) => !r.paidOn && (r.actual ?? 0) > 0 ? r.actual! : 0),
       actualOut: sum((r) => !r.paidOn && (r.actual ?? 0) < 0 ? -r.actual! : 0),
-      unplannedOut: sum((r) => (r.kind === 'actual' && !r.pays && (r.actual ?? 0) < 0 ? -r.actual! : 0)),
+      unplannedOut: sum((r) => (r.kind === 'actual' && !r.pays && !r.unlisted && (r.actual ?? 0) < 0 ? -r.actual! : 0)),
       overdue: rows.filter((r) => r.overdue).length,
     },
   };
