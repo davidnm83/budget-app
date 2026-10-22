@@ -9,7 +9,7 @@
 //    made takes its share of the price off, both under the "Pay later" transfer category, so net worth counts the debt
 //    and the budget doesn't count anything twice. These carry import_id "paylater:<plan id>:…".
 import * as core from '@budget-app/core';
-import { payLaterRegular, payLaterSchedule, payLaterStatus, type PayLater, type PayLaterStatus, type PostedTxn } from '@budget-app/core';
+import { payLaterRegular, payLaterSchedule, payLaterStatuses, type PayLater, type PayLaterStatus, type PostedTxn } from '@budget-app/core';
 import { isOffline } from './offline';
 import { loadPosted, today } from './plan';
 import { supabase } from './supabase';
@@ -17,7 +17,7 @@ import { supabase } from './supabase';
 export interface PayLaterPlan extends PayLater {
   categoryId: string | null; purchaseDate: string | null; recurringId: string | null; notes: string | null;
 }
-export type PayLaterInput = Omit<PayLaterPlan, 'id' | 'recurringId' | 'paidByHand' | 'closedOn'> & { paidByHand?: number[]; closedOn?: string | null };
+export type PayLaterInput = Omit<PayLaterPlan, 'id' | 'recurringId' | 'paidByHand' | 'closedOn' | 'paidWith'> & { paidByHand?: number[]; closedOn?: string | null };
 
 const CATEGORY = 'Pay later';
 const ACCOUNT_SUBTYPE = 'pay later';
@@ -29,7 +29,7 @@ const fromRow = (r: any): PayLaterPlan => ({
   id: r.id, provider: r.provider, description: r.description, total: Number(r.total), downPayment: Number(r.down_payment), payments: Number(r.payments),
   frequency: r.frequency, firstDate: r.first_date, apr: Number(r.apr), accountId: r.account_id, matchText: r.match_text,
   paidByHand: (r.paid_by_hand ?? []).map(Number), closedOn: r.closed_on, categoryId: r.category_id, purchaseDate: r.purchase_date,
-  recurringId: r.recurring_id, notes: r.notes,
+  recurringId: r.recurring_id, notes: r.notes, paidWith: r.paid_with ?? {},
 });
 const toRow = (p: PayLaterInput) => ({
   provider: p.provider, description: p.description, total: p.total, down_payment: p.downPayment, payments: p.payments, frequency: p.frequency,
@@ -47,12 +47,9 @@ export async function loadPayLater(): Promise<PayLaterPlan[]> {
 export async function loadPayLaterStatus(plans?: PayLaterPlan[]): Promise<{ plan: PayLaterPlan; status: PayLaterStatus }[]> {
   const list = plans ?? await loadPayLater();
   const txns = await paymentsFor(list);
-  const taken = new Set<string>();
-  return list.slice().sort((a, b) => a.firstDate.localeCompare(b.firstDate)).map((plan) => {
-    const status = payLaterStatus(plan, txns, today(), taken);
-    for (const x of status.schedule) if (x.txnId) taken.add(x.txnId);
-    return { plan, status };
-  });
+  const sorted = list.slice().sort((a, b) => a.firstDate.localeCompare(b.firstDate));
+  const statuses = payLaterStatuses(sorted, txns, today());
+  return sorted.map((plan, i) => ({ plan, status: statuses[i] }));
 }
 
 async function paymentsFor(list: PayLaterPlan[]): Promise<PostedTxn[]> {
@@ -80,8 +77,10 @@ export async function savePayLater(input: PayLaterInput, id?: string): Promise<s
   return id!;
 }
 
-export async function updatePayLater(id: string, patch: { paidByHand?: number[]; closedOn?: string | null }) {
-  fail((await supabase.from('pay_later').update({ ...(patch.paidByHand ? { paid_by_hand: patch.paidByHand } : {}), ...(patch.closedOn !== undefined ? { closed_on: patch.closedOn } : {}) }).eq('id', id)).error);
+export async function updatePayLater(id: string, patch: { paidByHand?: number[]; closedOn?: string | null; paidWith?: Record<string, string> }) {
+  const { error } = await supabase.from('pay_later').update({ ...(patch.paidByHand ? { paid_by_hand: patch.paidByHand } : {}), ...(patch.closedOn !== undefined ? { closed_on: patch.closedOn } : {}),
+    ...(patch.paidWith ? { paid_with: patch.paidWith } : {}) }).eq('id', id);
+  if (error) throw new Error(patch.paidWith && /paid_with/.test(error.message) ? NEEDS_UPDATE : error.message);
   await syncPayLater();
 }
 
@@ -159,6 +158,14 @@ export async function syncPayLater(): Promise<number> {
     for (const x of s.filter((y) => Math.abs(y.amount - regular) >= 0.005)) {
       const ins = await supabase.from('plan_entries').insert({ recurring_id: rid, occurrence_date: x.date, date: x.date, description: name, amount: -x.amount, account_id: p.accountId });
       if (ins.error && ins.error.code !== '23505') throw new Error(ins.error.message);
+    }
+    // Payments linked by hand: the planner's bill shows them paid by that transaction too.
+    for (const [n, txnId] of Object.entries(p.paidWith ?? {})) {
+      const x = s.find((y) => String(y.n) === n);
+      if (!x) continue;
+      const ins = await supabase.from('plan_entries').insert({ recurring_id: rid, occurrence_date: x.date, date: x.date, description: name, amount: -x.amount, account_id: p.accountId, matched_transaction_id: txnId });
+      if (ins.error?.code === '23505') fail((await supabase.from('plan_entries').update({ matched_transaction_id: txnId }).eq('recurring_id', rid).eq('occurrence_date', x.date)).error);
+      else fail(ins.error);
     }
     // Matched payments are spending in what was bought (unless you've filed one yourself).
     const paidIds = s.map((x) => x.txnId).filter(Boolean) as string[];

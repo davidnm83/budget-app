@@ -128,6 +128,32 @@ export function PayLaterSheet({ plan, status, accounts, onClose, onChanged, onEd
   const mark = (n: number, on: boolean) => run(() => updatePayLater(plan.id, { paidByHand: on ? [...plan.paidByHand, n] : plan.paidByHand.filter((x) => x !== n) }), on ? 'Marked paid' : 'Unmarked');
   const from = accounts.find((a) => a.id === plan.accountId);
   const s = status.schedule;
+  const links = plan.paidWith ?? {};
+  // Linking a payment by hand: money out of the plan's account within a few weeks of it, the nearest amount first.
+  const [linking, setLinking] = useState<(typeof s)[number] | null>(null);
+  const [found, setFound] = useState<{ id: string; date: string; amount: number; display_name: string; account_name: string | null }[]>([]);
+  useEffect(() => {
+    if (!linking) { setFound([]); return; }
+    const away = (d: string, k: number) => new Date(Date.parse(d + 'T00:00:00Z') + k * 86_400_000).toISOString().slice(0, 10);
+    let q = supabase.from('transaction_list').select('id, date, amount, display_name, account_name').lt('amount', 0).gte('date', away(linking.date, -21)).lte('date', away(linking.date, 21));
+    if (plan.accountId) q = q.eq('account_id', plan.accountId);
+    q.order('date').limit(200).then(({ data }) => {
+      const want = linking.amount, days = (d: string) => Math.abs(Date.parse(d) - Date.parse(linking.date)) / 864e5;
+      const others = new Set(s.filter((x) => x.n !== linking.n && x.txnId).map((x) => x.txnId));
+      setFound(((data ?? []) as any[]).map((r) => ({ ...r, amount: Number(r.amount) })).filter((r) => !others.has(r.id))
+        .sort((a, b) => Math.abs(-a.amount - want) - Math.abs(-b.amount - want) || days(a.date) - days(b.date)).slice(0, 40));
+    });
+  }, [linking?.n]);
+  const link = (n: number, id: string | null) => {
+    const next = { ...links };
+    if (id) next[String(n)] = id; else delete next[String(n)];
+    const was = links[String(n)];
+    return run(async () => {
+      // A link taken away: the planner's bill stops showing that transaction as the payment too.
+      if (was && was !== id && plan.recurringId) await supabase.from('plan_entries').update({ matched_transaction_id: null }).eq('recurring_id', plan.recurringId).eq('matched_transaction_id', was);
+      await updatePayLater(plan.id, { paidWith: next, paidByHand: plan.paidByHand.filter((x) => x !== n) });
+    }, id ? 'Payment linked' : 'Link removed');
+  };
   return (
     <Sheet title={`${plan.provider} · ${plan.description}`} onClose={onClose}
       footer={<View style={{ flexDirection: 'row', gap: 8 }}><Button title="Edit" kind="plain" onPress={onEdit} style={{ flex: 1 }} /><Button title="Done" onPress={onClose} style={{ flex: 1 }} /></View>}>
@@ -141,17 +167,22 @@ export function PayLaterSheet({ plan, status, accounts, onClose, onChanged, onEd
       </View>
       <View style={{ gap: 2 }}>
         {s.map((x) => {
-          const byHand = plan.paidByHand.includes(x.n);
+          const byHand = plan.paidByHand.includes(x.n), byLink = !!links[String(x.n)];
           return (
             <View key={x.n} style={[styles.row, { borderColor: t.line }]}>
               <Ionicons name={x.paid ? 'checkmark-circle' : x.missed ? 'alert-circle' : 'time-outline'} size={20} color={x.paid ? t.positive : x.missed ? t.danger : t.muted} />
               <View style={{ flex: 1 }}>
                 <Text style={{ color: t.text }}>{shortDate(x.date)} · payment {x.n}</Text>
                 <Text style={{ color: x.missed ? t.danger : t.muted, fontSize: 12 }}>
-                  {x.txnId ? 'paid (matched to the payment)' : byHand ? 'paid (marked by you)' : x.missed ? 'no payment found' : 'to come'}{x.interest > 0 ? ` · ${money0(x.interest)} interest` : ''}
+                  {x.txnId ? (byLink ? 'paid (linked by you)' : 'paid (matched to the payment)') : byHand ? 'paid (marked by you)' : x.missed ? 'no payment found' : 'to come'}{x.interest > 0 ? ` · ${money0(x.interest)} interest` : ''}
                 </Text>
               </View>
               <Text style={{ color: t.text, fontVariant: ['tabular-nums'] }}>{money0(x.amount)}</Text>
+              {!byHand && !plan.closedOn && (
+                <Pressable onPress={() => setLinking(x)} disabled={busy} hitSlop={8} accessibilityLabel={x.txnId ? `Change the payment linked to payment ${x.n}` : `Link a payment to payment ${x.n}`}>
+                  <Text style={{ color: t.accent, fontSize: 13, fontWeight: '600' }}>{x.txnId ? 'Change' : 'Link'}</Text>
+                </Pressable>
+              )}
               {!x.txnId && !plan.closedOn && (
                 <Pressable onPress={() => mark(x.n, !byHand)} disabled={busy} hitSlop={8} accessibilityLabel={byHand ? 'Unmark paid' : 'Mark paid'}>
                   <Text style={{ color: t.accent, fontSize: 13, fontWeight: '600' }}>{byHand ? 'Unmark' : 'Mark paid'}</Text>
@@ -162,8 +193,16 @@ export function PayLaterSheet({ plan, status, accounts, onClose, onChanged, onEd
         })}
       </View>
       <Text style={{ color: t.muted, fontSize: 12 }}>
-        Payments are found among {from ? `${from.name}'s` : 'the account’s'} transactions by amount and “{plan.matchText || plan.provider}” in the description, and filed under the plan's category. Mark one paid if it came out some other way.
+        Payments are found among {from ? `${from.name}'s` : 'the account’s'} transactions by amount and “{plan.matchText || plan.provider}” in the description, and filed under the plan's category. Link one the app didn't find, or mark it paid if it came out some other way.
       </Text>
+      <SinglePicker visible={!!linking} title={linking ? `Payment ${linking.n} · ${money0(linking.amount)} · ${shortDate(linking.date)}` : ''} selected={linking ? links[String(linking.n)] ?? linking.txnId ?? 'none' : 'none'}
+        onClose={() => setLinking(null)}
+        items={[...(linking && links[String(linking.n)] ? [{ id: 'none', label: 'Not linked (let the app find it)' }] : []), ...found.map((x) => {
+          const off = Math.round((-x.amount - (linking?.amount ?? 0)) * 100) / 100;
+          return { id: x.id, label: `${shortDate(x.date)} · ${x.display_name}`, detail: formatMoney(x.amount),
+            sub: [x.account_name ?? '', Math.abs(off) < 0.005 ? 'same amount' : `${formatMoney(Math.abs(off))} ${off > 0 ? 'more' : 'less'}`].filter(Boolean).join(' · ') };
+        })]}
+        onPick={(id) => { const n = linking!.n; setLinking(null); link(n, id === 'none' ? null : id); }} />
       {!status.done && <Button title="Paid off early or cancelled (today)" kind="plain" disabled={busy} onPress={() => confirm({ title: 'Close this plan?', message: `What's left (${money0(status.owing)}) is taken off what you owe, and no more payments are planned.`, action: 'Close plan', run: () => run(() => updatePayLater(plan.id, { closedOn: today() }), 'Plan closed') })} />}
       {plan.closedOn && <Button title="Open the plan again" kind="plain" disabled={busy} onPress={() => run(() => updatePayLater(plan.id, { closedOn: null }), 'Plan open again')} />}
       <Button title="Delete plan" kind="danger" disabled={busy} onPress={() => confirm({ title: 'Delete this plan?', message: 'Its bill and what it added to the Pay later account are removed. Payments already filed under its category stay where they are.', action: 'Delete', run: () => run(() => deletePayLater(plan), 'Plan deleted', true) })} />

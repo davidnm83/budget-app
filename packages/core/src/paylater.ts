@@ -13,6 +13,8 @@ export interface PayLater {
   firstDate: IsoDate; apr: number;
   accountId: string | null; matchText: string | null;
   paidByHand: number[]; closedOn: IsoDate | null;
+  /** Payments linked by hand to the transaction that paid them: payment number → transaction id. */
+  paidWith?: Record<string, string>;
 }
 export interface PayLaterPayment { n: number; date: IsoDate; amount: number; principal: number; interest: number }
 
@@ -65,27 +67,47 @@ export interface PayLaterStatus {
 }
 
 /**
- * Which payments have been made: matched to a payment from the account (amount, a few days either way, and the
- * bank's description when the plan has one), or marked paid by hand. A payment more than 4 days late with nothing
- * matched is missed. `taken` are transactions already paying something else.
+ * Which payments have been made: linked by hand to a transaction, matched to a payment from the account (amount, a few
+ * days either way, and the bank's description when the plan has one), or marked paid by hand. A payment more than 4
+ * days late with nothing matched is missed. `taken` are transactions already paying something else.
  */
 export function payLaterStatus(p: PayLater, txns: PostedTxn[], today: IsoDate, taken: Set<string> = new Set()): PayLaterStatus {
-  const s = payLaterSchedule(p);
-  const free = txns.filter((t) => !taken.has(t.id) && t.amount < 0 && (!p.accountId || t.accountId === p.accountId));
-  const matched = matchDues(s.filter((x) => !p.paidByHand.includes(x.n)).map((x) => ({ key: String(x.n), date: x.date, amount: -x.amount, accountId: p.accountId, matchText: p.matchText, estimated: false })), free, 4);
-  const schedule = s.map((x) => {
-    const txnId = matched.get(String(x.n)) ?? null;
-    const paid = !!txnId || p.paidByHand.includes(x.n);
-    return { ...x, txnId, paid, missed: !paid && !p.closedOn && daysAfter(x.date, today) > 4 };
+  return payLaterStatuses([p], txns, today, taken)[0];
+}
+
+/**
+ * Every plan's status, matched together: links by hand first, then payments of exactly the amount, then ones a little
+ * off (a cent of rounding), so one plan doesn't take another's payment for being close enough.
+ */
+export function payLaterStatuses(plans: PayLater[], txns: PostedTxn[], today: IsoDate, taken: Set<string> = new Set()): PayLaterStatus[] {
+  const used = new Set([...taken, ...plans.flatMap((p) => Object.values(p.paidWith ?? {}))]);
+  const schedules = plans.map((p) => payLaterSchedule(p));
+  const found = plans.map((p) => new Map(Object.entries(p.paidWith ?? {})));
+  for (const exact of [true, false]) {
+    plans.forEach((p, i) => {
+      const dues = schedules[i].filter((x) => !p.paidByHand.includes(x.n) && !found[i].has(String(x.n)))
+        .map((x) => ({ key: String(x.n), date: x.date, amount: -x.amount, accountId: p.accountId, matchText: p.matchText, estimated: false }));
+      for (const d of dues) {
+        const free = txns.filter((t) => !used.has(t.id) && t.amount < 0 && (!p.accountId || t.accountId === p.accountId) && (!exact || Math.abs(t.amount - d.amount) < 0.005));
+        const id = matchDues([d], free, 4).get(d.key);
+        if (id) { used.add(id); found[i].set(d.key, id); }
+      }
+    });
+  }
+  return plans.map((p, i) => {
+    const schedule = schedules[i].map((x) => {
+      const txnId = found[i].get(String(x.n)) ?? null;
+      const paid = !!txnId || p.paidByHand.includes(x.n);
+      return { ...x, txnId, paid, missed: !paid && !p.closedOn && daysAfter(x.date, today) > 4 };
+    });
+    const paid = schedule.filter((x) => x.paid);
+    const unpaid = Math.max(0, round2(payLaterPrincipal(p) - paid.reduce((t, x) => t + x.principal, 0)));
+    const next = p.closedOn ? null : schedule.find((x) => !x.paid) ?? null;
+    return {
+      schedule, paidCount: paid.length, paidAmount: round2(paid.reduce((t, x) => t + x.amount, 0)), interestPaid: round2(paid.reduce((t, x) => t + x.interest, 0)),
+      owing: p.closedOn ? 0 : unpaid, unpaid, next, done: !!p.closedOn || paid.length === schedule.length,
+    };
   });
-  const paid = schedule.filter((x) => x.paid);
-  const unpaid = Math.max(0, round2(payLaterPrincipal(p) - paid.reduce((t, x) => t + x.principal, 0)));
-  const owing = p.closedOn ? 0 : unpaid;
-  const next = p.closedOn ? null : schedule.find((x) => !x.paid) ?? null;
-  return {
-    schedule, paidCount: paid.length, paidAmount: round2(paid.reduce((t, x) => t + x.amount, 0)), interestPaid: round2(paid.reduce((t, x) => t + x.interest, 0)),
-    owing, unpaid, next, done: !!p.closedOn || paid.length === schedule.length,
-  };
 }
 
 function daysAfter(a: IsoDate, b: IsoDate): number { return Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000); }
