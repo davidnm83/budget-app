@@ -1,7 +1,7 @@
 // Planner tab (PLN): Monday-to-Sunday week of planned bills, income and one-offs against what
 // actually posted, with a running balance and a warning before an account dips below its buffer.
 import { useFocusLoad } from '@/lib/focusLoad';
-import { PAGE_MAX } from '@/lib/layout';
+import { PAGE_MAX, PAGE_WIDE } from '@/lib/layout';
 import { ROW } from '@/lib/layout';
 import { EmptyState, PageSkeleton } from '@/components/States';
 import { usePullRefresh } from '@/lib/pullRefresh';
@@ -113,16 +113,18 @@ export default function Planner() {
     });
   };
 
+  // The month's calendar gets more room on a big screen.
+  const wideView = view === 'month' ? PAGE_WIDE : undefined;
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       {/* Same header as the Budget: the open period and a way back to now, the view switch, then the strip of weeks or months. */}
-      <TopBar>
+      <TopBar maxWidth={wideView}>
         <PeriodTitle t={t} title={view === 'week' ? label : view === 'month' ? monthName(month) : 'All bills & income'}
           sub={view === 'week' ? (week === thisWeek ? 'This week' : week < thisWeek ? 'Past week' : 'Ahead') : view === 'month' ? (month === monthOf(now) ? 'This month' : month < monthOf(now) ? 'Past month' : 'Ahead') : 'Everything that repeats'}
           away={view === 'week' ? week !== thisWeek : view === 'month' && month !== monthOf(now)} hereText={view === 'week' ? 'This week' : 'This month'}
           onHere={() => (view === 'week' ? setWeek(thisWeek) : setMonth(monthOf(now)))} />
       </TopBar>
-      <View style={styles.viewSwitch}>
+      <View style={[styles.viewSwitch, wideView ? { maxWidth: wideView } : null]}>
         <Segmented value={view} onChange={setView} options={[{ value: 'week', label: 'Week' }, { value: 'month', label: 'Month' }, { value: 'all', label: 'All bills' }]} />
         {view === 'week' && data && (
           <PeriodStrip t={t} selected={week} current={thisWeek} onSelect={setWeek}
@@ -131,7 +133,7 @@ export default function Planner() {
         {view === 'month' && <PeriodStrip t={t} selected={month} current={monthOf(now)} onSelect={setMonth} items={monthStrip} />}
       </View>
       {view === 'all' ? <Bills key={billsKey} mode="all" embedded /> : view === 'month' ? (
-        <ScrollView contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
+        <ScrollView contentContainerStyle={[styles.page, wideView ? { maxWidth: wideView } : null]} refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
           {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
           {mdata ? (
             mdata.accounts.some((a) => a.plan_include)

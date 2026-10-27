@@ -13,13 +13,13 @@ import { loadPrefs, type Page } from '@/lib/prefs';
 import { useTheme } from '@/lib/theme';
 import { afterClose, useBackToClose } from '@/lib/useBackToClose';
 
-export function TopBar({ children, title }: { children?: ReactNode; title?: string }) {
+export function TopBar({ children, title, maxWidth }: { children?: ReactNode; title?: string; /** Wider than a page usually is (see PAGE_WIDE). */ maxWidth?: number }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const wide = useWide();
   if (wide && title && !children) return <View style={{ height: 8 }} />; // the sidebar already says where you are
   return (
-    <View style={[styles.bar, { paddingTop: insets.top + 8, backgroundColor: t.bg }]}>
+    <View style={[styles.bar, { paddingTop: insets.top + 8, backgroundColor: t.bg }, maxWidth ? { maxWidth } : null]}>
       {title ? <Text style={{ color: t.text, fontSize: 24, fontWeight: '800', letterSpacing: -0.3, flex: children ? 0 : 1 }}>{title}</Text> : null}
       {children ? <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>{children}</View> : null}
     </View>

@@ -4,10 +4,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { formatMoney, shortDate, type WeekRow } from '@budget-app/core';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { compact, MonthGrid, type DayCell } from '@/components/MonthGrid';
+import { compact, MonthGrid, wholeDollars, type DayCell } from '@/components/MonthGrid';
 import { Tile } from '@/components/Tile';
 import { Card, Chip } from '@/components/ui';
-import { ROW } from '@/lib/layout';
+import { ROW, useWide } from '@/lib/layout';
 import type { MonthData } from '@/lib/plan';
 import { supabase } from '@/lib/supabase';
 import type { Theme } from '@/lib/theme';
@@ -48,6 +48,9 @@ export function PlannerMonth({ t, d, now, only, setOnly, onRow, onAdd, onChanged
     if (error) toast(error.message); else { toast(`${r.description} is now ${formatMoney(r.actual!)}`); onChanged(); }
   };
 
+  // Whole dollars where the days are wide enough for them (a desktop window); short amounts on a phone.
+  const wide = useWide();
+  const amt = wide ? wholeDollars : compact;
   const cells: Record<string, DayCell> = {};
   for (const day of v.days) {
     const out = day.rows.filter((r) => r.counted < 0 && !r.item?.transfer).reduce((s, r) => s + r.counted, 0);
@@ -55,8 +58,8 @@ export function PlannerMonth({ t, d, now, only, setOnly, onRow, onAdd, onChanged
     const bal = d.actual[day.date] ?? day.endBalance;
     const warn = v.warnings.some((w) => w.date === day.date);
     cells[day.date] = {
-      lines: [...(out ? [{ text: compact(out), color: t.danger }] : []), ...(inn ? [{ text: `+${compact(inn)}`, color: t.positive }] : [])],
-      foot: day.rows.length || day.date === now || day.date === d.month ? { text: compact(bal), color: bal < 0 || warn ? t.danger : t.muted } : undefined,
+      lines: [...(out ? [{ text: amt(out), color: t.danger }] : []), ...(inn ? [{ text: `+${amt(inn)}`, color: t.positive }] : [])],
+      foot: day.rows.length || day.date === now || day.date === d.month ? { text: amt(bal), color: bal < 0 || warn ? t.danger : t.muted } : undefined,
       dot: day.rows.some((r) => r.overdue) ? t.danger : warn ? t.series2 : undefined,
     };
   }
@@ -91,7 +94,7 @@ export function PlannerMonth({ t, d, now, only, setOnly, onRow, onAdd, onChanged
         </View>
       ))}
       <Card style={{ padding: 8 }}>
-        <MonthGrid t={t} month={d.month} today={now} cells={cells} selected={sel} onPress={setSel} height={62} />
+        <MonthGrid t={t} month={d.month} today={now} cells={cells} selected={sel} onPress={setSel} height={62} grow />
         <Text style={{ color: t.muted, fontSize: 11, paddingHorizontal: 4, paddingTop: 4 }}>Each day: money out, money in, and the balance at the end of the day (the real one up to today).</Text>
       </Card>
 

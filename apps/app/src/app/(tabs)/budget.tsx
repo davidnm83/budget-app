@@ -2,7 +2,7 @@
 // comparisons with other months or years, and a year view of budget vs actual by month.
 import { useFocusLoad } from '@/lib/focusLoad';
 import { today } from '@/lib/plan';
-import { PAGE_MAX } from '@/lib/layout';
+import { PAGE_MAX, PAGE_WIDE } from '@/lib/layout';
 import { PageSkeleton } from '@/components/States';
 import { ROW } from '@/lib/layout';
 import { deleteWithUndo } from '@/lib/toast';
@@ -112,14 +112,16 @@ export default function BudgetTab() {
   };
   const data = { t, cats, groupIcons, widgets, setWidgets, refresh, showTxns, budgets, rows, summaries, month, setMonth, reload: load, setError, setView,
     against, setAgainst, base };
+  // The year's table lays twelve months side by side: on a big screen it gets more room.
+  const wideView = view === 'year' ? PAGE_WIDE : undefined;
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
     {/* Same header as the Planner: the open period and a way back to now, the view switch, then the strip of months. */}
-    <TopBar>
+    <TopBar maxWidth={wideView}>
       <PeriodTitle t={t} title={view === 'year' ? 'Year by month' : compare ? `${monthName(month, false)} vs ${monthName(base, base.slice(0, 4) !== month.slice(0, 4))}` : monthName(month)} away={view !== 'year' && month !== current} hereText="This month" onHere={() => setMonth(current)}
         sub={view === 'year' ? undefined : compare ? `Tap a month to change ${picking === 'month' ? 'the month you’re looking at' : 'the one it’s compared with'}` : month === current ? 'This month' : month > current ? 'Planning ahead · spending shows once the month starts' : 'Past month'} />
     </TopBar>
-    <View style={styles.viewSwitch}>
+    <View style={[styles.viewSwitch, wideView ? { maxWidth: wideView } : null]}>
       <Segmented<View_> value={view} onChange={setView}
         options={[{ value: 'month', label: 'Month' }, { value: 'compare', label: 'Compare' }, { value: 'year', label: 'Year' }]} />
       {view === 'month' && <PeriodStrip t={t} items={strip} selected={month} current={current} onSelect={setMonth} />}
@@ -144,7 +146,7 @@ export default function BudgetTab() {
         </Pressable>
       )}
     </View>
-    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}
+    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={[styles.page, wideView ? { maxWidth: wideView } : null]}
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
       {!cats.length && loading ? <PageSkeleton tiles={3} cards={2} /> : null}
@@ -816,6 +818,16 @@ function YearView(d: Data) {
     return before.reduce((s, tt) => s + ids.reduce((x, id) => x + actualFor('expense', tt.get(id) ?? 0), 0), 0);
   };
   const span = upto === 12 ? String(year - 1) : `Jan–${monthName(months[upto - 1], false).slice(0, 3)} ${year - 1}`;
+  // Columns share the room there is (on a phone they keep their size and the table scrolls sideways); with room to
+  // spare the text is bigger too.
+  const [room, setRoom] = useState(0);
+  const cols = 13 + (against ? 2 : 0);
+  const labelW = room >= 1100 ? 220 : room >= 900 ? 170 : 150;
+  // A month needs about 62px ("of $1,450"); on a phone the columns stay roomier and scroll.
+  const cellW = Math.max(room >= 900 ? 62 : 74, Math.floor((room - labelW - 2) / cols));
+  const fits = labelW + cols * cellW <= room + 1;
+  const fs = cellW >= 96 ? 15 : cellW >= 78 ? 14 : 13, fsSub = Math.max(12, fs - 1);
+  const yLabel = [styles.yLabel, { width: labelW, fontSize: fs }], yCell = [styles.yCell, { width: cellW, fontSize: fs }], yRow = [styles.yRow, fs > 13 && { minHeight: 46 + (fs - 14) * 4 }];
   const budgetFor = (key: string, m: Month) => d.budgets.find((b) => b.month === m && budgetKey(b) === key)?.amount;
 
   const expense = d.cats.filter((c) => c.kind === 'expense');
@@ -841,38 +853,39 @@ function YearView(d: Data) {
         const now = groupsOnly.reduce((s, l) => s + l.values.slice(0, upto).reduce((a, v) => a + v, 0), 0), was = groupsOnly.reduce((s, l) => s + prevOf(l.key), 0);
         return <Text style={{ color: t.text, fontSize: 13 }}>Spent {money0(now)} {upto === 12 ? `in ${year}` : `so far in ${year}`} against {money0(was)} in {span}: <Text style={{ color: now > was ? t.danger : t.accent, fontWeight: '600' }}>{now > was ? '▲' : '▼'} {money0(Math.abs(now - was))}</Text>.</Text>;
       })()}
-      <Text style={{ color: t.muted, fontSize: 13 }}>Spending per month. Where a budget was set, it shows underneath; red means over. Scroll sideways for all 12 months; tap an amount for its transactions.</Text>
+      <Text style={{ color: t.muted, fontSize: 13 }}>Spending per month. Where a budget was set, it shows underneath; red means over. {fits ? '' : 'Scroll sideways for all 12 months; '}Tap an amount for its transactions.</Text>
       {!lines.length ? <Empty text={`No spending in ${year}.`} /> : (
+        <View onLayout={(e) => setRoom(e.nativeEvent.layout.width)}>
         <Card style={{ padding: 0 }}>
           <ScrollView horizontal>
             <View>
-              <View style={[styles.yRow, { borderColor: t.line }]}>
-                <Text style={[styles.yLabel, { color: t.muted }]}>Category</Text>
-                {months.map((m) => <Text key={m} style={[styles.yCell, { color: t.muted }]}>{monthName(m, false).slice(0, 3)}</Text>)}
-                <Text style={[styles.yCell, { color: t.muted, fontWeight: '600' }]}>Total</Text>
-                {against && <Text style={[styles.yCell, { color: t.muted }]} numberOfLines={1}>{upto === 12 ? year - 1 : `${year - 1} YTD`}</Text>}
-                {against && <Text style={[styles.yCell, { color: t.muted }]}>Change</Text>}
+              <View style={[...yRow, { borderColor: t.line }]}>
+                <Text style={[...yLabel, { color: t.muted }]}>Category</Text>
+                {months.map((m) => <Text key={m} style={[...yCell, { color: t.muted }]}>{monthName(m, false).slice(0, 3)}</Text>)}
+                <Text style={[...yCell, { color: t.muted, fontWeight: '600' }]}>Total</Text>
+                {against && <Text style={[...yCell, { color: t.muted }]} numberOfLines={1}>{upto === 12 ? year - 1 : `${year - 1} YTD`}</Text>}
+                {against && <Text style={[...yCell, { color: t.muted }]}>Change</Text>}
               </View>
               {lines.map((l) => (
-                <View key={l.key} style={[styles.yRow, { borderColor: t.line }, l.group && { backgroundColor: t.bg }]}>
-                  <Text style={[styles.yLabel, { color: t.text, fontWeight: l.group ? '600' : '400', paddingLeft: l.group ? 8 : 18 }]} numberOfLines={1}>{l.key.startsWith('g:') ? groupIcon(l.label, d.groupIcons[l.label]) : (() => { const c = d.cats.find((x) => x.id === l.key.slice(2)); return c ? categoryIcon(c.name, c.icon) : '•'; })()}  {l.label}</Text>
+                <View key={l.key} style={[...yRow, { borderColor: t.line }, l.group && { backgroundColor: t.bg }]}>
+                  <Text style={[...yLabel, { color: t.text, fontWeight: l.group ? '600' : '400', paddingLeft: l.group ? 8 : 18 }]} numberOfLines={1}>{l.key.startsWith('g:') ? groupIcon(l.label, d.groupIcons[l.label]) : (() => { const c = d.cats.find((x) => x.id === l.key.slice(2)); return c ? categoryIcon(c.name, c.icon) : '•'; })()}  {l.label}</Text>
                   {l.values.map((v, i) => {
                     const b = budgetFor(l.key, months[i]);
                     const over = b !== undefined && v > b;
                     return (
-                      <Pressable key={i} style={styles.yCellBox} disabled={!v}
+                      <Pressable key={i} style={[styles.yCellBox, { width: cellW }]} disabled={!v}
                         onPress={() => drill(d, l.key.startsWith('g:') ? { categoryId: null, groupName: l.label, label: l.label } : { categoryId: l.key.slice(2), groupName: null, label: l.label }, months[i], monthEnd(months[i]))}>
-                        <Text style={{ color: over ? t.danger : v ? t.text : t.muted, textAlign: 'right', fontSize: 13 }}>{v ? money0(v) : '–'}</Text>
-                        {b !== undefined && <Text style={{ color: t.muted, textAlign: 'right', fontSize: 12 }}>of {money0(b)}</Text>}
+                        <Text style={{ color: over ? t.danger : v ? t.text : t.muted, textAlign: 'right', fontSize: fs }}>{v ? money0(v) : '–'}</Text>
+                        {b !== undefined && <Text style={{ color: t.muted, textAlign: 'right', fontSize: fsSub }}>of {money0(b)}</Text>}
                       </Pressable>
                     );
                   })}
-                  <Text style={[styles.yCell, { color: t.text, fontWeight: '600' }]}>{money0(l.values.reduce((s, v) => s + v, 0))}</Text>
+                  <Text style={[...yCell, { color: t.text, fontWeight: '600' }]}>{money0(l.values.reduce((s, v) => s + v, 0))}</Text>
                   {against && (() => {
                     const was = prevOf(l.key), now = l.values.slice(0, upto).reduce((s, v) => s + v, 0), ch = now - was;
                     return <>
-                      <Text style={[styles.yCell, { color: t.muted }]}>{was ? money0(was) : '–'}</Text>
-                      <Text style={[styles.yCell, { color: Math.abs(ch) < 0.5 ? t.muted : ch > 0 ? t.danger : t.accent }]}>{Math.abs(ch) < 0.5 ? '—' : `${ch > 0 ? '▲' : '▼'} ${money0(Math.abs(ch))}`}</Text>
+                      <Text style={[...yCell, { color: t.muted }]}>{was ? money0(was) : '–'}</Text>
+                      <Text style={[...yCell, { color: Math.abs(ch) < 0.5 ? t.muted : ch > 0 ? t.danger : t.accent }]}>{Math.abs(ch) < 0.5 ? '—' : `${ch > 0 ? '▲' : '▼'} ${money0(Math.abs(ch))}`}</Text>
                     </>;
                   })()}
                 </View>
@@ -880,6 +893,7 @@ function YearView(d: Data) {
             </View>
           </ScrollView>
         </Card>
+        </View>
       )}
     </>
   );

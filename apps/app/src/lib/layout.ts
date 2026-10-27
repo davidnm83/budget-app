@@ -4,6 +4,8 @@ import type { TextStyle } from 'react-native';
 
 /** Widest a page's content gets; it's centred beyond that. */
 export const PAGE_MAX = 1080;
+/** For views that lay out a whole month or year side by side (the Planner's month, the Budget's year): wider on a big screen. */
+export const PAGE_WIDE = 1440;
 /** From this width up (laptops, landscape tablets) the tab bar moves to the top and pop-ups become centred panels. */
 export const WIDE = 900;
 export const useWide = () => useWindowDimensions().width >= WIDE;
