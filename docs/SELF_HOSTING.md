@@ -129,6 +129,8 @@ Create your account, then go to **Settings → Link a bank**.
 - **Vercel:** import your fork, set the **Root Directory** to `apps/app`, and add the two `EXPO_PUBLIC_…` variables. `apps/app/vercel.json` already has the build settings.
 - **Other hosts:** build command `npx expo export --platform web && node scripts/make-sw.mjs dist` (run in `apps/app`; the second step lists the built files in `sw.js` so the app opens offline), output folder `dist`, send every path to `index.html`, and serve `/sw.js` with `Cache-Control: no-cache`.
 
+**An Android app from the hosted web app (optional).** [ANDROID_APP.md](ANDROID_APP.md) packages it as an `.apk` with Bubblewrap: a real Android app that is still the web app, so nothing needs rebuilding when the app changes.
+
 **Native iPhone/Android app (optional).** Plaid's native SDK needs a *development build*; it won't run in Expo Go.
 
 ```bash
