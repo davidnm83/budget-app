@@ -7,6 +7,16 @@ name, icon or colours.
 
 You need Node.js. Bubblewrap downloads Java and the Android tools itself the first time.
 
+**On Windows, three fixes first** (Bubblewrap 1.27):
+- If your user name has a space in it, the Android tools fail to install. Move them somewhere without one and point
+  Bubblewrap there: after `init` has downloaded them, move `%USERPROFILE%\.bubblewrap\jdk` and `android_sdk` to
+  `C:\bubblewrap\` and change the two paths in `%USERPROFILE%\.bubblewrap\config.json` to match.
+- Bubblewrap installs a 32-bit Java on Windows, which can't start the Android build ("Could not reserve enough space
+  for ... object heap"). Download the 64-bit Temurin JDK 17 zip, unzip it to `C:\bubblewrap\jdk64` and run
+  `npx @bubblewrap/cli updateConfig --jdkPath "C:\bubblewrap\jdk64\jdk-17.0.11+9"`.
+- After `init`, set `"minSdkVersion": 24` in `twa-manifest.json` and run `npx @bubblewrap/cli update --skipVersionUpgrade`
+  (the default, 21, is lower than the library Bubblewrap uses needs).
+
 ## 1. Create the project (once)
 
 Keep it in its own folder, outside this repo:
@@ -44,12 +54,20 @@ build has to be signed with the same key, or Android won't install it over the o
 npx @bubblewrap/cli build
 ```
 
-It asks for the two passwords and writes `app-release-signed.apk` and `assetlinks.json`.
+It asks for the two passwords and writes `app-release-signed.apk`.
 
 ## 3. Link the site to the app
 
-Chrome only hides its address bar once the site says the app is its own. Copy the `assetlinks.json` Bubblewrap made to
-`apps/app/public/.well-known/assetlinks.json` in this repo, commit and deploy. It holds the app's ID and the public
+Chrome only hides its address bar once the site says the app is its own. Make `assetlinks.json` from the signing key:
+read the key's SHA-256 fingerprint (`keytool -list -v -keystore android.keystore -alias android`, using the `keytool`
+in the JDK's `bin` folder), then
+
+```
+npx @bubblewrap/cli fingerprint add <the SHA256 value>
+npx @bubblewrap/cli fingerprint generateAssetLinks
+```
+
+Copy that `assetlinks.json` to `apps/app/public/.well-known/assetlinks.json` in this repo, commit and deploy. It holds the app's ID and the public
 fingerprint of its key, nothing secret. Check it's live: `https://YOUR-SITE/.well-known/assetlinks.json` should show
 it, not the app.
 
