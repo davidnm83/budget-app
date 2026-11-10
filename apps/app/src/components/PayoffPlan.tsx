@@ -19,19 +19,24 @@ const remember = (v: object) => { try { globalThis.localStorage?.setItem(KEY, JS
 const monthsTo = (from: string, to: string) => (Number(to.slice(0, 4)) - Number(from.slice(0, 4))) * 12 + Number(to.slice(5, 7)) - Number(from.slice(5, 7));
 const when = (m: string | null) => (m ? monthName(m, true) : 'never at this pace');
 
+/** A card's promo parts, soonest ending first, each within what the card owes: " ($1,000 at 0% until Mar 2027; …)". */
+function promoParts(d: Debt): string {
+  let room = d.balance;
+  const parts = [...(d.promos ?? [])].sort((a, b) => a.until.localeCompare(b.until))
+    .map((p) => { const bal = Math.min(p.balance, room); room -= bal; return { ...p, bal }; }).filter((p) => p.bal > 0.005);
+  return parts.length ? ` (${parts.map((p) => `${formatMoney(p.bal)} at ${p.apr}% until ${monthName(p.until.slice(0, 8) + '01', true)}`).join('; ')})` : '';
+}
+
 export function PayoffPlan({ t, cards, transfers, minimums }: { t: Theme; cards: Account[]; transfers: CardTransfer[]; minimums: Map<string, CardMinimum> }) {
   const now = today();
   // Each card as owed to the bank (payment plans the bank shows apart keep their own schedule), with its promo
   // balance transfers.
   const debts: Debt[] = useMemo(() => cards.map((a) => {
     const owed = Math.max(0, -bankBalance(a));
-    const promos = transfers.filter((x) => x.toAccountId === a.id && !x.closedOn && x.promoEnd && x.promoEnd > now);
-    const promo = promos.length ? {
-      balance: Math.min(owed, promos.reduce((s, x) => s + transferProgress(x, owed, now).remaining, 0)),
-      apr: Math.max(...promos.map((x) => x.promoApr ?? 0)),
-      until: promos.map((x) => x.promoEnd!).sort()[0],
-    } : null;
-    return { id: a.id, name: a.name, balance: owed, apr: a.apr != null ? Number(a.apr) : ASSUMED_APR, rule: ruleFor(minimums, a.id), promo };
+    // Each balance transfer is its own promo part, with its own rate and end date.
+    const promos = transfers.filter((x) => x.toAccountId === a.id && !x.closedOn && x.promoEnd && x.promoEnd > now)
+      .map((x) => ({ balance: transferProgress(x, owed, now).remaining, apr: x.promoApr ?? 0, until: x.promoEnd! }));
+    return { id: a.id, name: a.name, balance: owed, apr: a.apr != null ? Number(a.apr) : ASSUMED_APR, rule: ruleFor(minimums, a.id), promos };
   }).filter((d) => d.balance > 0.005), [cards, transfers, minimums, now]);
   const noRate = cards.filter((a) => a.apr == null && Math.max(0, -bankBalance(a)) > 0).map((a) => a.name);
 
@@ -94,7 +99,7 @@ export function PayoffPlan({ t, cards, transfers, minimums }: { t: Theme; cards:
               <View style={{ flex: 1 }}>
                 <Text style={{ color: t.text }} numberOfLines={1}>{c.name}</Text>
                 <Text style={{ color: t.muted, fontSize: 12 }}>
-                  {formatMoney(d.balance)} at {d.apr}%{d.promo ? ` (${formatMoney(d.promo.balance)} at ${d.promo.apr}% until ${monthName(d.promo.until.slice(0, 8) + '01', true)})` : ''}
+                  {formatMoney(d.balance)} at {d.apr}%{promoParts(d)}
                 </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
@@ -106,8 +111,8 @@ export function PayoffPlan({ t, cards, transfers, minimums }: { t: Theme; cards:
         })}
       </View>
       {plan.promoLeft.map((p) => (
-        <Text key={p.id} style={{ color: t.danger, fontSize: 13 }}>
-          {p.name}: about {money0(p.left)} of the promo balance would still be owing when its rate ends ({monthName(p.until.slice(0, 8) + '01', true)}), and then charged at the regular rate. About {money0(p.left / Math.max(1, monthsTo(now, p.until)))} more a month until then clears it in time.
+        <Text key={`${p.id}:${p.until}`} style={{ color: t.danger, fontSize: 13 }}>
+          {p.name}: about {money0(p.left)} of the balance transfer ending then would still be owing when its promo rate ends ({monthName(p.until.slice(0, 8) + '01', true)}), and then charged at the regular rate. About {money0(p.left / Math.max(1, monthsTo(now, p.until)))} more a month until then clears it in time.
         </Text>
       ))}
       <Text style={{ color: t.muted, fontSize: 12 }}>

@@ -34,3 +34,19 @@ describe('payoffPlan', () => {
     expect(payoffPlan([{ id: 'x', name: 'X', balance: 10000, apr: 24, rule: fixed(10) }], 150, 'avalanche', '2026-10-08').months).toBeNull();
   });
 });
+
+describe('a card with two balance transfers ending at different times', () => {
+  it('keeps each transfer apart: each ends on its own date, the soonest paid first', () => {
+    const card = { id: 'c', name: 'Visa', balance: 3000, apr: 20, promos: [
+      { balance: 1000, apr: 0, until: '2027-01-15' }, { balance: 1500, apr: 0, until: '2027-12-15' }] };
+    // $200 a month: two months only reach the $500 at 20%, so all of January's transfer is still owing then.
+    const r = payoffPlan([card], 200, 'avalanche', '2026-11-10');
+    // Each transfer is warned about on its own date, with only its own part left.
+    expect(r.promoLeft.map((p) => p.until)).toEqual(['2027-01-15', '2027-12-15']);
+    expect(r.promoLeft[0].left).toBe(1000);
+    expect(r.promoLeft[1].left).toBeLessThan(1500);
+    // Enough to clear the first before January: nothing of it left at the regular rate.
+    expect(payoffPlan([card], 1000, 'avalanche', '2026-11-10').promoLeft.map((p) => p.until)).not.toContain('2027-01-15');
+  });
+});
+

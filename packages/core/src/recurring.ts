@@ -25,7 +25,14 @@ export interface Recurring {
   lead_days?: number | null;
   /** Occurrences due on or before `date` are for this amount instead (a card's statement already paid, while later ones follow the new balance). */
   amount_until?: { date: IsoDate; amount: number } | null;
+  /** The credit card this bill pays (its amount follows the card's statement). */
+  card_account_id?: string | null;
+  /** A notification the morning its payment is planned. Empty: on for card payments, off for other bills. */
+  remind_on_day?: boolean | null;
 }
+
+/** Whether a bill notifies on the day its payment is planned (see `remind_on_day`). */
+export const remindsOnDay = (r: Pick<Recurring, 'kind' | 'card_account_id' | 'remind_on_day'>) => r.kind === 'bill' && (r.remind_on_day ?? !!r.card_account_id);
 
 function lastDayOfMonth(y: number, m: number): number {
   return new Date(Date.UTC(y, m + 1, 0)).getUTCDate();

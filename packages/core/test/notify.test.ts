@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hideAmounts, isQuiet, noteBills, noteBudget, noteCheckin, noteGoals, noteLow, noteScore, pickNotes, toMessages, type Note, type WeekRow } from '../src/index.ts';
+import { buildWeek, expandPlan, hideAmounts, isQuiet, noteBillDay, noteBills, noteBudget, noteCheckin, noteGoals, noteLow, noteScore, pickNotes, toMessages, type Note, type WeekRow } from '../src/index.ts';
 
 const row = (o: Partial<WeekRow>): WeekRow => ({ key: 'k', date: '2026-10-08', kind: 'planned', description: 'Rent', accountId: 'a', planned: -1450, actual: null, counted: -1450, overdue: false,
   item: { key: 'r:1|2026-10-08', transfer: false } as any, txn: null, balanceAfter: 0, ...o });
@@ -54,3 +54,21 @@ describe('notifications', () => {
       .toBe('Yesterday $64.20 spent · 1 bill by tomorrow ($1,450) · cash $1,240, lowest $310 Friday · 3 to review');
   });
 });
+
+describe('payment day', () => {
+  const bill = (o: any) => ({ id: 'v', name: 'Visa payment', kind: 'bill', amount: -300, estimated: false, frequency: 'monthly', start_date: '2026-10-12', end_date: null,
+    account_id: 'chq', category_id: null, match_text: null, active: true, ...o });
+  const week = (recurring: any[], actuals: any[] = []) => buildWeek({ weekStart: '2026-11-09', today: '2026-11-12', accounts: [{ id: 'chq', name: 'Chequing', startBalance: 1000, buffer: 0 }],
+    planned: expandPlan(recurring, [], '2026-11-09', '2026-11-15'), actuals }).days.flatMap((d) => d.rows);
+  it('reminds the morning a card payment is planned, unless it is turned off or already paid', () => {
+    expect(noteBillDay(week([bill({ card_account_id: 'visa' })]), '2026-11-12').map((n) => [n.key, n.title])).toEqual([['billday:r:v:2026-11-12', 'Pay Visa payment today · $300']]);
+    expect(noteBillDay(week([bill({ card_account_id: 'visa', remind_on_day: false })]), '2026-11-12')).toEqual([]);
+    expect(noteBillDay(week([bill({ card_account_id: 'visa' })], [{ id: 't', date: '2026-11-12', amount: -300, accountId: 'chq', name: 'VISA', merchant: null }]), '2026-11-12')).toEqual([]);
+  });
+  it('other bills only when set to', () => {
+    expect(noteBillDay(week([bill({})]), '2026-11-12')).toEqual([]);
+    expect(noteBillDay(week([bill({ remind_on_day: true })]), '2026-11-12')).toHaveLength(1);
+    expect(noteBillDay(week([bill({ remind_on_day: true })]), '2026-11-11')).toEqual([]); // not on another day
+  });
+});
+

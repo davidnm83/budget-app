@@ -18,9 +18,12 @@ export interface Debt {
   /** Yearly interest rate, %. */
   apr: number;
   rule?: MinimumRule | null;
-  /** Part of the balance at a promo rate until `until` (the first of the month it ends in, or the day). */
-  promo?: { balance: number; apr: number; until: IsoDate } | null;
+  /** Parts of the balance at a promo rate until `until` (the first of the month it ends in, or the day): one per balance transfer. */
+  promos?: Promo[];
+  /** One promo part (older callers). */
+  promo?: Promo | null;
 }
+export interface Promo { balance: number; apr: number; until: IsoDate }
 export type Strategy = 'avalanche' | 'snowball' | 'minimums';
 
 export interface PayoffResult {
@@ -41,10 +44,16 @@ const MAX_MONTHS = 600;
 export function payoffPlan(debts: Debt[], monthly: number, strategy: Strategy, today: IsoDate): PayoffResult {
   const start = monthOf(today);
   const live = debts.filter((d) => d.balance > 0.005).map((d) => {
-    const promo = d.promo && d.promo.balance > 0 && d.promo.until > today ? Math.min(d.promo.balance, d.balance) : 0;
-    return { ...d, regular: round2(d.balance - promo), promoBal: round2(promo), interest: 0, paidOff: null as number | null, promoChecked: false };
+    // Each promo part on its own, soonest ending first, never more in all than the card owes.
+    let room = d.balance;
+    const parts = [...(d.promos ?? []), ...(d.promo ? [d.promo] : [])].filter((p) => p.balance > 0 && p.until > today)
+      .sort((a, b) => a.until.localeCompare(b.until))
+      .map((p) => { const bal = round2(Math.min(p.balance, room)); room -= bal; return { ...p, bal }; }).filter((p) => p.bal > 0.005);
+    const promo = parts.reduce((x, p) => x + p.bal, 0);
+    return { ...d, regular: round2(d.balance - promo), parts, interest: 0, paidOff: null as number | null };
   });
-  const owed = (d: (typeof live)[number]) => d.regular + d.promoBal;
+  const promoBal = (d: (typeof live)[number]) => d.parts.reduce((x, p) => x + p.bal, 0);
+  const owed = (d: (typeof live)[number]) => d.regular + promoBal(d);
   const minimumOf = (d: (typeof live)[number]) => minimumPayment(round2(owed(d)), d.rule ?? DEFAULT_MINIMUM);
   const minimums = round2(live.reduce((s, d) => s + minimumOf(d), 0));
   const promoLeft: PayoffResult['promoLeft'] = [];
@@ -54,20 +63,27 @@ export function payoffPlan(debts: Debt[], monthly: number, strategy: Strategy, t
     // Interest for the month, at the promo rate while it lasts; when it ends, what's left joins the regular part.
     for (const d of live) {
       if (owed(d) <= 0.005) continue;
-      if (d.promoBal > 0 && d.promo && date > d.promo.until) {
-        if (!d.promoChecked) promoLeft.push({ id: d.id, name: d.name, until: d.promo.until, left: round2(d.promoBal) });
-        d.promoChecked = true;
-        d.regular = round2(d.regular + d.promoBal); d.promoBal = 0;
+      for (const p of d.parts.filter((x) => x.bal > 0.005 && date > x.until)) {
+        promoLeft.push({ id: d.id, name: d.name, until: p.until, left: round2(p.bal) });
+        d.regular = round2(d.regular + p.bal); p.bal = 0;
       }
-      const i = round2((d.regular * d.apr + d.promoBal * (d.promoBal > 0 && d.promo ? d.promo.apr : d.apr)) / 1200);
+      d.parts = d.parts.filter((x) => x.bal > 0.005);
+      const i = round2((d.regular * d.apr + d.parts.reduce((x, p) => x + p.bal * p.apr, 0)) / 1200);
       d.regular = round2(d.regular + i); d.interest = round2(d.interest + i);
     }
     // Minimums first, then the rest to one card at a time in the strategy's order.
     let left = monthly;
     const pay = (d: (typeof live)[number], amount: number) => {
       const a = Math.min(amount, owed(d));
-      const toRegular = Math.min(a, d.regular);
-      d.regular = round2(d.regular - toRegular); d.promoBal = round2(d.promoBal - (a - toRegular));
+      // The regular part first, then promo parts by rate (highest first) and the soonest ending.
+      let rest = a;
+      const toRegular = Math.min(rest, d.regular);
+      d.regular = round2(d.regular - toRegular); rest = round2(rest - toRegular);
+      for (const p of [...d.parts].sort((x, y) => y.apr - x.apr || x.until.localeCompare(y.until))) {
+        if (rest <= 0.005) break;
+        const take = Math.min(rest, p.bal);
+        p.bal = round2(p.bal - take); rest = round2(rest - take);
+      }
       left = round2(left - a);
       return a;
     };

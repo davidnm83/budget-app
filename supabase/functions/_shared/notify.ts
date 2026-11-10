@@ -6,7 +6,7 @@ import { sendPush, makeVapidKeys, type Vapid } from './webpush.ts';
 import { extraNotes } from './notify_extra.ts';
 import {
   addDays, addMonths, balanceAt, buildBudgetMonth, buildWeek, csvReminderOn, expandPlan, goalProgress, monthEnd, monthName, monthOf, nextRefillDate, notifyOn, notifySetting,
-  noteBanks, noteBills, noteBudget, noteCheckin, noteCsv, noteGoals, noteLarge, noteLow, noteRadar, noteReview, noteScore, noteSubs, pickNotes, radarBills, radarCards, radarLimits,
+  noteBanks, noteBillDay, noteBills, noteBudget, noteCheckin, noteCsv, noteGoals, noteLarge, noteLow, noteRadar, noteReview, noteScore, noteSubs, pickNotes, radarBills, radarCards, radarLimits,
   radarPace, radarRunway, radarSubscriptions, radarTransfers, radarUnusual, round2, syncDue, toMessages, transferProgress, RADAR_NOTIFY_DEFAULT,
   type Note, type NotifySettings, type PostedTxn, type RadarCard, type RadarCheck,
 } from './core/index.ts';
@@ -82,6 +82,7 @@ export async function notesFor(admin: Admin, userId: string, s: NotifySettings, 
   }
   const rows = plan ? plan.days.flatMap((d) => d.rows) : [];
   if (on('bill') && plan) await tryAdd(() => noteBills(rows, today, notifySetting(s, 'billDays')));
+  if (on('billday') && plan) await tryAdd(() => noteBillDay(rows, today));
   if (on('low') && plan) await tryAdd(() => noteLow(plan!.warnings, name, today, notifySetting(s, 'lowDays')));
 
   // Spending this month by category, and the three months before (budget, Radar's pace and unusual, runway).

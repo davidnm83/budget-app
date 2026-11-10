@@ -106,8 +106,10 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
   const [cardId, setCardId] = useState<string | null>((initial as any).card_account_id ?? null);
   const [cardRule, setCardRule] = useState<'statement' | 'minimum' | 'custom'>((initial as any).card_rule ?? 'statement');
   const [lead, setLead] = useState((initial as any).lead_days ? String((initial as any).lead_days) : '');
+  // Payment day notification: unless set on the bill, on for card payments and off for other bills.
+  const [remind, setRemind] = useState<boolean | null>((initial as any).remind_on_day ?? null);
   const [pickCat, setPickCat] = useState(false);
-  const changed = useChanged([kind, name, amount, estimated, frequency, start, end, accountId, categoryId, matchText, cardId, cardRule, lead]);
+  const changed = useChanged([kind, name, amount, estimated, frequency, start, end, accountId, categoryId, matchText, cardId, cardRule, lead, remind]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const input = [styles.input, { color: t.text, borderColor: t.line, backgroundColor: t.card }];
@@ -133,6 +135,7 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
       name: name.trim(), kind, amount: round2(kind === 'bill' ? -Math.abs(a) : Math.abs(a)), estimated, frequency: frequency as Frequency,
       start_date: s, end_date: e, account_id: accountId, category_id: categoryId, match_text: matchText.trim() || null, active: true,
       card_account_id: card ? cardId : null, card_rule: card ? cardRule : null,
+      ...(remind != null || (initial as any).remind_on_day != null ? { remind_on_day: kind === 'bill' && remind !== !!card ? remind : null } : {}),
       ...(card || (initial as any).lead_days ? { lead_days: card ? Math.max(0, Math.min(28, Math.round(Number(lead) || 0))) || null : null } : {}),
     };
     const { error } = initial.id ? await supabase.from('recurring').update(row).eq('id', initial.id) : await supabase.from('recurring').insert(row);
@@ -181,6 +184,15 @@ export function BillForm({ initial, accounts, categories, onClose, onSaved }: {
         <Field t={t} label="Pay it early (days before the due date)" hint="The planner shows the payment this many days before each due date, so it lands in time. Empty or 0: on the due date.">
           <TextInput value={lead} onChangeText={(v) => setLead(v.replace(/\D/g, '').slice(0, 2))} keyboardType="number-pad" placeholder="0" placeholderTextColor={t.muted} style={[input, { width: 80 }]} />
         </Field>
+      )}
+      {kind === 'bill' && !once && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text }}>Remind me on the day</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }}>A notification the morning the payment is planned, if it isn’t paid yet. On for card payments unless you turn it off.</Text>
+          </View>
+          <Switch value={remind ?? !!cardId} onValueChange={setRemind} accessibilityLabel="Remind me on the day" />
+        </View>
       )}
       {!(kind === 'bill' && cardId && cardRule !== 'custom') && <Field t={t} label="Amount">
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>

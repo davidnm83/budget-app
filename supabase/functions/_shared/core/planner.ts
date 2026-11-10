@@ -11,7 +11,7 @@
  */
 import { addDays, type IsoDate } from './dates.ts';
 import { round2 } from './money.ts';
-import { matchDues, occurrences, type PostedTxn, type Recurring } from './recurring.ts';
+import { matchDues, occurrences, remindsOnDay, type PostedTxn, type Recurring } from './recurring.ts';
 
 export interface PlanEntry {
   id: string;
@@ -49,6 +49,8 @@ export interface PlannedItem {
   noMatch?: boolean;
   /** Marked by hand as done by the bank (in the balance, not listed yet), until its transaction posts and matches. */
   bankDone?: boolean;
+  /** A bill that notifies the morning its payment is planned. */
+  remindOnDay?: boolean;
 }
 
 /** Every planned item between `from` and `to`: due dates of active bills/income (with per-date changes) and one-off entries. */
@@ -66,6 +68,7 @@ export function expandPlan(recurring: Recurring[], entries: PlanEntry[], from: I
         key: `r:${r.id}:${d}`, date, description: o?.description ?? r.name, amount: o ? Number(o.amount) : r.amount_until && d <= r.amount_until.date ? r.amount_until.amount : r.amount,
         accountId: o?.account_id ?? r.account_id, categoryId: r.category_id, estimated: r.estimated, matchText: r.match_text,
         recurringId: r.id, occurrenceDate: d, entryId: o?.id ?? null, transfer: false, matchedTxnId: o?.matched_transaction_id ?? null, ...(o?.no_match ? { noMatch: true } : {}), ...(o?.bank_done ? { bankDone: true } : {}),
+        ...(remindsOnDay(r) ? { remindOnDay: true } : {}),
       });
     }
   }

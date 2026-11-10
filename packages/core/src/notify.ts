@@ -11,7 +11,7 @@ import { formatMoney } from './money.ts';
 import type { RadarCard, RadarCheck } from './radar.ts';
 import type { WeekRow, WeekWarning } from './planner.ts';
 
-export type NotifyKind = 'bank' | 'csv' | 'checkin' | 'bill' | 'low' | 'radar' | 'budget' | 'large' | 'subs' | 'goal' | 'goalpace' | 'review' | 'score' | 'shift';
+export type NotifyKind = 'bank' | 'csv' | 'checkin' | 'bill' | 'billday' | 'low' | 'radar' | 'budget' | 'large' | 'subs' | 'goal' | 'goalpace' | 'review' | 'score' | 'shift';
 export type NotifyGroup = 'Accounts and sync' | 'Bills and planner' | 'Spending' | 'Goals and reviews' | 'Gig work';
 
 /** The kinds, in the order Settings lists them. `morning`: waits for the morning hour (or is sent as soon as it's found). */
@@ -20,6 +20,7 @@ export const NOTIFY_KINDS: { key: NotifyKind; group: NotifyGroup; label: string;
   { key: 'csv', group: 'Accounts and sync', label: 'CSV import due', about: 'At each sync time, for accounts the sync can’t reach', on: true, morning: false },
   { key: 'checkin', group: 'Accounts and sync', label: 'Daily check-in', about: 'Once a day after the morning sync: yesterday’s spending, bills coming, cash and its lowest point this week', on: false, morning: true },
   { key: 'bill', group: 'Bills and planner', label: 'Bill due soon', about: 'A few days before a bill is due, if it hasn’t been paid', on: true, morning: true },
+  { key: 'billday', group: 'Bills and planner', label: 'Payment day', about: 'The morning a payment is planned, for bills set to remind you (credit card payments are, unless you turn it off on the bill)', on: true, morning: true },
   { key: 'low', group: 'Bills and planner', label: 'Low balance ahead', about: 'When the planner sees an account dropping below its buffer soon', on: true, morning: true },
   { key: 'radar', group: 'Spending', label: 'Radar alerts', about: 'When a Radar check you pick speaks up', on: true, morning: true },
   { key: 'budget', group: 'Spending', label: 'Budget nearly spent', about: 'A budget line passes 90% and 100%', on: false, morning: false },
@@ -144,6 +145,16 @@ export function noteBills(rows: WeekRow[], today: IsoDate, days: number): Note[]
       key: `bill:${r.item!.key}`, kind: 'bill' as const, url: '/planner',
       title: `${r.description} ${r.planned ? money(r.planned) + ' ' : ''}due ${dayName(r.date, today)}`,
       body: `Planned for ${shortDate(r.date)}. Not paid yet.`,
+    }));
+}
+
+/** Payments planned for today, not paid yet, from bills set to remind on the day (see `remindsOnDay`). */
+export function noteBillDay(rows: WeekRow[], today: IsoDate): Note[] {
+  return rows.filter((r) => r.kind === 'planned' && r.item?.remindOnDay && (r.planned ?? 0) < 0 && r.actual == null && r.date === today)
+    .map((r) => ({
+      key: `billday:${r.item!.key}`, kind: 'billday' as const, url: '/planner',
+      title: `Pay ${r.description} today${r.planned ? ` · ${money(r.planned)}` : ''}`,
+      body: 'It’s planned for today and not paid yet.',
     }));
 }
 

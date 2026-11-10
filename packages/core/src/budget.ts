@@ -63,6 +63,32 @@ export function carryInto(
   return carry;
 }
 
+/**
+ * Rollover into `month`: a budget's switch on a month carries that month's leftover (or overspending) into the next,
+ * running on while the months keep it on. Every budget `month` has gets what carries into it, whatever its own switch.
+ * One the month before rolled over that `month` doesn't have yet comes back as `missing` (an empty budget holding just
+ * the carry), so the money isn't lost before the month is set up.
+ */
+export function rolloverInto<B extends BudgetRow & { month: Month }>(month: Month, budgets: B[], actualOf: (key: string, month: Month) => number): { carry: Map<string, number>; missing: BudgetRow[] } {
+  const here = new Set(budgets.filter((b) => b.month === month).map(budgetKey));
+  const prev = addMonths(month, -1);
+  const keys = new Set([...here, ...budgets.filter((b) => b.month === prev && b.rollover).map(budgetKey)]);
+  const carry = new Map<string, number>();
+  const missing: BudgetRow[] = [];
+  for (const key of keys) {
+    const history = budgets.filter((b) => budgetKey(b) === key && b.month < month)
+      .map((b) => ({ month: b.month, budgeted: b.amount, rollover: b.rollover, actual: actualOf(key, b.month) }));
+    const c = carryInto(month, history);
+    if (!c) continue;
+    carry.set(key, c);
+    if (!here.has(key)) {
+      const b = budgets.find((x) => x.month === prev && budgetKey(x) === key)!;
+      missing.push({ categoryId: b.categoryId, groupName: b.groupName, amount: 0, rollover: false });
+    }
+  }
+  return { carry, missing };
+}
+
 export interface BudgetLine {
   key: string;
   label: string;
@@ -96,7 +122,7 @@ export function buildBudgetMonth(
   const covered = new Set<string>();
   const line = (b: BudgetRow, label: string, kind: CategoryKind, actual: number, children?: BudgetLine[]): BudgetLine => {
     const key = budgetKey(b);
-    const carryIn = b.rollover ? carry.get(key) ?? 0 : 0;
+    const carryIn = carry.get(key) ?? 0;
     const available = round2(b.amount + carryIn);
     return {
       key, label, categoryId: b.categoryId, groupName: b.groupName, kind,

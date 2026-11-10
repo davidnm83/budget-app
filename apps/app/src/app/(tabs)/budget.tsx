@@ -11,7 +11,7 @@ import { UNDER_BAR } from '@/lib/layout';
 import { seedTxn } from '@/lib/txnCache';
 import { Tile } from '@/components/Tile';
 import {
-  actualFor, addMonths, budgetKey, buildBudgetMonth, carryInto, compareTotals, formatMoney, monthEnd, monthName,
+  actualFor, addMonths, budgetKey, buildBudgetMonth, compareTotals, rolloverInto, formatMoney, monthEnd, monthName,
   categoryIcon, groupIcon, instalmentsBetween, shortDate, suggestBudget, type BudgetLine, type Month,
 } from '@budget-app/core';
 import { loadPlans, setInstalment, type CardPlan } from '@/lib/paymentPlans';
@@ -199,14 +199,9 @@ function MonthView(d: Data) {
 
   const monthBudgets = d.budgets.filter((b) => b.month === month);
   const view = useMemo(() => {
-    const carry = new Map<string, number>();
-    for (const b of monthBudgets.filter((x) => x.rollover)) {
-      const key = budgetKey(b);
-      const history = d.budgets.filter((x) => budgetKey(x) === key && x.month < month)
-        .map((x) => ({ month: x.month, budgeted: x.amount, rollover: x.rollover, actual: actualOfKey(d, key, x.month) }));
-      carry.set(key, carryInto(month, history));
-    }
-    return buildBudgetMonth(d.cats, monthBudgets, totalsFor(d.rows, month), carry);
+    // What last month rolled over shows here, even before this month's budget is set up.
+    const { carry, missing } = rolloverInto(month, d.budgets, (key, m) => actualOfKey(d, key, m));
+    return buildBudgetMonth(d.cats, [...monthBudgets, ...missing], totalsFor(d.rows, month), carry);
   }, [d.cats, d.budgets, d.rows, month]);
 
   /** Average of the last 3 full months, rounded up to $5. */
@@ -496,12 +491,14 @@ function BudgetEditor({ d, line, onClose }: { d: Data; line: BudgetLine; onClose
   const last3 = [1, 2, 3].map((n) => actualOfKey(d, line.key, addMonths(month, -n)));
   const save = async () => {
     const v = Number(amount.replace(/[$,\s]/g, ''));
-    if (!budget || isNaN(v)) return;
-    const { error } = await supabase.from('budgets').update({ amount: v, rollover }).eq('id', budget.id);
+    if (isNaN(v)) return;
+    // A line holding only last month's rollover has no budget yet: saving sets it up.
+    const { error } = budget ? await supabase.from('budgets').update({ amount: v, rollover }).eq('id', budget.id)
+      : await supabase.from('budgets').insert({ month, amount: v, rollover, ...(line.categoryId ? { category_id: line.categoryId } : { group_name: line.groupName }) });
     if (error) d.setError(error.message); else { onClose(); d.reload(); }
   };
   const remove = async () => {
-    if (!budget) return;
+    if (!budget) { onClose(); return; }
     const error = await deleteWithUndo('budgets', budget.id, 'Budget removed');
     if (error) d.setError(error); else { onClose(); d.reload(); }
   };

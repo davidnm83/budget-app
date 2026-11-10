@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  accountMask, addMonths, cleanAccountName, categoryName, buildBudgetMonth, carryInto, compareTotals, guessAccountType, matchHistory,
+  accountMask, addMonths, cleanAccountName, categoryName, buildBudgetMonth, carryInto, rolloverInto, compareTotals, guessAccountType, matchHistory,
   monthEnd, parseHistory, suggestBudget, detectMapping, readDate, readTable,
 } from '../src/index.ts';
 
@@ -141,3 +141,22 @@ describe('history import from other apps', () => {
       .toEqual(['2026-03-04', '2026-03-04', '2026-04-03', '2026-09-03', '2026-09-03', '']);
   });
 });
+
+describe('rolling a budget over into the next month', () => {
+  const b = (month: string, amount: number, rollover: boolean) => ({ month, categoryId: 'gro', groupName: null, amount, rollover });
+  const spent: Record<string, number> = { '2026-09-01': 250, '2026-10-01': 360 };
+  const actual = (_key: string, m: string) => spent[m] ?? 0;
+  it('carries what the month before rolled over, whatever this month’s own switch', () => {
+    // September rolls over (+50); October's line was copied before the switch was turned on.
+    const r = rolloverInto('2026-10-01', [b('2026-09-01', 300, true), b('2026-10-01', 300, false)], actual);
+    expect([...r.carry]).toEqual([['c:gro', 50]]);
+    expect(r.missing).toEqual([]);
+  });
+  it('a month not set up yet still gets it, as an empty budget holding the carry', () => {
+    const r = rolloverInto('2026-11-01', [b('2026-09-01', 300, true), b('2026-10-01', 300, true)], actual);
+    expect([...r.carry]).toEqual([['c:gro', -10]]); // +50, then 300 − 360
+    expect(r.missing).toEqual([{ categoryId: 'gro', groupName: null, amount: 0, rollover: false }]);
+    expect(rolloverInto('2026-11-01', [b('2026-10-01', 300, false)], actual).carry.size).toBe(0);
+  });
+});
+
