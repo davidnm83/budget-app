@@ -23,6 +23,7 @@ import { NightlyBackups } from '@/components/NightlyBackups';
 import { accountIsEmpty, describeBackup, readBackup, restoreBackup, type Backup } from '@/lib/restore';
 import { pickJsonText } from '@/lib/pickFile';
 import { Sheet } from '@/components/Forms';
+import { StatementImport } from '@/components/StatementImport';
 import { refreshNow } from '@/lib/pullRefresh';
 import { setThemeMode, useTheme, useThemeMode } from '@/lib/theme';
 import type { PlaidItem } from '@/lib/types';
@@ -39,6 +40,7 @@ function confirm(message: string): Promise<boolean> {
 
 export default function Settings() {
   const ai = useAiOn();
+  const [reading, setReading] = useState(false);
   const [rewards, setRewards] = useState(false);
   useEffect(() => { trackRewardsOn().then(setRewards).catch(() => {}); }, []);
   const toggleRewards = async (on: boolean) => {
@@ -157,9 +159,12 @@ export default function Settings() {
 
       <Text style={[styles.h, { color: t.text }]}>Import</Text>
       <Card style={{ gap: 12 }}>
-        <Text style={{ color: t.muted }}>Bring in transactions from a bank’s CSV file, or your history from another budgeting app with its categories, notes and splits. Both are safe to run again. To add transactions from screenshots of a bank’s list or a statement, open the account and use “From a screenshot or statement” on its Transactions tab.</Text>
+        <Text style={{ color: t.muted }}>Bring in transactions from a bank’s CSV file, or your history from another budgeting app with its categories, notes and splits. Both are safe to run again.</Text>
         <Button title="Import a CSV file" kind="plain" onPress={() => router.push('/import')} />
         <Button title="Import from another app" kind="plain" onPress={() => router.push('/history-import')} />
+        {ai && <Button title="From a screenshot or statement" kind="plain" onPress={() => setReading(true)} />}
+        {ai && <Text style={{ color: t.muted, fontSize: 12 }}>Screenshots of a bank’s transaction list, or a statement as a photo or PDF, read by AI into transactions you tick to add.</Text>}
+        {reading && <StatementImport onClose={() => setReading(false)} onDone={refreshNow} />}
       </Card>
 
     </> },

@@ -4,19 +4,45 @@
 // the same merchant names and categories.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { formatMoney, mergeReads, shortDate, type CsvRow } from '@budget-app/core';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
-import { Button } from '@/components/ui';
+import { Button, Chip } from '@/components/ui';
 import { readStatementFiles, statementFile } from '@/lib/ai';
 import { findDuplicates, importRows } from '@/lib/csvImport';
 import { pickFiles } from '@/lib/pickFile';
+import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
 import { toast } from '@/lib/toast';
 
 type Row = CsvRow & { key: string; why: '' | 'already in the account' | 'pending'; on: boolean };
 
-export function StatementImport({ account, onClose, onDone }: { account: { id: string; name: string; type: string | null }; onClose: () => void; onDone: () => void }) {
+type Acct = { id: string; name: string; type: string | null; mask?: string | null };
+
+/** Opened from Settings → Banks & import: the account to add to is chosen first. */
+export function StatementImport({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const t = useTheme();
+  const [accounts, setAccounts] = useState<Acct[]>([]);
+  const [account, setAccount] = useState<Acct | null>(null);
+  useEffect(() => {
+    supabase.from('accounts').select('id, name, type, mask').eq('is_hidden', false).order('name')
+      .then(({ data }) => setAccounts(((data ?? []) as Acct[]).filter((a) => a.type === 'depository' || a.type === 'credit')));
+  }, []);
+  if (!account) {
+    return (
+      <Sheet title="Add from a screenshot or statement" onClose={onClose}>
+        <Text style={{ color: t.muted }}>Take screenshots of a bank’s transaction list (several are fine, overlapping is fine), or use a statement as a photo or PDF. First, the account they’re from:</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {accounts.map((a) => <Chip key={a.id} label={`${a.name}${a.mask ? ` ••${a.mask}` : ''}`} on={false} onPress={() => setAccount(a)} />)}
+        </View>
+        {!accounts.length && <Text style={{ color: t.muted }}>No bank or card accounts yet.</Text>}
+      </Sheet>
+    );
+  }
+  return <ReadInto account={account} onBack={() => setAccount(null)} onClose={onClose} onDone={onDone} />;
+}
+
+function ReadInto({ account, onBack, onClose, onDone }: { account: Acct; onBack: () => void; onClose: () => void; onDone: () => void }) {
   const t = useTheme();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState<'' | 'reading' | 'adding'>('');
@@ -60,10 +86,12 @@ export function StatementImport({ account, onClose, onDone }: { account: { id: s
         ? <Button title={chosen.length ? `Add ${chosen.length} transaction${chosen.length === 1 ? '' : 's'}` : 'Nothing ticked'} disabled={!chosen.length} busy={busy === 'adding'} onPress={add} />
         : <Button title={busy === 'reading' ? 'Reading…' : 'Choose screenshots or a statement'} busy={busy === 'reading'} onPress={choose} />}>
       {!rows?.length && (
-        <Text style={{ color: t.muted }}>
-          Take screenshots of the bank’s transaction list (several are fine, overlapping is fine), or choose a statement as a photo or PDF.
-          The app reads the transactions, and you tick the ones to add. Ones {account.name} already has, and pending ones, start unticked.
-        </Text>
+        <>
+          <Text style={{ color: t.muted }}>
+            The app reads the transactions, and you tick the ones to add. Ones {account.name} already has, and pending ones, start unticked.
+          </Text>
+          {!busy && <Button title="A different account" kind="plain" onPress={onBack} />}
+        </>
       )}
       {busy === 'reading' && <Text style={{ color: t.muted }}>Reading… this takes a few seconds for each file.</Text>}
       {!!error && <Text style={{ color: t.danger }}>{error}</Text>}

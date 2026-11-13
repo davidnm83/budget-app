@@ -10,8 +10,6 @@ import { LIST } from '@/lib/layout';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Sheet } from '@/components/Forms';
 import { NewTransactionForm } from '@/components/AddForms';
-import { StatementImport } from '@/components/StatementImport';
-import { useAiOn } from '@/lib/ai';
 import { toast } from '@/lib/toast';
 import { useConfirm } from '@/components/Confirm';
 import { TransactionEditor } from '@/components/TransactionEditor';
@@ -74,8 +72,6 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
   const [showTxns, txnSheet] = useTxnSheet();
   const [txnOpen, setTxnOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [reading, setReading] = useState(false);
-  const aiOn = useAiOn();
   const [bump, setBump] = useState(0); // a transaction was added here: load the list again
 
   useEffect(() => {
@@ -144,17 +140,13 @@ export function AccountSheet({ account, accounts, onClose, onChanged }: {
             <TransactionEditor key={txnOpen} id={txnOpen} onOpen={setTxnOpen} onDone={() => { setTxnOpen(null); onChanged(); }} />
           </Sheet>
         )}
-        {reading && <StatementImport account={account} onClose={() => setReading(false)} onDone={() => { setBump((b) => b + 1); onChanged(); }} />}
         {adding && <NewTransactionForm accounts={accounts} accountId={account.id} onClose={() => setAdding(false)} onSaved={() => { toast('Added'); setBump((b) => b + 1); onChanged(); }} />}
         {tab === 'details' && <DetailsTab t={t} account={account} accounts={accounts} onChanged={onChanged} onClose={onClose} />}
         {tab === 'txns' && (
           <FlatList {...LIST}
             data={list}
             keyExtractor={(r) => r.id}
-            ListHeaderComponent={<View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 18, paddingHorizontal: 16, paddingBottom: 8 }}>
-              <Pressable onPress={() => setAdding(true)} hitSlop={6}><Text style={{ color: t.accent }}>+ Add a transaction</Text></Pressable>
-              {aiOn && <Pressable onPress={() => setReading(true)} hitSlop={6}><Text style={{ color: t.accent }}>+ From a screenshot or statement</Text></Pressable>}
-            </View>}
+            ListHeaderComponent={<Pressable onPress={() => setAdding(true)} style={{ paddingHorizontal: 16, paddingBottom: 8 }} hitSlop={6}><Text style={{ color: t.accent }}>+ Add a transaction</Text></Pressable>}
             ListFooterComponent={list.length >= 100 ? <Button title="See all in Transactions" kind="plain" style={{ margin: 16 }} onPress={() => { onClose(); afterClose(() => openTransactions({ account: account.id })); }} /> : null}
             renderItem={({ item }) => (
               <Pressable onPress={() => { seedTxn(item); setTxnOpen(item.id); }}
