@@ -1,6 +1,6 @@
 // Run: deno test supabase/functions/_shared/ai.test.ts
 // Receipt reading (which model, when) and the chat's tool loop, with stand-ins for Claude and the database.
-import { ask, readReceipt, runTool, type Claude } from './ai.ts';
+import { ask, readReceipt, readStatement, runTool, type Claude } from './ai.ts';
 import { fakeDb } from './fake_db.ts';
 
 function assertEquals(a: unknown, b: unknown, msg = '') {
@@ -92,3 +92,20 @@ Deno.test('chat: looks things up, then answers', async () => {
   const back = calls[1].messages.at(-1).content[0];
   assertEquals([back.type, back.tool_use_id, JSON.parse(back.content).total], ['tool_result', 't1', 50]);
 });
+
+Deno.test('statements: each file read on its own by Sonnet, rows cleaned up', async () => {
+  const list = (rows: object[], legible = true) => ({ text: JSON.stringify({ transactions: rows, legible }) });
+  const { client, calls } = fakeClaude({ 'claude-sonnet-5-5': [
+    list([{ date: '2026-11-02', description: ' Corner Grocer ', amount: -23.456, pending: false }, { date: 'Nov 3', description: 'Bad date', amount: -5, pending: false }, { date: '2026-11-03', description: 'Zero', amount: 0, pending: false }]),
+    list([{ date: '2026-11-04', description: 'PAYMENT THANK YOU', amount: 200, pending: true }], false),
+  ] });
+  const r = await readStatement(client, [{ mediaType: 'image/png', data: 'aGVsbG8=' }, { mediaType: 'application/pdf', data: 'aGVsbG8=' }], true, '2026-11-13');
+  assertEquals(r.reads, [[{ date: '2026-11-02', description: 'Corner Grocer', amount: -23.46, pending: false }], [{ date: '2026-11-04', description: 'PAYMENT THANK YOU', amount: 200, pending: true }]]);
+  assertEquals(r.legible, false);
+  assertEquals(calls.map((c) => c.messages[0].content[0].type), ['image', 'document']);
+  assertEquals(calls[0].messages[0].content[1].text.includes('credit card'), true);
+  // Ran out of room: nothing from that file, and it isn't taken as fully read.
+  const cut = fakeClaude({ 'claude-sonnet-5-5': [{ stop_reason: 'max_tokens', text: '{' }] });
+  assertEquals(await readStatement(cut.client, [{ mediaType: 'image/jpeg', data: 'aGVsbG8=' }], false, '2026-11-13'), { reads: [[]], legible: false });
+});
+

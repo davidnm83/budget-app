@@ -139,7 +139,7 @@ export default function Planner() {
             mdata.accounts.some((a) => a.plan_include)
               ? <View style={{ gap: 10, opacity: mdata.month === month ? 1 : 0.45 }} pointerEvents={mdata.month === month ? 'auto' : 'none'}><PlannerMonth t={t} d={mdata} now={now} only={only} setOnly={setOnly} onRow={openRow} onChanged={() => { load(); setBillsKey((k) => k + 1); }}
                   onAdd={(date) => setForm({ date, description: '', amount: null, account_id: (only ?? mdata.accounts.find((a) => a.plan_include)?.id) ?? null })} /></View>
-              : <Card><Text style={{ color: t.text }}>Choose the accounts that pay your bills: tap one on the Accounts tab (or Settings → Planner) and turn on “Plan bills from this account”.</Text></Card>
+              : <Card><Text style={{ color: t.text }}>Choose the accounts that pay your bills: tap one on the Accounts tab (or Settings → Planner & AI) and turn on “Plan bills from this account”.</Text></Card>
           ) : <PageSkeleton tiles={3} cards={1} />}
         </ScrollView>
       ) : (
@@ -154,7 +154,7 @@ export default function Planner() {
         {!!error && <Text style={{ color: t.danger }}>{error}</Text>}
         {planAccounts.length > 0 && week === thisWeek && <NotListedYet t={t} accounts={planAccounts.filter((a) => !only || a.id === only)} refresh={data} done={(data?.view.days ?? []).flatMap((d) => d.rows).filter((r) => r.unlisted)} />}
         {data && !planAccounts.length && (
-          <Card><Text style={{ color: t.text }}>Choose the accounts that pay your bills: tap one on the Accounts tab (or Settings → Planner) and turn on “Plan bills from this account”.</Text></Card>
+          <Card><Text style={{ color: t.text }}>Choose the accounts that pay your bills: tap one on the Accounts tab (or Settings → Planner & AI) and turn on “Plan bills from this account”.</Text></Card>
         )}
 
         {v && planAccounts.length > 0 && (

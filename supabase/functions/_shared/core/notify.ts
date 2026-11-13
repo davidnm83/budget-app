@@ -94,7 +94,7 @@ const GROUP: Partial<Record<NotifyKind, { title: (n: number) => string; line?: (
   bank: {
     title: (n) => `${n} banks need fixing`,
     line: (x) => `${x.title.replace(/ needs fixing$/, '')}: ${/sign in/i.test(x.body) ? 'sign in again' : 'the last sync failed'}`,
-    after: () => 'Open Settings → Banks and tap Fix.',
+    after: () => 'Open Settings → Banks & import and tap Fix.',
   },
   csv: { title: (n) => `${n} accounts due a CSV import` },
   bill: { title: (n) => `${n} bills due soon` },
@@ -134,8 +134,8 @@ const dayName = (d: IsoDate, today: IsoDate) => (d === today ? 'today' : d === a
 
 export function noteBanks(items: { id: string; name: string; status: string }[], today: IsoDate): Note[] {
   return items.filter((i) => i.status !== 'ok').map((i) => ({
-    key: `bank:${i.id}:${today}`, kind: 'bank' as const, url: '/settings',
-    title: `${i.name} needs fixing`, body: i.status === 'login_required' ? 'The bank needs you to sign in again. Open Settings → Banks and tap Fix.' : 'The last sync failed. Open Settings → Banks to try again.',
+    key: `bank:${i.id}:${today}`, kind: 'bank' as const, url: '/settings?section=banks',
+    title: `${i.name} needs fixing`, body: i.status === 'login_required' ? 'The bank needs you to sign in again. Open Settings → Banks & import and tap Fix.' : 'The last sync failed. Open Settings → Banks & import to try again.',
   }));
 }
 

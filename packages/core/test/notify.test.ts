@@ -37,7 +37,7 @@ describe('notifications', () => {
       { key: 'bill:2', kind: 'bill', title: 'Phone $55 due Friday', body: 'Planned for Oct 9. Not paid yet.', url: '/planner' },
     ];
     expect(toMessages([...banks, ...bills], {})).toEqual([
-      { title: '2 banks need fixing', body: '• Sample Bank: sign in again\n• Other Bank: the last sync failed\nOpen Settings → Banks and tap Fix.', url: '/settings', tag: 'kind:bank' },
+      { title: '2 banks need fixing', body: '• Sample Bank: sign in again\n• Other Bank: the last sync failed\nOpen Settings → Banks & import and tap Fix.', url: '/settings', tag: 'kind:bank' },
       { title: '2 bills due soon', body: '• Rent $1,450 due Thursday\n• Phone $55 due Friday', url: '/planner', tag: 'kind:bill' },
     ]);
     expect(toMessages([...bills, notes[1]], { digest: true })[0]).toMatchObject({ title: '3 things today', body: '2 bills due soon:\n• Rent $1,450 due Thursday\n• Phone $55 due Friday\n• Chequing dips to −$35.20 Fri' });

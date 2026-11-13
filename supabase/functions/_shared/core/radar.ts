@@ -160,9 +160,9 @@ export function radarRunway(cash: number, daily: number, month: string, L: Radar
 /** A bank link that needs attention. */
 export function radarBanks(items: { id: string; name: string; status: string }[]): RadarCard[] {
   return items.filter((i) => i.status !== 'ok').map((i) => ({
-    id: `bank:${i.id}:${i.status}`, check: 'bank' as const, severity: 'act' as const, stake: 0, href: '/settings',
+    id: `bank:${i.id}:${i.status}`, check: 'bank' as const, severity: 'act' as const, stake: 0, href: '/settings?section=banks',
     title: i.status === 'login_required' ? `${i.name} needs you to sign in again` : `${i.name} stopped syncing`,
-    text: i.status === 'login_required' ? 'New transactions won’t arrive until you do. Use Fix under Settings → Banks.' : 'The last sync failed. Try Sync now on the Accounts tab; if it keeps failing, re-link the bank in Settings.',
+    text: i.status === 'login_required' ? 'New transactions won’t arrive until you do. Use Fix under Settings → Banks & import.' : 'The last sync failed. Try Sync now on the Accounts tab; if it keeps failing, re-link the bank in Settings.',
   }));
 }
 

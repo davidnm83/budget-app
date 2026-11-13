@@ -34,6 +34,43 @@ export async function readReceiptPhoto(photo: Blob): Promise<{ receipt: ReadRece
   return callFunction('ai', { action: 'receipt', image: await base64(photo) });
 }
 
+export interface StatementRow { date: string; description: string; amount: number; pending: boolean }
+export type StatementFile = { mediaType: 'image/jpeg' | 'image/png' | 'application/pdf'; data: string };
+
+/** Reads statements or screenshots of a transactions list: the rows of each file, as read. */
+export async function readStatementFiles(files: StatementFile[], card: boolean): Promise<{ reads: StatementRow[][]; legible: boolean }> {
+  return callFunction('ai', { action: 'statement', files, card });
+}
+
+/** A chosen file ready to read: a picture as a JPEG (screenshots kept sharp, at most 2400 px long), a PDF as it is. */
+export async function statementFile(f: File): Promise<StatementFile> {
+  if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+    if (f.size > 12_000_000) throw new Error(`${f.name} is too large (12 MB at most).`);
+    return { mediaType: 'application/pdf', data: await base64(f) };
+  }
+  return { mediaType: 'image/jpeg', data: await base64(await toJpeg(f, 2400)) };
+}
+
+function toJpeg(file: Blob, longEdge: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const k = Math.min(1, longEdge / Math.max(img.naturalWidth, img.naturalHeight));
+        const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        const ctx = c.getContext('2d')!;
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob((b) => (b ? resolve(b) : reject(new Error('That picture couldn’t be read.'))), 'image/jpeg', 0.9);
+      } catch (e) { reject(e instanceof Error ? e : new Error(String(e))); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file isn’t a picture or PDF the app can read.')); };
+    img.src = url;
+  });
+}
+
 export async function askAi(question: string, history: ChatTurn[], model: ModelChoice): Promise<{ answer: string; looked: string[] }> {
   return callFunction('ai', { action: 'ask', question, model, history: history.map(({ role, text }) => ({ role, text })) });
 }

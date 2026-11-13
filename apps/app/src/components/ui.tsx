@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } 
 import { EASE, PRESS, RISE } from '@/lib/motion';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWide } from '@/lib/layout';
+import { useAddKey } from '@/lib/shortcuts';
 import { useTheme } from '@/lib/theme';
 
 export function Button({ title, onPress, kind = 'primary', disabled, busy, style }: {
@@ -29,10 +30,11 @@ export function Button({ title, onPress, kind = 'primary', disabled, busy, style
  */
 export function Fab({ label, onPress, icon = 'add' }: { label: string; onPress: () => void; icon?: keyof typeof Ionicons.glyphMap }) {
   const t = useTheme();
+  useAddKey(onPress); // N on a keyboard
   const wide = useWide();
   const insets = useSafeAreaInsets();
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label}
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} {...({ title: wide ? `${label} (N)` : undefined } as any)}
       style={({ pressed, hovered }: any) => [fab, PRESS, { backgroundColor: t.accent, bottom: wide ? 24 : Math.max(insets.bottom, 12) + 80 }, hovered && { transform: [{ translateY: -1 }] }, pressed && { transform: [{ scale: 0.95 }] }]}>
       <Ionicons name={icon} size={28} color="#fff" />
     </Pressable>

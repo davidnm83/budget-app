@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 // Receipt pieces shared by the Receipts page and the transaction pop-up: the photo, the form to add
 // or change one, and the strip of receipts attached to a transaction.
 import { formatMoney, parseMoney, receiptPaid, shortDate, toIsoDate } from '@budget-app/core';
@@ -29,7 +30,9 @@ export function ReceiptPhoto({ path, size, full }: { path: string; size?: number
       {url ? (full
         ? <Pressable onPress={() => setZoom(true)} style={StyleSheet.absoluteFill} accessibilityLabel="Receipt photo, tap to zoom"><Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="contain" /></Pressable>
         : <Image source={{ uri: url }} style={StyleSheet.absoluteFill} resizeMode="cover" accessibilityLabel="Receipt photo" />)
-        : failed ? <Pressable onPress={() => setTries((n) => n + 1)} hitSlop={6}><Text style={{ color: t.muted, fontSize: 11, textAlign: 'center' }}>Photo didn’t load{'\n'}<Text style={{ color: t.accent }}>Tap to retry</Text></Text></Pressable>
+        : failed ? <Pressable onPress={() => setTries((n) => n + 1)} hitSlop={6} accessibilityLabel="Photo didn’t load. Tap to retry">{(size ?? 99) < 60
+            ? <Ionicons name="refresh" size={16} color={t.muted} />
+            : <Text style={{ color: t.muted, fontSize: 11, textAlign: 'center' }}>Photo didn’t load{'\n'}<Text style={{ color: t.accent }}>Tap to retry</Text></Text>}</Pressable>
         : <ActivityIndicator color={t.muted} />}
       {zoom && url && <ZoomPhoto uri={url} onClose={() => setZoom(false)} />}
     </View>

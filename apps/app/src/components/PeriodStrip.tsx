@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { EASE } from '@/lib/motion';
+import { usePeriodKeys } from '@/lib/shortcuts';
 import type { Theme } from '@/lib/theme';
 
 export interface Period { key: string; label: string; value?: string; bad?: boolean; dim?: boolean }
@@ -36,6 +37,9 @@ export function PeriodTitle({ t, title, sub, away, hereText, onHere }: { t: Them
 export function PeriodStrip({ t, items, selected, current, onSelect, second, focus }: { t: Theme; items: Period[]; selected: string; current: string; onSelect: (key: string) => void; second?: string; focus?: string }) {
   const scroll = useRef<ScrollView>(null);
   const cells = useRef(new Map<string, any>());
+  // On a keyboard: ← → to the period before or after, T back to now.
+  const step = (d: number) => { const i = items.findIndex((x) => x.key === (focus ?? selected)); const n = items[i + d]; if (i >= 0 && n) onSelect(n.key); };
+  usePeriodKeys({ prev: () => step(-1), next: () => step(1), now: () => onSelect(current) });
   const spots = useRef(new Map<string, { x: number; w: number }>());
   const [width, setWidth] = useState(0);
   const [contentW, setContentW] = useState(0);

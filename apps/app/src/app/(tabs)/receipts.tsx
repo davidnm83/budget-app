@@ -1,9 +1,9 @@
 // Receipts (TXN-13): the inbox of receipt photos waiting for their transaction, with the matches
 // the app suggests once it syncs, and the receipts already attached.
-import { formatMoney, shortDate } from '@budget-app/core';
+import { formatMoney, monthName, shortDate } from '@budget-app/core';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ReceiptForm, ReceiptPhoto } from '@/components/Receipts';
 import { EmptyState, PageSkeleton } from '@/components/States';
 import { Button, Card, Fab } from '@/components/ui';
@@ -31,7 +31,7 @@ export default function Receipts() {
     try { const m = await attachReceipt(r, txnId); toast(m, /rewards/.test(m) ? undefined : { undo: () => updateReceipt(r.id, { transaction_id: null }) }); load(); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
-  const attached = (all ?? []).filter((r) => r.transaction_id).slice(0, 40);
+  const attached = (all ?? []).filter((r) => r.transaction_id);
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -63,17 +63,7 @@ export default function Receipts() {
             )) : <Text style={{ color: t.muted, fontSize: 12 }}>{r.amount == null && !r.merchant ? 'Add the total or the store to have it matched.' : 'No matching transaction yet; it usually arrives within a few days.'}</Text>}
           </Card>
         ))}
-        {attached.length > 0 && <Text style={[styles.h, { color: t.muted }]}>Attached</Text>}
-        {attached.length > 0 && (
-          <View style={styles.grid}>
-            {attached.map((r) => (
-              <Pressable key={r.id} onPress={() => router.push({ pathname: '/transaction/[id]', params: { id: r.transaction_id! } })} style={{ width: 84, gap: 4 }}>
-                <ReceiptPhoto path={r.path} size={84} />
-                <Text style={{ color: t.muted, fontSize: 11 }} numberOfLines={1}>{r.merchant || (r.taken_on ? shortDate(r.taken_on) : '')}{r.amount != null ? ` ${formatMoney(r.amount)}` : ''}</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
+        {attached.length > 0 && <Archive t={t} receipts={attached} />}
       </ScrollView>
       <Fab label="Add a receipt" icon="camera-outline" onPress={() => setAdding(true)} />
       {open && <ReceiptForm initial={open} onClose={() => setOpen(null)} onSaved={load} />}
@@ -82,9 +72,61 @@ export default function Receipts() {
   );
 }
 
+/**
+ * Receipts already attached, newest first, a month at a time: store, date and amount, with a small photo. Search by
+ * store, note, amount or date; more load as you go. Tapping one opens its transaction.
+ */
+function Archive({ t, receipts }: { t: Theme; receipts: Receipt[] }) {
+  const [q, setQ] = useState('');
+  const [shown, setShown] = useState(PAGE);
+  const when = (r: Receipt) => r.taken_on ?? r.created_at.slice(0, 10);
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const hay = (r: Receipt) => [r.merchant, r.note, r.amount != null ? formatMoney(r.amount) : '', r.amount != null ? r.amount.toFixed(2) : '', when(r), shortDate(when(r)), monthName(when(r).slice(0, 8) + '01')]
+    .filter(Boolean).join(' ').toLowerCase().replace(/,/g, '');
+  const found = receipts.filter((r) => words.every((w) => hay(r).includes(w.replace(/,/g, '')))).sort((a, b) => when(b).localeCompare(when(a)));
+  const page = found.slice(0, shown);
+  const months: { month: string; list: Receipt[] }[] = [];
+  for (const r of page) {
+    const m = when(r).slice(0, 7);
+    if (months[months.length - 1]?.month !== m) months.push({ month: m, list: [] });
+    months[months.length - 1].list.push(r);
+  }
+  return (
+    <View style={{ gap: 8 }}>
+      <Text style={[styles.h, { color: t.muted }]}>Archive · {receipts.length}</Text>
+      <TextInput value={q} onChangeText={(v) => { setQ(v); setShown(PAGE); }} placeholder="Search by store, amount, date or note" placeholderTextColor={t.muted}
+        style={[styles.search, { color: t.text, borderColor: t.line, backgroundColor: t.card }]} accessibilityLabel="Search receipts" />
+      {!found.length && <Text style={{ color: t.muted }}>No receipts match “{q.trim()}”.</Text>}
+      {months.map(({ month, list }) => (
+        <Card key={month} style={{ padding: 0 }}>
+          <View style={[styles.monthHead, { borderColor: t.line }]}>
+            <Text style={{ color: t.text, fontWeight: '600' }}>{monthName(month + '-01')}</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }}>{list.length} · {formatMoney(list.reduce((s, r) => s + (r.amount ?? 0), 0))}</Text>
+          </View>
+          {list.map((r) => (
+            <Pressable key={r.id} onPress={() => router.push({ pathname: '/transaction/[id]', params: { id: r.transaction_id! } })}
+              style={({ hovered, pressed }: any) => [styles.archiveRow, { borderColor: t.line }, (hovered || pressed) && { backgroundColor: t.line }]}>
+              <ReceiptPhoto path={r.path} size={36} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: t.text }} numberOfLines={1}>{r.merchant || 'Receipt'}</Text>
+                <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={1}>{shortDate(when(r))}{r.note ? ` · ${r.note}` : ''}</Text>
+              </View>
+              <Text style={{ color: t.text, fontVariant: ['tabular-nums'] }}>{r.amount != null ? formatMoney(r.amount) : ''}</Text>
+            </Pressable>
+          ))}
+        </Card>
+      ))}
+      {found.length > shown && <Button title={`Show more (${found.length - shown} older)`} kind="plain" onPress={() => setShown((n) => n + PAGE)} />}
+    </View>
+  );
+}
+const PAGE = 30;
+
 const styles = StyleSheet.create({
+  search: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 15 },
+  monthHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  archiveRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   page: { padding: 16, gap: 12, paddingBottom: UNDER_BAR + 60, width: '100%', maxWidth: PAGE_MAX, alignSelf: 'center' },
   h: { fontSize: 12, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 4 },
   match: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderRadius: 10, padding: 10 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 });

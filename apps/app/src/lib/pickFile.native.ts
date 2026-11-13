@@ -12,3 +12,4 @@ export async function pickJsonText(): Promise<{ name: string; text: string } | n
 }
 
 export const canPickFiles = false;
+export async function pickFiles(_accept: string, _multiple = true): Promise<File[]> { return []; }

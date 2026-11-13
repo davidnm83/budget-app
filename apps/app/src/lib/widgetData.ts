@@ -555,7 +555,7 @@ async function loadCalendar(cfg: ChartCfg, source: Source, month: string, accIds
         { label: 'Income', value: money0(income), sub: 'planned' },
         ...(low ? [{ label: 'Lowest', value: money0(low.endBalance), sub: shortDate(low.date) }] : []),
       ],
-      empty: d.accounts.some((a) => a.plan_include) ? undefined : 'Choose the accounts that pay your bills in Settings → Planner.',
+      empty: d.accounts.some((a) => a.plan_include) ? undefined : 'Choose the accounts that pay your bills in Settings → Planner & AI.',
     };
   }
   const [cats, lines] = await Promise.all([loadCategories(), loadLines(month, end, accIds, true)]);

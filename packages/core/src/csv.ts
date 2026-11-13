@@ -166,3 +166,25 @@ export function dedupeAgainstExisting(
   }
   return { add, duplicates };
 }
+
+/**
+ * Transactions read from several screenshots (or statement pages) as one list. Screenshots of a long list overlap: a row
+ * a later one repeats (same date, amount and description) is the same transaction, counted once. Two alike rows in the
+ * same screenshot are two transactions (two coffees on one day) and both stay. Sorted by date.
+ */
+export function mergeReads(reads: CsvRow[][]): CsvRow[] {
+  const sig = (r: CsvRow) => `${r.date}|${r.amount.toFixed(2)}|${r.name.toLowerCase().replace(/[^a-z0-9]+/g, '')}`;
+  const out: CsvRow[] = [];
+  for (const read of reads) {
+    // What the earlier screenshots already have, each usable once.
+    const before = new Map<string, number>();
+    for (const r of out) before.set(sig(r), (before.get(sig(r)) ?? 0) + 1);
+    for (const r of read) {
+      const k = sig(r), n = before.get(k) ?? 0;
+      if (n > 0) { before.set(k, n - 1); continue; }
+      out.push(r);
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+

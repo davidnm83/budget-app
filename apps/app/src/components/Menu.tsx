@@ -10,7 +10,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Sheet } from '@/components/Forms';
 import { SearchBox } from '@/components/Search';
 import { setPanel, usePanel } from '@/lib/panels';
-import { SHORTCUTS } from '@/lib/shortcuts';
+import { pageHas, SHORTCUTS } from '@/lib/shortcuts';
 import { loadPrefs, savePrefs, type Page } from '@/lib/prefs';
 import { supabase } from '@/lib/supabase';
 import { useWide } from '@/lib/layout';
@@ -237,13 +237,16 @@ export function Panels() {
   const go = (href: string) => { close(); afterClose(() => router.navigate(href as any)); };
   const pages = [...TAB_ITEMS, ...m.items, ...SETUP, { icon: 'add-circle-outline' as const, label: 'New page', href: '/page/new' }];
   if (panel === 'shortcuts') {
-    const groups = [...new Set(SHORTCUTS.map((x) => x.group))];
+    // This page's own keys first, and only the ones it has.
+    const has = pageHas();
+    const list = SHORTCUTS.filter((x) => !x.on || has[x.on]);
+    const groups = [...new Set(list.map((x) => x.group))];
     return (
       <Sheet title="Keyboard shortcuts" onClose={close}>
         {groups.map((g) => (
           <View key={g} style={{ gap: 6 }}>
             <Text style={{ color: t.muted, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 }}>{g.toUpperCase()}</Text>
-            {SHORTCUTS.filter((x) => x.group === g).map((x) => (
+            {list.filter((x) => x.group === g).map((x) => (
               <View key={x.keys.join('+') + x.does} style={styles.between}>
                 <Text style={{ color: t.text, fontSize: 14, flex: 1 }}>{x.does}</Text>
                 <View style={{ flexDirection: 'row', gap: 4 }}>{x.keys.map((k) => <Text key={k} style={[styles.kbd, { color: t.text, borderColor: t.line, backgroundColor: t.card }]}>{k}</Text>)}</View>

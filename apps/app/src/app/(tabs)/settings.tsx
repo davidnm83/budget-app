@@ -1,9 +1,10 @@
-import { router, useFocusEffect } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { usePullRefresh } from '@/lib/pullRefresh';
 import { setLogosEnabled, useLogos } from '@/lib/logos';
-import { UNDER_BAR } from '@/lib/layout';
+import { UNDER_BAR, useWide } from '@/lib/layout';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import PlaidLinkButton from '@/components/PlaidLinkButton';
 import { Button, Card, Chip, Segmented } from '@/components/ui';
 import { callFunction, supabase } from '@/lib/supabase';
@@ -122,31 +123,10 @@ export default function Settings() {
     catch (e) { setMsg(e instanceof Error ? e.message : String(e)); }
   };
 
-  return (
-    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={styles.page}>
-      <Text style={[styles.h, { color: t.text }]}>Appearance</Text>
-      <Card style={{ gap: 8 }}>
-        <Segmented value={themeMode} onChange={setThemeMode} options={[{ value: 'auto', label: 'Match device' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
-        <Text style={{ color: t.muted, fontSize: 12 }}>Kept on this device.</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
-          <Text style={{ color: t.text, flex: 1 }}>Bank and merchant logos</Text>
-          <Switch value={logos} onValueChange={setLogosEnabled} />
-        </View>
-        <Text style={{ color: t.muted, fontSize: 12 }}>Pictures come from your bank feed, or from DuckDuckGo’s icon service using only the site name (like examplebank.com). Off shows letters and emoji and makes no outside requests for them. Pictures you upload always show.</Text>
-      </Card>
-      <Text style={[styles.h, { color: t.text }]}>Currency</Text>
-      <Card style={{ gap: 8 }}>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-          {COMMON_CURRENCIES.map((c) => <Chip key={c} label={c} on={currency() === c} onPress={() => changeCurrency(c)} />)}
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Text style={{ color: t.muted }}>Or type a code</Text>
-          <TextInput value={code} onChangeText={(v) => setCode(v.toUpperCase().slice(0, 3))} maxLength={3} autoCapitalize="characters"
-            style={{ color: t.text, borderColor: t.line, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, width: 70 }} />
-          {code.length === 3 && code !== currency() && <Button title="Use" kind="plain" onPress={() => changeCurrency(code)} />}
-        </View>
-        <Text style={{ color: t.muted, fontSize: 12 }}>Amounts are shown in one currency. Nothing is converted. Kept with your account.</Text>
-      </Card>
+  // Each section on its own: a list of them on a phone (a section opens as its own page), the list beside the open
+  // section on a big screen.
+  const SECTIONS: { key: SectionKey; icon: keyof typeof Ionicons.glyphMap; title: string; sub: string; body: () => React.ReactNode }[] = [
+    { key: 'banks', icon: 'business-outline', title: 'Banks & import', sub: 'Bank connections, syncing, CSV files and other apps', body: () => <>
       <Text style={[styles.h, { color: t.text }]}>Bank connections</Text>
       <Card style={{ gap: 12 }}>
         {items.length === 0 && <Text style={{ color: t.muted }}>No banks linked yet.</Text>}
@@ -177,11 +157,71 @@ export default function Settings() {
 
       <Text style={[styles.h, { color: t.text }]}>Import</Text>
       <Card style={{ gap: 12 }}>
-        <Text style={{ color: t.muted }}>Bring in transactions from a bank’s CSV file, or your history from another budgeting app with its categories, notes and splits. Both are safe to run again.</Text>
+        <Text style={{ color: t.muted }}>Bring in transactions from a bank’s CSV file, or your history from another budgeting app with its categories, notes and splits. Both are safe to run again. To add transactions from screenshots of a bank’s list or a statement, open the account and use “From a screenshot or statement” on its Transactions tab.</Text>
         <Button title="Import a CSV file" kind="plain" onPress={() => router.push('/import')} />
         <Button title="Import from another app" kind="plain" onPress={() => router.push('/history-import')} />
       </Card>
 
+    </> },
+    { key: 'notifications', icon: 'notifications-outline', title: 'Notifications', sub: 'What to be told about, and when', body: () => <NotificationSettings /> },
+    { key: 'security', icon: 'lock-closed-outline', title: 'Security & account', sub: 'App lock, fingerprint and PIN, signing out', body: () => <>
+      <LockSettings />
+      <Text style={[styles.h, { color: t.text }]}>Account</Text>
+      <Card style={{ gap: 12 }}>
+        <Text style={{ color: t.muted }}>Signed in as {session?.user.email}</Text>
+        <Button title="Sign out" kind="plain" onPress={() => supabase.auth.signOut()} />
+      </Card>
+    </> },
+    { key: 'appearance', icon: 'color-palette-outline', title: 'Appearance & region', sub: 'Light or dark, logos, currency', body: () => <>
+      <Text style={[styles.h, { color: t.text }]}>Appearance</Text>
+      <Card style={{ gap: 8 }}>
+        <Segmented value={themeMode} onChange={setThemeMode} options={[{ value: 'auto', label: 'Match device' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} />
+        <Text style={{ color: t.muted, fontSize: 12 }}>Kept on this device.</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+          <Text style={{ color: t.text, flex: 1 }}>Bank and merchant logos</Text>
+          <Switch value={logos} onValueChange={setLogosEnabled} />
+        </View>
+        <Text style={{ color: t.muted, fontSize: 12 }}>Pictures come from your bank feed, or from DuckDuckGo’s icon service using only the site name (like examplebank.com). Off shows letters and emoji and makes no outside requests for them. Pictures you upload always show.</Text>
+      </Card>
+      <Text style={[styles.h, { color: t.text }]}>Currency</Text>
+      <Card style={{ gap: 8 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+          {COMMON_CURRENCIES.map((c) => <Chip key={c} label={c} on={currency() === c} onPress={() => changeCurrency(c)} />)}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={{ color: t.muted }}>Or type a code</Text>
+          <TextInput value={code} onChangeText={(v) => setCode(v.toUpperCase().slice(0, 3))} maxLength={3} autoCapitalize="characters"
+            style={{ color: t.text, borderColor: t.line, borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, width: 70 }} />
+          {code.length === 3 && code !== currency() && <Button title="Use" kind="plain" onPress={() => changeCurrency(code)} />}
+        </View>
+        <Text style={{ color: t.muted, fontSize: 12 }}>Amounts are shown in one currency. Nothing is converted. Kept with your account.</Text>
+      </Card>
+    </> },
+    { key: 'planner', icon: 'sparkles-outline', title: 'Planner & AI', sub: 'Accounts the planner covers, receipts and Ask', body: () => <>
+      <Text style={[styles.h, { color: t.text }]}>Planner</Text>
+      <PlannerSettings />
+
+      <Text style={[styles.h, { color: t.text }]}>AI</Text>
+      <Card style={{ gap: 8 }}>
+        {ai == null ? <Text style={{ color: t.muted }}>Checking…</Text> : ai ? (
+          <>
+            <Text style={{ color: t.text }}>On. Receipt photos are read when you add them, and Ask (in the menu) answers questions about your money.</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }}>Uses Claude Haiku, and Claude Sonnet for receipts that don’t add up or when you pick Thorough in Ask. Your data is sent to Anthropic’s API for each request; set a monthly spending limit in the Claude Console.</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
+              <Text style={{ color: t.text, flex: 1 }}>Record points as rewards</Text>
+              <Switch value={rewards} onValueChange={toggleRewards} />
+            </View>
+            <Text style={{ color: t.muted, fontSize: 12 }}>
+              Points paid with in store (like PC Optimum) are read from the receipt, and its amount is what the card was charged. With this on, attaching the receipt also splits the transaction: the purchase at its full value, and the points back under “Rewards” income.
+            </Text>
+          </>
+        ) : (
+          <Text style={{ color: t.muted }}>Off. To read receipt photos and ask questions about your money, add a Claude API key to the server: create one at console.anthropic.com, then run{'\n'}npx supabase secrets set ANTHROPIC_API_KEY=your-key{'\n'}(see docs/SELF_HOSTING.md).</Text>
+        )}
+      </Card>
+
+    </> },
+    { key: 'data', icon: 'cloud-download-outline', title: 'Data & backup', sub: 'Download, restore, nightly backups, sample data', body: () => <>
       <Text style={[styles.h, { color: t.text }]}>Backup</Text>
       <Card style={{ gap: 12 }}>
         <Text style={{ color: t.muted }}>Download everything in your account as one JSON file: accounts, transactions, categories, rules, budgets, bills and settings. Bank sign-in tokens are never included.</Text>
@@ -224,34 +264,9 @@ export default function Settings() {
         <Button title="Load sample data" kind="plain" onPress={sample} />
         <Button title="Remove sample data" kind="plain" onPress={unsample} />
       </Card>
-      {confirmUi}
 
-      <Text style={[styles.h, { color: t.text }]}>Planner</Text>
-      <PlannerSettings />
-
-      <NotificationSettings />
-
-      <Text style={[styles.h, { color: t.text }]}>AI</Text>
-      <Card style={{ gap: 8 }}>
-        {ai == null ? <Text style={{ color: t.muted }}>Checking…</Text> : ai ? (
-          <>
-            <Text style={{ color: t.text }}>On. Receipt photos are read when you add them, and Ask (in the menu) answers questions about your money.</Text>
-            <Text style={{ color: t.muted, fontSize: 12 }}>Uses Claude Haiku, and Claude Sonnet for receipts that don’t add up or when you pick Thorough in Ask. Your data is sent to Anthropic’s API for each request; set a monthly spending limit in the Claude Console.</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 6 }}>
-              <Text style={{ color: t.text, flex: 1 }}>Record points as rewards</Text>
-              <Switch value={rewards} onValueChange={toggleRewards} />
-            </View>
-            <Text style={{ color: t.muted, fontSize: 12 }}>
-              Points paid with in store (like PC Optimum) are read from the receipt, and its amount is what the card was charged. With this on, attaching the receipt also splits the transaction: the purchase at its full value, and the points back under “Rewards” income.
-            </Text>
-          </>
-        ) : (
-          <Text style={{ color: t.muted }}>Off. To read receipt photos and ask questions about your money, add a Claude API key to the server: create one at console.anthropic.com, then run{'\n'}npx supabase secrets set ANTHROPIC_API_KEY=your-key{'\n'}(see docs/SELF_HOSTING.md).</Text>
-        )}
-      </Card>
-
-      <LockSettings />
-
+    </> },
+    ...(Platform.OS === 'web' ? [{ key: 'help' as SectionKey, icon: 'help-circle-outline' as const, title: 'Help & shortcuts', sub: 'Keyboard shortcuts', body: () => <>
       {Platform.OS === 'web' && (
         <>
           <Text style={[styles.h, { color: t.text }]}>Keyboard shortcuts</Text>
@@ -262,17 +277,60 @@ export default function Settings() {
         </>
       )}
 
-      <Text style={[styles.h, { color: t.text }]}>Account</Text>
-      <Card style={{ gap: 12 }}>
-        <Text style={{ color: t.muted }}>Signed in as {session?.user.email}</Text>
-        <Button title="Sign out" kind="plain" onPress={() => supabase.auth.signOut()} />
-      </Card>
+    </> }] : []),
+  ];
+  const wide = useWide();
+  const params = useLocalSearchParams<{ section?: string }>();
+  const open = SECTIONS.find((x) => x.key === params.section) ?? (wide ? SECTIONS[0] : null);
+  const go = (k: SectionKey | null) => (wide ? router.setParams({ section: k ?? undefined } as any) : k ? router.push({ pathname: '/settings', params: { section: k } } as any) : router.back());
+  const list = (
+    <View style={{ gap: 4 }}>
+      {SECTIONS.map((x) => (
+        <Pressable key={x.key} onPress={() => go(x.key)} accessibilityRole="button"
+          style={({ hovered, pressed }: any) => [styles.navRow, { borderColor: t.line }, open?.key === x.key && wide && { backgroundColor: t.accent + '1a' }, (hovered || pressed) && { backgroundColor: t.line }]}>
+          <Ionicons name={x.icon} size={22} color={open?.key === x.key && wide ? t.accent : t.text} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text, fontWeight: '600', fontSize: 15 }}>{x.title}</Text>
+            <Text style={{ color: t.muted, fontSize: 12 }} numberOfLines={wide ? 2 : 1}>{x.sub}</Text>
+          </View>
+          {!wide && <Ionicons name="chevron-forward" size={18} color={t.muted} />}
+        </Pressable>
+      ))}
+    </View>
+  );
+  const section = open && (
+    <View>
+      {!wide && (
+        <Pressable onPress={() => go(null)} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+          <Ionicons name="chevron-back" size={18} color={t.accent} />
+          <Text style={{ color: t.accent, fontSize: 15 }}>Settings</Text>
+        </Pressable>
+      )}
+      <Text style={[styles.title, { color: t.text }]}>{open.title}</Text>
+      {open.body()}
+    </View>
+  );
+
+  return (
+    <ScrollView style={{ backgroundColor: t.bg }} contentContainerStyle={[styles.page, wide && styles.pageWide]}>
+      {wide ? (
+        <View style={{ flexDirection: 'row', gap: 24, alignItems: 'flex-start' }}>
+          <View style={{ width: 260 }}>{list}</View>
+          <View style={{ flex: 1, minWidth: 0, maxWidth: 680 }}>{section}</View>
+        </View>
+      ) : open ? section : list}
+      {confirmUi}
     </ScrollView>
   );
 }
 
+type SectionKey = 'banks' | 'notifications' | 'security' | 'appearance' | 'planner' | 'data' | 'help';
+
 const styles = StyleSheet.create({
   page: { padding: 16, paddingBottom: UNDER_BAR, maxWidth: 640, width: '100%', alignSelf: 'center' },
+  pageWide: { maxWidth: 1000 },
+  title: { fontSize: 22, fontWeight: '800', marginBottom: 4 },
+  navRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12 },
   h: { fontSize: 18, fontWeight: '700', marginTop: 16, marginBottom: 8 },
   item: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 12, borderBottomWidth: StyleSheet.hairlineWidth },
 });

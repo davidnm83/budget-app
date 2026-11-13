@@ -1,4 +1,5 @@
 // AI features (IDEA-12), on the Claude API with the owner's key (the ANTHROPIC_API_KEY secret):
+//  • Reading a statement or screenshots of a transactions list into transactions to add (Claude Sonnet 5.5).
 //  • Reading a receipt photo: Claude Haiku 5.5 first; a reading that doesn't add up (receiptAddsUp) is read again
 //    by Claude Sonnet 5.5.
 //  • Asking about your money: a chat that answers from your own data through read-only lookups (tools). The lookups
@@ -81,6 +82,74 @@ export async function readReceipt(client: Claude, jpegBase64: string, today: str
   const careful = await readOnce(client, 'sonnet', jpegBase64, today);
   // Sonnet's reading even when it doesn't add up either (a faded total); the app shows it to check.
   return { receipt: careful ?? quick, model: careful ? 'sonnet' : 'haiku' };
+}
+
+// ── Statements and screenshots of a transactions list ──
+
+const STATEMENT_SCHEMA = {
+  type: 'object',
+  properties: {
+    transactions: {
+      type: 'array',
+      description: 'Every transaction listed, in the order shown. Leave out balances (opening, closing, running), subtotals, totals, interest-rate notes, headers and ads.',
+      items: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'The transaction date (not the posting date when both are shown) as YYYY-MM-DD.' },
+          description: { type: 'string', description: 'The description as printed (merchant or payee), without the date or amount.' },
+          amount: { type: 'number', description: 'From the account holder\'s side: money out (purchases, withdrawals, fees, interest charged) negative; money in (deposits, payments to a card, refunds, credits) positive.' },
+          pending: { type: 'boolean', description: 'True when the list marks it pending or not yet posted.' },
+        },
+        required: ['date', 'description', 'amount', 'pending'],
+        additionalProperties: false,
+      },
+    },
+    legible: { type: 'boolean', description: 'False if parts of the list are too blurry, cut off or dark to read with confidence.' },
+  },
+  required: ['transactions', 'legible'],
+  additionalProperties: false,
+};
+
+export interface StatementFile { mediaType: 'image/jpeg' | 'image/png' | 'application/pdf'; data: string }
+export interface StatementRow { date: string; description: string; amount: number; pending: boolean }
+
+/**
+ * Reads the transactions from screenshots of a bank's transactions list, or a statement (photo or PDF), with Sonnet.
+ * `card`: a credit card's list, where the bank prints purchases as positive amounts. Each file is read on its own, so
+ * a long statement or several screenshots don't run out of room; overlapping screenshots are merged in the app.
+ */
+export async function readStatement(client: Claude, files: StatementFile[], card: boolean, today: string): Promise<{ reads: StatementRow[][]; legible: boolean }> {
+  const reads: StatementRow[][] = [];
+  let legible = true;
+  for (const f of files) {
+    const res = await client.messages.create({
+      model: MODELS.sonnet,
+      max_tokens: 16000,
+      output_config: { effort: 'medium', format: { type: 'json_schema', schema: STATEMENT_SCHEMA } },
+      messages: [{
+        role: 'user',
+        content: [
+          f.mediaType === 'application/pdf'
+            ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: f.data } }
+            : { type: 'image', source: { type: 'base64', media_type: f.mediaType, data: f.data } },
+          { type: 'text', text: `List the transactions on this ${card ? 'credit card' : 'bank account'} ${f.mediaType === 'application/pdf' ? 'statement' : 'statement or screenshot of its transactions'}. `
+            + (card ? 'Card statements usually print purchases as positive and payments or credits as negative (or with CR): give them from the card holder\'s side, purchases negative and payments positive. ' : '')
+            + `Today is ${today}; a date without a year is the most recent such date on or before today, or within the statement period when one is shown.` },
+        ],
+      }],
+    });
+    if (res.stop_reason !== 'end_turn') { legible = false; reads.push([]); continue; }
+    try {
+      const r = JSON.parse(textOf(res));
+      legible &&= !!r.legible;
+      reads.push((Array.isArray(r.transactions) ? r.transactions : [])
+        .filter((t: any) => /^\d{4}-\d{2}-\d{2}$/.test(t?.date ?? '') && isFinite(Number(t?.amount)) && Number(t.amount) !== 0)
+        .map((t: any) => ({ date: t.date, description: String(t.description ?? '').trim().slice(0, 200) || 'Transaction', amount: round2(Number(t.amount)), pending: !!t.pending })));
+    } catch {
+      legible = false; reads.push([]);
+    }
+  }
+  return { reads, legible };
 }
 
 // ── Asking about your money ──

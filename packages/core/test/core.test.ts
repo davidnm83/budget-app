@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { searchWords,
+import { mergeReads, searchWords,
   addDays, loanWhatIf, matchChanged, matchDues, payoffAt, payoffSchedule, computeLoanInterest, dedupeAgainstExisting, fromPlaidAmount, hourIn, learnMerchantRules,
   guessMerchant, merchantFor, normalizeDescription, parseBankCsv, parseMoney, suggestCategory, todayIn, toIsoDate, weekStart,
 } from '../src/index.ts';
@@ -339,3 +339,16 @@ describe('search words', () => {
     expect(searchWords('a, (b) "c"')).toEqual(['a', 'b', 'c']);
   });
 });
+
+describe('transactions read from overlapping screenshots', () => {
+  const r = (date: string, name: string, amount: number) => ({ date, name, amount });
+  it('counts a row two screenshots both show once, but keeps alike rows within one', () => {
+    const one = [r('2026-11-02', 'Cafe', -4.5), r('2026-11-02', 'Cafe', -4.5), r('2026-11-03', 'Grocer', -60)];
+    const two = [r('2026-11-03', 'GROCER', -60), r('2026-11-04', 'Gas', -40), r('2026-11-02', 'Cafe', -4.5)];
+    expect(mergeReads([one, two]).map((x) => `${x.date} ${x.name} ${x.amount}`)).toEqual([
+      '2026-11-02 Cafe -4.5', '2026-11-02 Cafe -4.5', '2026-11-03 Grocer -60', '2026-11-04 Gas -40']);
+    // A third coffee only the second screenshot shows is new.
+    expect(mergeReads([[r('2026-11-02', 'Cafe', -4.5)], [r('2026-11-02', 'Cafe', -4.5), r('2026-11-02', 'Cafe', -4.5)]])).toHaveLength(2);
+  });
+});
+

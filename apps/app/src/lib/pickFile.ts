@@ -32,4 +32,17 @@ export function pickCsvTexts(): Promise<{ name: string; text: string }[]> {
 /** A backup made by "Download everything". */
 export const pickJsonText = () => pickCsvText('.json,application/json');
 
+/** Web: chosen files as they are (pictures, PDFs…). Resolves with [] if cancelled. */
+export function pickFiles(accept: string, multiple = true): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = multiple;
+    input.accept = accept;
+    input.onchange = () => resolve([...(input.files ?? [])]);
+    input.oncancel = () => resolve([]);
+    input.click();
+  });
+}
+
 export const canPickFiles = true;
